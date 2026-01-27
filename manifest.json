@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "Collider Pilot",
+  "version": "1.0.0",
+  "description": "Universal DeepAgent seat for Collider apps - Your AI companion for data management",
+  
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  
+  "host_permissions": [
+    "http://localhost:*/*",
+    "https://*.collider.app/*"
+  ],
+  
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  
+  "background": {
+    "service_worker": "worker.js",
+    "type": "module"
+  },
+  
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:5173/*",
+        "http://localhost:5174/*",
+        "https://*.collider.app/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  
+  "action": {
+    "default_title": "Open Collider Pilot",
+    "default_icon": {
+      "16": "icons/pilot-16.png",
+      "32": "icons/pilot-32.png",
+      "48": "icons/pilot-48.png",
+      "128": "icons/pilot-128.png"
+    }
+  },
+  
+  "icons": {
+    "16": "icons/pilot-16.png",
+    "32": "icons/pilot-32.png",
+    "48": "icons/pilot-48.png",
+    "128": "icons/pilot-128.png"
+  }
+}
