@@ -1,0 +1,28 @@
+# Pilot
+
+> Cross-application browser OS with local AI
+
+Important: Pilot runs entirely in the browser using WebLLM (local GPU) with Chrome APIs for context awareness.
+
+## Docs
+- [Architecture](docs/ARCHITECTURE.md): Runtime design and component interaction
+- [Context Protocol](docs/context-protocol.md): How apps share context with Pilot
+- [Tool Protocol](docs/tool-protocol.md): Defining and invoking tools
+- [Chrome APIs](docs/chrome-apis.md): Browser integration reference
+
+## Browser Runtime
+- [Service Worker](browser/service-worker.ts): Central orchestrator
+- [Content Script](browser/content-script.ts): Per-tab DOM observation
+- [Context Aggregator](runtime/context-aggregator.ts): Browser state collection
+
+## AI Runtime
+- [WebLLM Engine](runtime/webllm-engine.ts): Local LLM inference
+- [Chrome AI](runtime/chrome-ai.ts): Built-in AI fallback
+- [Tool Router](runtime/tool-router.ts): Tool dispatch system
+
+## SDK
+- [Pilot Bridge](sdk/pilot-bridge.ts): Page ↔ Extension communication
+- [Types](sdk/types.ts): Shared TypeScript definitions
+
+## Optional
+- [llms.txt Parser](sdk/llms-txt-parser.ts): Protocol implementation

@@ -1,0 +1,96 @@
+{
+  "manifest_version": 3,
+  "name": "Pilot",
+  "version": "0.1.0",
+  "description": "Cross-application browser OS with local AI",
+  
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "tabGroups",
+    "history",
+    "bookmarks",
+    "storage",
+    "scripting",
+    "sidePanel",
+    "offscreen",
+    "contextMenus",
+    "notifications"
+  ],
+  
+  "optional_permissions": [
+    "topSites",
+    "sessions",
+    "downloads"
+  ],
+  
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  
+  "background": {
+    "service_worker": "dist/service-worker.js",
+    "type": "module"
+  },
+  
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content-script.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/pilot-16.png",
+      "32": "icons/pilot-32.png",
+      "48": "icons/pilot-48.png",
+      "128": "icons/pilot-128.png"
+    },
+    "default_title": "Open Pilot"
+  },
+  
+  "icons": {
+    "16": "icons/pilot-16.png",
+    "32": "icons/pilot-32.png",
+    "48": "icons/pilot-48.png",
+    "128": "icons/pilot-128.png"
+  },
+  
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+P",
+        "mac": "Command+Shift+P"
+      },
+      "description": "Toggle Pilot"
+    },
+    "toggle_pip": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+O",
+        "mac": "Command+Shift+O"
+      },
+      "description": "Toggle Picture-in-Picture window"
+    }
+  },
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["pip/*", "assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  
+  "minimum_chrome_version": "130"
+}

@@ -1,0 +1,26 @@
+{
+  "name": "pilot",
+  "version": "0.1.0",
+  "description": "Cross-application browser OS with local AI",
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "build:extension": "vite build && cp -r browser/manifest.json dist/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic/webllm": "^0.2.80"
+  },
+  "devDependencies": {
+    "@anthropic/webgpu-types": "^0.1.44",
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@anthropic/wasm-feature-detect": "^1.3.0",
+    "@anthropic/webllm": "^0.2.80",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

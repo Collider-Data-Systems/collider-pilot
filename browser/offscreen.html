@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pilot Offscreen</title>
+</head>
+<body>
+  <!-- 
+    Offscreen Document for Pilot
+    
+    This document runs WebLLM with WebGPU acceleration.
+    It receives inference requests from the service worker and returns responses.
+    
+    Reasons for offscreen document:
+    - Service workers cannot access WebGPU
+    - Need persistent document for model caching
+    - Isolated from page content for security
+  -->
+  <script type="module" src="dist/offscreen.js"></script>
+</body>
+</html>
