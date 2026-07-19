@@ -210,11 +210,11 @@ function accessFixChecks(liveFold) {
     "FIX1: enforcement flag does NOT promote computed_by (badge → PRESENTATION, was ENFORCED)",
   );
 
-  // ── FIX 2 — Fail-closed on unattributable nodes ──────────────────────────────────────────
+  // ── FIX 2 — TIER-AWARE unattributable handling ───────────────────────────────────────────
   // A bare secret purpose (no kb/occupant lineage, not public) + a low-priv identified user
-  // whose governs-closure does NOT reach it. BEFORE: accessKeepSet kept EVERY null-owner node
-  // for any identified principal → the secret was SHOWN. AFTER: unattributable ⇒ dropped for
-  // everyone unless explicitly public.
+  // whose governs-closure does NOT reach it. Tier-aware (97c5ef3): at the CLIENT-presentation
+  // tier (not a boundary — the full fold is already in the panel) unattributable nodes are
+  // SHOWN; at the SERVER-authoritative tier they FAIL CLOSED. Assert BOTH.
   const SECRET = "urn:moos:purpose:sam.secret-program";
   const s2 = {
     nodes: {
@@ -228,21 +228,27 @@ function accessFixChecks(liveFold) {
       o: rel("urn:moos:rel:s2.o", "WF19", "urn:moos:session:lowpriv.ws", "has-occupant", "urn:moos:agent:lowpriv.bot", "is-occupant-of"),
     },
   };
-  const r2 = resolveAccess(s2, identified("urn:moos:user:lowpriv", null));
+  const r2 = resolveAccess(s2, identified("urn:moos:user:lowpriv", null)); // client-presentation
   const keep2 = accessKeepSet(s2, r2);
+  const r2srv = { ...r2, computed_by: "server-authoritative" };            // simulate enforced tier
+  const keep2srv = accessKeepSet(s2, r2srv);
   line("FIX2 permitted", JSON.stringify(r2.permitted_workspaces));
-  line("FIX2 secret kept?", keep2.has(SECRET));
+  line("FIX2 secret kept (client / server)", `${keep2.has(SECRET)} / ${keep2srv.has(SECRET)}`);
   assert(
     r2.permitted_workspaces.includes("urn:moos:session:lowpriv.ws"),
     "FIX2 setup: low-priv user's governs→occupant closure = {lowpriv.ws}",
   );
   assert(
-    !keep2.has(SECRET),
-    "FIX2: bare null-owner secret purpose is HIDDEN from the low-priv user (was SHOWN before)",
+    keep2srv.has(SECRET) === false,
+    "FIX2 (server tier): bare null-owner secret purpose is HIDDEN — fail-closed",
   );
   assert(
-    keep2.has("urn:moos:session:lowpriv.ws"),
-    "FIX2: the user's OWN workspace is still shown (fail-closed does not over-hide)",
+    keep2.has(SECRET) === true,
+    "FIX2 (client tier): unattributable node is SHOWN — client-presentation is not a boundary (97c5ef3)",
+  );
+  assert(
+    keep2.has("urn:moos:session:lowpriv.ws") && keep2srv.has("urn:moos:session:lowpriv.ws"),
+    "FIX2: the user's OWN workspace is shown in both tiers",
   );
 
   // ── FIX 3 — workspace attribution direction + multi-owner ─────────────────────────────────
