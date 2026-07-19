@@ -23,6 +23,19 @@ export interface PilotScratch {
 
 const EMPTY: PilotScratch = { selectedUrn: null, frame: null };
 
+/**
+ * Cheap frame-identity signature. Two frames with the same signature can keep object
+ * identity so a mirror surface (Document PiP mount or the pip.html popup) doesn't force
+ * FrameGraph to relayout on every mirrored selection tick. Shared by both PiP surfaces.
+ */
+export function frameSignature(frame: HgFrame | null): string {
+  if (!frame) return "";
+  const p = frame.provenance;
+  const n = Array.isArray(frame.nodes) ? frame.nodes.length : 0;
+  const r = Array.isArray(frame.relations) ? frame.relations.length : 0;
+  return `${p?.engine ?? ""}|${p?.log_seq ?? ""}|${p?.folded_at ?? ""}|${n}|${r}`;
+}
+
 export async function loadScratch(): Promise<PilotScratch> {
   try {
     const result = await chrome.storage.session.get(SCRATCH_KEY);

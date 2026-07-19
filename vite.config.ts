@@ -9,9 +9,13 @@ import react from "@vitejs/plugin-react";
 //   - preview.html        -> dev/CI harness on the MOCK adapter (Phase 1).
 //   - preview-live.html   -> dev/CI harness on the LIVE StreamableHttpMcpAdapter (Phase 2).
 //   - pip-preview.html    -> dev/CI harness rendering the Document PiP content view (Phase 3).
+//   - pip.html            -> SHIPPED extension page: the chrome.windows popup PiP mirror
+//                            (side-panel fallback when Document PiP is unavailable).
 //
 // The preview* entries are dev harnesses (not part of the loaded extension), built here
-// only so CI type-checks + bundles them. Inputs are relative to the project root.
+// only so CI type-checks + bundles them. `pip.html`, by contrast, IS a loaded extension
+// page (opened via chrome.windows.create with chrome.runtime.getURL). Inputs are relative
+// to the project root.
 //
 // The service worker is emitted at a STABLE, unhashed path (dist/worker.js) so the
 // manifest can reference it directly. Everything the side panel needs (React,
@@ -36,6 +40,7 @@ export default defineConfig({
         preview: "preview.html",
         "preview-live": "preview-live.html",
         "pip-preview": "pip-preview.html",
+        pip: "pip.html",
         worker: "src/worker.ts",
       },
       output: {
