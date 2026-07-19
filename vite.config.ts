@@ -8,6 +8,7 @@ import react from "@vitejs/plugin-react";
 //   - src/worker.ts       -> the MV3 service worker (module worker).
 //   - preview.html        -> dev/CI harness on the MOCK adapter (Phase 1).
 //   - preview-live.html   -> dev/CI harness on the LIVE StreamableHttpMcpAdapter (Phase 2).
+//   - pip-preview.html    -> dev/CI harness rendering the Document PiP content view (Phase 3).
 //
 // The preview* entries are dev harnesses (not part of the loaded extension), built here
 // only so CI type-checks + bundles them. Inputs are relative to the project root.
@@ -34,6 +35,7 @@ export default defineConfig({
         sidepanel: "sidepanel.html",
         preview: "preview.html",
         "preview-live": "preview-live.html",
+        "pip-preview": "pip-preview.html",
         worker: "src/worker.ts",
       },
       output: {
