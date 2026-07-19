@@ -404,3 +404,15 @@ seam are browser-testable without the extension.
       `POST /programs` or `POST /rewrites`. Those strings appear only in comments, UI labels,
       the mock catalog, and the preview builder that stringifies (never posts) an envelope.
       typecheck + build pass; `preview.html` is a self-contained served page.
+
+## Phase 5 — high-rate data plane (deferred behind a measurement gate)
+
+WebTransport / a second transport is **deferred by decision**: the reliable MCP path already
+sustains ~61 Hz at p95 for a full graph read (measured — see `docs/phase5-data-plane.md`), which
+exceeds any realistic UI update rate. No high-rate surface exists in the Pilot to justify a lossy
+data plane. The gate + instrument:
+
+- Decision + criteria: `docs/phase5-data-plane.md`
+- Baseline benchmark (run before ever proposing WebTransport): `node scripts/bench-frame-read.mjs`
+
+Durable tool/rewrite semantics never leave the reliable MCP path regardless.
