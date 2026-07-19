@@ -45,10 +45,12 @@ export function NodeInspector({
     );
   }
 
+  const frameNodes = Array.isArray(frame?.nodes) ? frame.nodes : [];
+  const frameRelations = Array.isArray(frame?.relations) ? frame.relations : [];
   const labelOf = (urn: string) =>
-    frame.nodes.find((n) => n.urn === urn)?.label ?? urn;
+    frameNodes.find((n) => n.urn === urn)?.label ?? urn;
 
-  const incident = frame.relations.filter(
+  const incident = frameRelations.filter(
     (r) => r.source_urn === node.urn || r.target_urn === node.urn,
   );
 

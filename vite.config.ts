@@ -29,6 +29,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         sidepanel: "sidepanel.html",
+        preview: "preview.html",
         worker: "src/worker.ts",
       },
       output: {
