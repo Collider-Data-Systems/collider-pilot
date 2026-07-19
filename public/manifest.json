@@ -6,7 +6,11 @@
 
   "permissions": ["sidePanel", "storage", "activeTab", "clipboardWrite"],
 
-  "host_permissions": ["http://localhost:8080/*", "http://localhost:8000/*"],
+  "host_permissions": [
+    "http://localhost:8080/*",
+    "http://localhost:8000/*",
+    "http://localhost:11434/*"
+  ],
 
   "side_panel": {
     "default_path": "sidepanel.html"
