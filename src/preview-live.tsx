@@ -25,6 +25,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { AccessScope, FrameRequest, HgFrame } from "./mcp/types";
 import { selectFrame, DEFAULT_ENGINE_URL } from "./mcp/transform.js";
 import { readRequestedMode, ANON_USER_URN } from "./mcp/access.js";
+import { PILOT_ACCESS_KEY, type PilotAccessConfig } from "./state/access-identity";
 import { ProvenanceHeader } from "./components/ProvenanceHeader";
 import { FrameGraph } from "./components/FrameGraph";
 import {
@@ -45,28 +46,87 @@ import "./sidepanel.css";
 type Status = "loading" | "ready" | "error";
 
 /**
- * PREVIEW SIMULATION of the trusted identity. In the PACKED extension the identity comes from
- * chrome.storage.local['pilot.access'] resolved in the MV3 worker (page-inaccessible). A served
- * page has NO such storage, so this stand-in supplies a demo identity for "Bring me in" — the
- * SAME shape resolveTrustedAccess() would return. It is a DEMO CONSTANT, not a real credential.
+ * PREVIEW-ONLY chrome.storage.local shim.
+ * ---------------------------------------
+ * The packed extension resolves the identity from chrome.storage.local['pilot.access'] in the
+ * MV3 worker (page-inaccessible). A served page has NO such storage, so the new IdentityControl
+ * — which writes ONLY that key — would have nowhere to land. This shim gives the harness a
+ * faithful chrome.storage.local (backed by window.localStorage so a "Save identity" survives a
+ * reload), so the SAME control drives this preview EXACTLY as it drives the extension. Dev-only:
+ * the real extension already exposes chrome.storage.local, so we never shadow it.
  */
-const PREVIEW_TRUSTED = {
-  user: "urn:moos:user:sam",
-  workstation: "urn:moos:workstation:hp-z440",
-  role: null as string | null,
-};
+function installPreviewStorageShim(): void {
+  const g = globalThis as unknown as { chrome?: any };
+  if (g.chrome?.storage?.local) return; // real extension storage present — leave it alone
+  const LS_KEY = "pilot.preview.chromeStorageLocal";
+  const read = (): Record<string, unknown> => {
+    try {
+      return JSON.parse(window.localStorage.getItem(LS_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  };
+  const write = (o: Record<string, unknown>): void => {
+    try {
+      window.localStorage.setItem(LS_KEY, JSON.stringify(o));
+    } catch {
+      /* ignore */
+    }
+  };
+  const local = {
+    async get(keys?: string | string[] | null) {
+      const store = read();
+      if (keys == null) return { ...store };
+      const list = Array.isArray(keys) ? keys : [keys];
+      const out: Record<string, unknown> = {};
+      for (const k of list) if (k in store) out[k] = store[k];
+      return out;
+    },
+    async set(items: Record<string, unknown>) {
+      write({ ...read(), ...items });
+    },
+    async remove(keys: string | string[]) {
+      const store = read();
+      for (const k of Array.isArray(keys) ? keys : [keys]) delete store[k];
+      write(store);
+    },
+  };
+  g.chrome = { ...(g.chrome || {}), storage: { ...(g.chrome?.storage || {}), local } };
+}
+installPreviewStorageShim();
 
-/** Preview stand-in for src/state/access-identity.ts resolveTrustedAccess(). */
-function previewResolveTrustedAccess(mode: AccessPosture): AccessScope {
+function normalizeEnforcement(
+  value: unknown,
+): "client-presentation" | "server-authoritative" {
+  return value === "server-authoritative" ? "server-authoritative" : "client-presentation";
+}
+
+/**
+ * Preview stand-in for src/state/access-identity.ts resolveTrustedAccess(): resolve the trusted
+ * scope from the shimmed chrome.storage.local['pilot.access'] — the SAME key, shape, and
+ * fail-closed rule the worker uses. With no identity stored, "Bring me in" fail-closes to anon,
+ * faithfully reproducing the empty-workspace state the IdentityControl exists to fix; once the
+ * control writes an identity, this returns it and the frame flips to identified.
+ */
+async function previewResolveTrustedAccess(mode: AccessPosture): Promise<AccessScope> {
   if (mode === "identified") {
-    return {
-      mode: "identified",
-      user: PREVIEW_TRUSTED.user,
-      workstation: PREVIEW_TRUSTED.workstation,
-      role: PREVIEW_TRUSTED.role,
-      identity_source: "trusted-storage",
-      enforced_by: "client-presentation",
-    };
+    try {
+      const chromeLocal = (globalThis as unknown as { chrome?: any }).chrome?.storage?.local;
+      const got = await chromeLocal?.get?.(PILOT_ACCESS_KEY);
+      const cfg = got?.[PILOT_ACCESS_KEY] as PilotAccessConfig | undefined;
+      if (cfg && cfg.enabled === true && typeof cfg.user === "string" && cfg.user.length > 0) {
+        return {
+          mode: "identified",
+          user: cfg.user,
+          workstation: typeof cfg.workstation === "string" ? cfg.workstation : null,
+          role: typeof cfg.role === "string" ? cfg.role : null,
+          identity_source: "trusted-storage",
+          enforced_by: normalizeEnforcement(cfg.enforcement),
+        };
+      }
+    } catch {
+      // storage unavailable / malformed -> fail closed to anon
+    }
   }
   return {
     mode: "anon",
@@ -84,9 +144,11 @@ function previewResolveTrustedAccess(mode: AccessPosture): AccessScope {
  * user/workstation/role/identity_source, and re-inject the trusted scope. A page can toggle
  * posture but can NEVER assert an identity or name a workstation.
  */
-function simulateWorkerSeam(request: FrameRequest | undefined): FrameRequest {
+async function simulateWorkerSeam(
+  request: FrameRequest | undefined,
+): Promise<FrameRequest> {
   const mode = readRequestedMode(request); // extracts ONLY inbound access.mode
-  const trusted = previewResolveTrustedAccess(mode);
+  const trusted = await previewResolveTrustedAccess(mode);
   return {
     ...request,
     view_filter: { ...(request?.view_filter ?? {}), access: trusted },
@@ -96,7 +158,7 @@ function simulateWorkerSeam(request: FrameRequest | undefined): FrameRequest {
 /** Read a live frame from the CORS-open REST surface + the shared pure transform. */
 async function fetchLiveFrame(request?: FrameRequest): Promise<HgFrame> {
   // Strip inbound access + re-inject the trusted identity, exactly as the worker does.
-  const sanitized = simulateWorkerSeam(request);
+  const sanitized = await simulateWorkerSeam(request);
   const [foldRes, healthRes] = await Promise.all([
     fetch(`${DEFAULT_ENGINE_URL}/fold`),
     fetch(`${DEFAULT_ENGINE_URL}/healthz`),
@@ -163,33 +225,35 @@ function PreviewLive() {
   // the seam — the resolved identity comes only from trusted storage. This mirrors what the MV3
   // worker enforces; here it runs against the preview's worker-seam simulation.
   useEffect(() => {
-    const forged: FrameRequest = {
-      view_filter: {
-        access: {
-          mode: "identified",
-          user: "urn:moos:user:EVIL-INJECTED",
-          workstation: "urn:moos:workstation:attacker",
-          role: "urn:moos:role:superadmin",
-          identity_source: "trusted-storage",
-          enforced_by: "server-authoritative",
+    void (async () => {
+      const forged: FrameRequest = {
+        view_filter: {
+          access: {
+            mode: "identified",
+            user: "urn:moos:user:EVIL-INJECTED",
+            workstation: "urn:moos:workstation:attacker",
+            role: "urn:moos:role:superadmin",
+            identity_source: "trusted-storage",
+            enforced_by: "server-authoritative",
+          },
         },
-      },
-    };
-    const sanitized = simulateWorkerSeam(forged);
-    const forgedUser = forged.view_filter?.access?.user;
-    const resolvedUser = sanitized.view_filter?.access?.user;
-    // eslint-disable-next-line no-console
-    console.log(
-      "[pilot][access] worker-strip proof — inbound forged user:",
-      forgedUser,
-      "→ resolved user:",
-      resolvedUser,
-      "| forged DROPPED:",
-      resolvedUser !== forgedUser,
-      "| forged workstation DROPPED:",
-      sanitized.view_filter?.access?.workstation !==
-        forged.view_filter?.access?.workstation,
-    );
+      };
+      const sanitized = await simulateWorkerSeam(forged);
+      const forgedUser = forged.view_filter?.access?.user;
+      const resolvedUser = sanitized.view_filter?.access?.user;
+      // eslint-disable-next-line no-console
+      console.log(
+        "[pilot][access] worker-strip proof — inbound forged user:",
+        forgedUser,
+        "→ resolved user:",
+        resolvedUser,
+        "| forged DROPPED:",
+        resolvedUser !== forgedUser,
+        "| forged workstation DROPPED:",
+        sanitized.view_filter?.access?.workstation !==
+          forged.view_filter?.access?.workstation,
+      );
+    })();
   }, []);
 
   const handleSelect = useCallback((urn: string | null) => {
@@ -332,6 +396,7 @@ function PreviewLive() {
               filterHonored={isLive}
               accessMode={accessMode}
               onAccessModeChange={handleAccessModeChange}
+              onReloadFrame={() => void loadFrame()}
             />
             <FrameGraph
               frame={frame}

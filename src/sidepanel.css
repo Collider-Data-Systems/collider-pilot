@@ -1146,6 +1146,69 @@ body {
   color: var(--accent-hover);
 }
 
+/* Identity control (A3) — set the trusted `pilot.access` identity from the UI. */
+.gc-identity {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border-light);
+}
+.gc-identity-hint {
+  margin-bottom: 6px;
+  padding: 4px 7px;
+  font-size: 10px;
+  color: var(--warning);
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: var(--radius-sm);
+}
+.gc-identity-summary {
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+.gc-identity-summary::-webkit-details-marker {
+  display: none;
+}
+.gc-identity-summary::before {
+  content: "▸ ";
+  color: var(--text-muted);
+}
+.gc-identity-disclosure[open] > .gc-identity-summary::before {
+  content: "▾ ";
+}
+.gc-identity-urn {
+  color: var(--accent-hover);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.gc-identity-none {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.gc-identity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.gc-identity-body .gc-field {
+  width: 100%;
+}
+.gc-identity-actions {
+  display: flex;
+  gap: 8px;
+}
+.gc-identity-body .gc-note code {
+  font-family: var(--mono);
+}
+
 /* ACCESS resolution row + honest tier badge (A3). */
 .prov-badge.access-tier {
   font-family: var(--mono);
