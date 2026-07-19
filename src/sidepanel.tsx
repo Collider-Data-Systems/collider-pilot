@@ -49,6 +49,7 @@ import {
 } from "./components/GraphControls";
 import { NodeInspector } from "./components/NodeInspector";
 import { ActionsPanel } from "./components/ActionsPanel";
+import { PresenceStrip } from "./components/PresenceStrip";
 import { useFoldStream } from "./state/use-fold-stream";
 import {
   isPopOutSupported,
@@ -464,6 +465,13 @@ function SidePanel() {
               focusUrn={focusUrn}
               focusSignal={focusSignal}
             />
+            {/* P9 WebTransport spike: synthetic presence strip. Self-hides when the
+                pilot.wt flag is off / WebTransport is unavailable / the connect fails.
+                READ-ONLY, feature-flagged OFF by default; the reliable paths above are
+                untouched. */}
+            <ErrorBoundary>
+              <PresenceStrip />
+            </ErrorBoundary>
             <NodeInspector
               frame={frame}
               node={selectedNode}
