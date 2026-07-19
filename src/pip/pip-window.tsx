@@ -148,13 +148,15 @@ export function closePip(): void {
 }
 
 /**
- * Open (or focus) the mirror. MUST be called directly inside a user-gesture handler:
- * the Document-PiP `requestWindow()` is the first async op with NO `await` before it,
- * preserving the user-activation that API requires (criterion 1). If Document PiP is
- * unavailable OR rejects (side-panel context, no window), it FALLS BACK to a real
- * `chrome.windows.create` popup rendering pip.html — the universal path that works from
- * the side panel. The fallback needs no user activation (extension API), so running it in
- * the rejection handler is safe.
+ * Open (or focus) the mirror.
+ *
+ * PRIORITY (fixed after live diagnosis): when `chrome.windows` is available — i.e. we are
+ * in an extension, including the side panel — open a real `chrome.windows.create` popup
+ * FIRST. Document PiP does NOT work reliably from a side-panel context: `requestWindow()`
+ * neither opens a window nor rejects (it hangs), so a rejection-handler fallback never
+ * fires and Pop-out silently does nothing. The popup window is the universal, reliable
+ * path in the extension. Document PiP is only used when `chrome.windows` is absent (a
+ * non-extension realm, e.g. a full web-app build), and there it stays gesture-synchronous.
  */
 export function openPipMirror(opts: OpenPipOptions = {}): void {
   if (!isPopOutSupported()) return; // button is disabled in this case anyway
@@ -169,11 +171,17 @@ export function openPipMirror(opts: OpenPipOptions = {}): void {
   const width = opts.width ?? DEFAULT_WIDTH;
   const height = opts.height ?? DEFAULT_HEIGHT;
 
+  // Path A (extension, incl. side panel): reliable popup window — try this FIRST.
+  if (isChromeWindowsAvailable()) {
+    openPopupFallback(width, height, opts);
+    return;
+  }
+
   const dpip =
     typeof window !== "undefined" ? window.documentPictureInPicture : undefined;
 
-  // Path A: Document PiP first (works from a full-tab realm). Keep this SYNCHRONOUS in
-  // the gesture — do NOT await anything before requestWindow().
+  // Path B (non-extension realm): Document PiP. Keep SYNCHRONOUS in the gesture —
+  // do NOT await anything before requestWindow().
   if (isDocumentPipSupported() && dpip) {
     dpip
       .requestWindow({ width, height })
@@ -183,8 +191,7 @@ export function openPipMirror(opts: OpenPipOptions = {}): void {
         opts.onOpen?.();
       })
       .catch((err: unknown) => {
-        // Rejected (side-panel context / no window / unsupported) — fall back to a real
-        // popup window. No user activation is needed for chrome.windows.create.
+        // Rejected (no window / unsupported) — fall back to a popup window if possible.
         console.warn(
           "[pilot] Document PiP unavailable; falling back to popup window:",
           err,
