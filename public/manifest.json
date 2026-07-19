@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Collider Pilot",
+  "version": "0.1.0",
+  "description": "Read-only mo:os harness seat: projects a purpose-selected HG frame into a side panel. Phase 1 is mock-only (no model, no writes).",
+
+  "permissions": ["sidePanel", "storage", "activeTab"],
+
+  "host_permissions": ["http://localhost:8080/*", "http://localhost:8000/*"],
+
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+
+  "background": {
+    "service_worker": "worker.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_title": "Open Collider Pilot",
+    "default_icon": {
+      "16": "icons/pilot-16.png",
+      "32": "icons/pilot-32.png",
+      "48": "icons/pilot-48.png",
+      "128": "icons/pilot-128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/pilot-16.png",
+    "32": "icons/pilot-32.png",
+    "48": "icons/pilot-48.png",
+    "128": "icons/pilot-128.png"
+  }
+}

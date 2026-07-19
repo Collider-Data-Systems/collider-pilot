@@ -1,0 +1,149 @@
+/**
+ * Collider Pilot - side panel (the seat)
+ * ======================================
+ * Read-only Phase 1 shell. Asks the service worker for a mock frame, renders the
+ * provenance header + Cytoscape inspector + textual node inspector, and keeps
+ * selection/frame in chrome.storage.session so the panel restores after a forced
+ * service-worker termination. No model, no writes, no page access.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createRoot } from "react-dom/client";
+import type { HgFrame, PilotRequest, PilotResponse } from "./mcp/types";
+import { loadScratch, saveScratch } from "./state/scratch";
+import { ProvenanceHeader } from "./components/ProvenanceHeader";
+import { FrameGraph } from "./components/FrameGraph";
+import { NodeInspector } from "./components/NodeInspector";
+import "./sidepanel.css";
+
+type Status = "loading" | "ready" | "error";
+
+async function requestFrame(): Promise<PilotResponse> {
+  // Waking the worker with a message is what restarts it if it was terminated;
+  // the mock adapter answers identically each time (no lost state).
+  return (await chrome.runtime.sendMessage({
+    type: "GET_FRAME",
+  } as PilotRequest)) as PilotResponse;
+}
+
+function SidePanel() {
+  const [frame, setFrame] = useState<HgFrame | null>(null);
+  const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
+  const [status, setStatus] = useState<Status>("loading");
+  const [error, setError] = useState<string | null>(null);
+
+  const loadFrame = useCallback(async () => {
+    setStatus("loading");
+    setError(null);
+    try {
+      const res = await requestFrame();
+      if (res.type === "FRAME") {
+        setFrame(res.frame);
+        setStatus("ready");
+        // Cache to browser scratch; drop a stale selection not present in the frame.
+        setSelectedUrn((prev) => {
+          const stillThere =
+            prev && res.frame.nodes.some((n) => n.urn === prev) ? prev : null;
+          void saveScratch({ selectedUrn: stillThere, frame: res.frame });
+          return stillThere;
+        });
+      } else {
+        setStatus("error");
+        setError(res.error);
+      }
+    } catch (err) {
+      setStatus("error");
+      setError(String(err));
+    }
+  }, []);
+
+  // Mount: restore instantly from scratch (survives worker termination), then
+  // refresh from the worker.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const scratch = await loadScratch();
+      if (!cancelled && scratch.frame) {
+        setFrame(scratch.frame);
+        setSelectedUrn(scratch.selectedUrn);
+        setStatus("ready");
+      }
+      await loadFrame();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadFrame]);
+
+  const handleSelect = useCallback(
+    (urn: string | null) => {
+      setSelectedUrn(urn);
+      if (frame) void saveScratch({ selectedUrn: urn, frame });
+    },
+    [frame],
+  );
+
+  const selectedNode = useMemo(
+    () => frame?.nodes.find((n) => n.urn === selectedUrn) ?? null,
+    [frame, selectedUrn],
+  );
+
+  return (
+    <div className="pilot-container">
+      <header className="pilot-header">
+        <div className="header-left">
+          <span
+            className={`status-dot ${status === "ready" ? "connected" : status === "error" ? "disconnected" : ""}`}
+            title={status}
+          />
+          <h1>Collider Pilot</h1>
+          <span className="header-sub">read-only · mock</span>
+        </div>
+        <div className="header-right">
+          <button
+            className="icon-btn"
+            onClick={() => void loadFrame()}
+            title="Reload frame (re-asks the worker; proves restart resilience)"
+          >
+            ⟳
+          </button>
+        </div>
+      </header>
+
+      {frame && <ProvenanceHeader provenance={frame.provenance} />}
+
+      <main className="pilot-body">
+        {status === "loading" && !frame && (
+          <div className="pilot-state">Loading mock frame…</div>
+        )}
+        {status === "error" && !frame && (
+          <div className="pilot-state error">
+            Could not load frame: {error}
+            <button className="retry-btn" onClick={() => void loadFrame()}>
+              Retry
+            </button>
+          </div>
+        )}
+        {frame && (
+          <>
+            <FrameGraph
+              frame={frame}
+              selectedUrn={selectedUrn}
+              onSelect={handleSelect}
+            />
+            <NodeInspector
+              frame={frame}
+              node={selectedNode}
+              onSelect={handleSelect}
+            />
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
+
+const container = document.getElementById("root");
+if (container) {
+  createRoot(container).render(<SidePanel />);
+}
