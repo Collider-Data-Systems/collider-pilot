@@ -1,0 +1,56 @@
+{
+  "_comment": "Sam-gated write — makes anon HG-native/authoritative. NOT applied by the read-only pilot. The collider-pilot NEVER emits a rewrite; this file is a STAGED artifact for Sam to review + gate through the normal apply path (mcp apply_program / POST /programs on the Z440 primary engine). It is the bridge from the A3 presentation tier (client-side PUBLIC_WORKSPACE_DEFAULTS in src/mcp/access.js) to a real, folded anon principal + an anon-visible workspace property. Envelope shapes follow the ffs0/dev/scripts/ops/*.program.json convention (ADD: node_urn/type_id/properties{value,mutability,authority_scope,stratum_origin}; MUTATE: target_urn/field/new_value).",
+  "staged": true,
+  "applied": false,
+  "apply_ready": false,
+  "target_engine": "urn:moos:kernel:hp-z440.primary",
+  "prerequisite": "The second envelope (MUTATE anon_visible) sets a property that is NOT in the current operad (session has no anon_visible / visibility property in ontology 4.0.2). It will fail operad validation UNTIL an additive grammar_fragment declares session.anon_visible (mutable, authority_scope owner) and it is promoted/merged — same additive path as the 4.0 D5/D7 bumps. Land that grammar_fragment first, or drop the second envelope and rely on the presentation-tier default. Sam chooses the designated public workspace; sam.z440-cowork-workspace is a PLACEHOLDER candidate (the Cowork demo seat) — confirm it is genuinely safe to expose publicly before applying.",
+  "envelopes": [
+    {
+      "rewrite_type": "ADD",
+      "actor": "urn:moos:kernel:hp-z440.primary",
+      "node_urn": "urn:moos:user:anon",
+      "type_id": "user",
+      "properties": {
+        "name": {
+          "value": "Anonymous user",
+          "mutability": "immutable",
+          "authority_scope": "",
+          "stratum_origin": 2
+        },
+        "subject_urn": {
+          "value": "urn:moos:user:anon",
+          "mutability": "immutable",
+          "authority_scope": "",
+          "stratum_origin": 2
+        },
+        "owner_urn": {
+          "value": "urn:moos:user:sam",
+          "mutability": "immutable",
+          "authority_scope": "",
+          "stratum_origin": 2
+        },
+        "text": {
+          "value": "First-class anonymous principal for access-parametrized provenance (A3). The default + fail-closed identity: an unidentified reader resolves to this user and sees only anon-visible workspaces. Modeled as HG-native so anon is a visible participant in role_topology/scope, never a silent empty. Governs nothing; occupies nothing.",
+          "mutability": "mutable",
+          "authority_scope": "owner",
+          "stratum_origin": 2
+        },
+        "created_at": {
+          "value": "2026-07-19T00:00:00Z",
+          "mutability": "immutable",
+          "authority_scope": "",
+          "stratum_origin": 2
+        }
+      }
+    },
+    {
+      "rewrite_type": "MUTATE",
+      "actor": "urn:moos:kernel:hp-z440.primary",
+      "target_urn": "urn:moos:session:sam.z440-cowork-workspace",
+      "field": "anon_visible",
+      "new_value": true,
+      "_note": "REQUIRES the session.anon_visible property declaration (see prerequisite). Once applied, src/mcp/access.js publicWorkspaces() folds this workspace into the anon-visible set with NO client-side default — the presentation tier becomes authoritative-backed. Sam-chosen workspace: confirm before applying."
+    }
+  ]
+}

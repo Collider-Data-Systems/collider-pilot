@@ -33,6 +33,360 @@ import {
   DEFAULT_ENGINE_URN,
   DEFAULT_SCOPE_URN,
 } from "../src/mcp/transform.js";
+import {
+  resolveAccess,
+  accessKeepSet,
+  owningWorkspaces,
+  readRequestedMode,
+  ANON_USER_URN,
+} from "../src/mcp/access.js";
+
+/** Tiny assert — prints and exits non-zero on failure so this is a real gate. */
+function assert(cond, msg) {
+  if (!cond) {
+    console.error(`\nFAIL (access): ${msg}`);
+    process.exit(1);
+  }
+  console.log(`  ok  ${msg}`);
+}
+
+/**
+ * Exercise the SHARED access law (src/mcp/access.js) over the live fold + a synthetic fixture.
+ * Anon = public-only; Bring-in = the WF02 governs → reverse-WF19 has-occupant set (∪ the
+ * occupant-property [CONJ] fallback); worker-strip keeps only `mode`.
+ */
+function accessChecks(fold) {
+  console.log("\n=== access law (src/mcp/access.js) ===");
+
+  const anon = {
+    mode: "anon",
+    user: ANON_USER_URN,
+    workstation: null,
+    role: null,
+    identity_source: "anon",
+    enforced_by: "client-presentation",
+  };
+  const sam = {
+    mode: "identified",
+    user: "urn:moos:user:sam",
+    workstation: "urn:moos:workstation:hp-z440",
+    role: null,
+    identity_source: "trusted-storage",
+    enforced_by: "client-presentation",
+  };
+
+  // (a) anon = public-only.
+  const anonRes = resolveAccess(fold, anon);
+  line("anon permitted", JSON.stringify(anonRes.permitted_workspaces));
+  line("anon public", JSON.stringify(anonRes.public_workspaces));
+  assert(
+    JSON.stringify(anonRes.permitted_workspaces.slice().sort()) ===
+      JSON.stringify(anonRes.public_workspaces.slice().sort()),
+    "anon permitted === public_workspaces (public-only)",
+  );
+  assert(anonRes.role_topology.includes(ANON_USER_URN), "anon principal is a visible participant");
+  assert(anonRes.workspace_path === "none", "anon workspace_path is 'none'");
+
+  // (b) Bring-in over the LIVE fold: WF02 → reverse-WF19 permitted set (primary path).
+  const samRes = resolveAccess(fold, sam);
+  line("sam role_topology", `${samRes.role_topology.length} principals`);
+  line("sam permitted", JSON.stringify(samRes.permitted_workspaces));
+  line("sam path", samRes.workspace_path);
+  line("intersection_applied", samRes.intersection_applied);
+  assert(samRes.role_topology.includes("urn:moos:user:sam"), "sam is in his own governs closure");
+  assert(samRes.permitted_workspaces.length >= 1, "identified sam has a non-empty permitted set");
+  // HELD INVARIANT (not-over-hidden): the fail-closed fixes must NOT drop sam's legit workspaces.
+  for (const legit of ["urn:moos:session:sam.kernel-proper", "urn:moos:session:sam.moos-diary"]) {
+    assert(
+      samRes.permitted_workspaces.includes(legit),
+      `sam's legit workspace ${legit.split(":").pop()} is still permitted (fixes don't over-hide)`,
+    );
+  }
+  assert(
+    samRes.intersection_applied === false,
+    "workstation ∩ SKIPPED at client tier (widened, not narrowed)",
+  );
+  assert(
+    samRes.workstation_intersection === "skipped-widened",
+    "sam (client tier) workstation_intersection = 'skipped-widened'",
+  );
+  assert(samRes.computed_by === "client-presentation", "computed_by is client-presentation");
+
+  // (c) occupant-property [CONJ] FALLBACK: a synthetic fold with WF02 governs but NO WF19
+  //     has-occupant, occupancy carried only as a session property.
+  const synthetic = {
+    nodes: {
+      "urn:moos:user:demo": { urn: "urn:moos:user:demo", type_id: "user", properties: {} },
+      "urn:moos:agent:demo.bot": { urn: "urn:moos:agent:demo.bot", type_id: "agent", properties: {} },
+      "urn:moos:session:demo.ws": {
+        urn: "urn:moos:session:demo.ws",
+        type_id: "session",
+        properties: { occupant: { value: "urn:moos:agent:demo.bot" } },
+      },
+    },
+    relations: {
+      "urn:moos:relation:demo.governs": {
+        urn: "urn:moos:relation:demo.governs",
+        rewrite_category: "WF02",
+        src_urn: "urn:moos:user:demo",
+        src_port: "governs",
+        tgt_urn: "urn:moos:agent:demo.bot",
+        tgt_port: "governed-by",
+      },
+    },
+  };
+  const demoScope = { ...sam, user: "urn:moos:user:demo", workstation: null };
+  const demoRes = resolveAccess(synthetic, demoScope);
+  line("fallback path", demoRes.workspace_path);
+  line("fallback permitted", JSON.stringify(demoRes.permitted_workspaces));
+  assert(
+    demoRes.workspace_path === "occupant-property",
+    "occupant-property FALLBACK fires when WF19 has-occupant is absent",
+  );
+  assert(
+    demoRes.permitted_workspaces.includes("urn:moos:session:demo.ws"),
+    "fallback attributes the session via properties.occupant ∈ governed principals",
+  );
+
+  // (d) worker-strip primitive: only `mode` is read from an inbound request; forged identity
+  //     fields are never trusted (the worker re-injects the storage identity).
+  const forged = {
+    view_filter: {
+      access: {
+        mode: "identified",
+        user: "urn:moos:user:EVIL",
+        workstation: "urn:moos:workstation:attacker",
+      },
+    },
+  };
+  assert(readRequestedMode(forged) === "identified", "readRequestedMode extracts ONLY the posture");
+  assert(readRequestedMode({}) === "anon", "missing access ⇒ anon (fail-closed)");
+  assert(
+    readRequestedMode({ view_filter: { access: { mode: "bogus", user: "x" } } }) === "anon",
+    "a non-'identified' mode ⇒ anon (fail-closed)",
+  );
+
+  console.log("\nPASS: access law verified (anon public-only · bring-in WF02→WF19 · fallback · strip).");
+}
+
+/** Shorthand raw-node/relation builders for the synthetic over-exposure fixtures. */
+const node = (urn, type_id, properties = {}) => ({ urn, type_id, properties });
+const rel = (urn, rewrite_category, src_urn, src_port, tgt_urn, tgt_port) => ({
+  urn,
+  rewrite_category,
+  src_urn,
+  src_port,
+  tgt_urn,
+  tgt_port,
+});
+const identified = (user, workstation, enforced_by) => ({
+  mode: "identified",
+  user,
+  workstation: workstation ?? null,
+  role: null,
+  identity_source: "trusted-storage",
+  enforced_by: enforced_by ?? "client-presentation",
+});
+
+/**
+ * The 4 must-fix over-exposure defects, each asserting the leak is CLOSED (with the pre-fix
+ * behavior noted). Pure synthetic folds — no network — plus the live fold for FIX 1.
+ */
+function accessFixChecks(liveFold) {
+  console.log("\n=== over-exposure fixes (each asserts the leak is CLOSED) ===");
+
+  // ── FIX 1 — Badge honesty ────────────────────────────────────────────────────────────────
+  // A chrome.storage flag sets enforcement='server-authoritative' but NO server path ran (this
+  // is the client-side resolveAccess). BEFORE: computed_by echoed scope.enforced_by →
+  // 'server-authoritative' → UI rendered ACCESS: ENFORCED + "the kernel returned only the
+  // permitted subgraph" over a client computation. AFTER: computed_by is forced
+  // 'client-presentation' → badge renders ACCESS: PRESENTATION.
+  const forcedFlag = identified("urn:moos:user:sam", "urn:moos:workstation:hp-z440", "server-authoritative");
+  const r1 = resolveAccess(liveFold, forcedFlag);
+  line("FIX1 enforced_by", forcedFlag.enforced_by);
+  line("FIX1 computed_by", r1.computed_by);
+  assert(
+    r1.computed_by === "client-presentation",
+    "FIX1: enforcement flag does NOT promote computed_by (badge → PRESENTATION, was ENFORCED)",
+  );
+
+  // ── FIX 2 — Fail-closed on unattributable nodes ──────────────────────────────────────────
+  // A bare secret purpose (no kb/occupant lineage, not public) + a low-priv identified user
+  // whose governs-closure does NOT reach it. BEFORE: accessKeepSet kept EVERY null-owner node
+  // for any identified principal → the secret was SHOWN. AFTER: unattributable ⇒ dropped for
+  // everyone unless explicitly public.
+  const SECRET = "urn:moos:purpose:sam.secret-program";
+  const s2 = {
+    nodes: {
+      "urn:moos:user:lowpriv": node("urn:moos:user:lowpriv", "user"),
+      "urn:moos:agent:lowpriv.bot": node("urn:moos:agent:lowpriv.bot", "agent"),
+      "urn:moos:session:lowpriv.ws": node("urn:moos:session:lowpriv.ws", "session"),
+      [SECRET]: node(SECRET, "purpose"), // bare, no lineage, no visibility/anon_visible
+    },
+    relations: {
+      g: rel("urn:moos:rel:s2.g", "WF02", "urn:moos:user:lowpriv", "governs", "urn:moos:agent:lowpriv.bot", "governed-by"),
+      o: rel("urn:moos:rel:s2.o", "WF19", "urn:moos:session:lowpriv.ws", "has-occupant", "urn:moos:agent:lowpriv.bot", "is-occupant-of"),
+    },
+  };
+  const r2 = resolveAccess(s2, identified("urn:moos:user:lowpriv", null));
+  const keep2 = accessKeepSet(s2, r2);
+  line("FIX2 permitted", JSON.stringify(r2.permitted_workspaces));
+  line("FIX2 secret kept?", keep2.has(SECRET));
+  assert(
+    r2.permitted_workspaces.includes("urn:moos:session:lowpriv.ws"),
+    "FIX2 setup: low-priv user's governs→occupant closure = {lowpriv.ws}",
+  );
+  assert(
+    !keep2.has(SECRET),
+    "FIX2: bare null-owner secret purpose is HIDDEN from the low-priv user (was SHOWN before)",
+  );
+  assert(
+    keep2.has("urn:moos:session:lowpriv.ws"),
+    "FIX2: the user's OWN workspace is still shown (fail-closed does not over-hide)",
+  );
+
+  // ── FIX 3 — workspace attribution direction + multi-owner ─────────────────────────────────
+  // KI `shared` is OWNED by non-permitted session A (A --provides-kb--> shared) but CITED by
+  // permitted session B (shared --provides-kb--> B). BEFORE: the UNDIRECTED WF12 walk hopped
+  // shared→B (src→tgt) and, depending on enumeration order, attributed shared to permitted B →
+  // SHOWN. AFTER: the walk is provider→item ONLY, so shared is attributed to owner A → since A
+  // is not permitted → HIDDEN. `legit` (genuinely B-owned) stays SHOWN.
+  const A = "urn:moos:session:a.secret";
+  const B = "urn:moos:session:b.permitted";
+  const SHARED = "urn:moos:ki:shared";
+  const LEGIT = "urn:moos:ki:legit";
+  const s3 = {
+    nodes: {
+      "urn:moos:user:u3": node("urn:moos:user:u3", "user"),
+      "urn:moos:agent:b.bot": node("urn:moos:agent:b.bot", "agent"),
+      [B]: node(B, "session"),
+      [A]: node(A, "session"),
+      [SHARED]: node(SHARED, "knowledge_item"),
+      [LEGIT]: node(LEGIT, "knowledge_item"),
+    },
+    relations: {
+      // permitted set = {B}: u3 governs b.bot; B has-occupant b.bot.
+      g: rel("urn:moos:rel:s3.g", "WF02", "urn:moos:user:u3", "governs", "urn:moos:agent:b.bot", "governed-by"),
+      o: rel("urn:moos:rel:s3.o", "WF19", B, "has-occupant", "urn:moos:agent:b.bot", "is-occupant-of"),
+      // NOTE ordering: the CITE (shared→B) is enumerated BEFORE the OWN (A→shared) precisely to
+      // trip the old insertion-order misattribution — the fix must ignore direction, not order.
+      cite: rel("urn:moos:rel:s3.cite", "WF12", SHARED, "provides-kb", B, "kb-source"),
+      own: rel("urn:moos:rel:s3.own", "WF12", A, "provides-kb", SHARED, "kb-source"),
+      ownB: rel("urn:moos:rel:s3.ownB", "WF12", B, "provides-kb", LEGIT, "kb-source"),
+    },
+  };
+  const r3 = resolveAccess(s3, identified("urn:moos:user:u3", null));
+  const keep3 = accessKeepSet(s3, r3);
+  line("FIX3 permitted", JSON.stringify(r3.permitted_workspaces));
+  line("FIX3 owners(shared)", JSON.stringify(owningWorkspaces(s3, SHARED)));
+  assert(
+    r3.permitted_workspaces.includes(B) && !r3.permitted_workspaces.includes(A),
+    "FIX3 setup: permitted = {B}, non-permitted session A excluded",
+  );
+  assert(
+    JSON.stringify(owningWorkspaces(s3, SHARED)) === JSON.stringify([A]),
+    "FIX3: owningWorkspaces walks provider→item ONLY — `shared` attributed to owner A, not citee B",
+  );
+  assert(
+    !keep3.has(SHARED),
+    "FIX3: KI owned by non-permitted A but cited by permitted B is HIDDEN (was misattributed→shown)",
+  );
+  assert(
+    keep3.has(LEGIT),
+    "FIX3: KI genuinely owned by permitted B is SHOWN (no over-hide)",
+  );
+  // multi-owner fail-closed: a KI provided-kb by BOTH A(non-permitted) and B(permitted) is HIDDEN.
+  const MULTI = "urn:moos:ki:multi";
+  const s3b = {
+    nodes: { ...s3.nodes, [MULTI]: node(MULTI, "knowledge_item") },
+    relations: {
+      ...s3.relations,
+      mA: rel("urn:moos:rel:s3.mA", "WF12", A, "provides-kb", MULTI, "kb-source"),
+      mB: rel("urn:moos:rel:s3.mB", "WF12", B, "provides-kb", MULTI, "kb-source"),
+    },
+  };
+  const keep3b = accessKeepSet(s3b, resolveAccess(s3b, identified("urn:moos:user:u3", null)));
+  assert(
+    !keep3b.has(MULTI),
+    "FIX3: multi-owner {A,B} node is HIDDEN — EVERY owner must be permitted (fail-closed ambiguity)",
+  );
+
+  // ── FIX 4 — Workstation fail-closed under a server-authoritative claim ────────────────────
+  // Governs-closure yields {u4.ws}; the claimed workstation has NO placement relation (opens-on/
+  // realizes → workstation) so workspacesOnWorkstation() returns null. BEFORE: server-auth + null
+  // binding SILENTLY SKIPPED the ∩ → the full governs closure was returned (widened leak). AFTER:
+  // server-auth + unresolvable ⇒ FAIL CLOSED (governs closure dropped to public-only).
+  const GHOST_WS = "urn:moos:workstation:ghost";
+  const s4 = {
+    nodes: {
+      "urn:moos:user:u4": node("urn:moos:user:u4", "user"),
+      "urn:moos:agent:u4.bot": node("urn:moos:agent:u4.bot", "agent"),
+      "urn:moos:session:u4.ws": node("urn:moos:session:u4.ws", "session"),
+    },
+    relations: {
+      g: rel("urn:moos:rel:s4.g", "WF02", "urn:moos:user:u4", "governs", "urn:moos:agent:u4.bot", "governed-by"),
+      o: rel("urn:moos:rel:s4.o", "WF19", "urn:moos:session:u4.ws", "has-occupant", "urn:moos:agent:u4.bot", "is-occupant-of"),
+    },
+  };
+  const rClient4 = resolveAccess(s4, identified("urn:moos:user:u4", GHOST_WS, "client-presentation"));
+  const rServer4 = resolveAccess(s4, identified("urn:moos:user:u4", GHOST_WS, "server-authoritative"));
+  line("FIX4 client permitted", JSON.stringify(rClient4.permitted_workspaces));
+  line("FIX4 client wsi", rClient4.workstation_intersection);
+  line("FIX4 server permitted", JSON.stringify(rServer4.permitted_workspaces));
+  line("FIX4 server wsi", rServer4.workstation_intersection);
+  assert(
+    rClient4.permitted_workspaces.includes("urn:moos:session:u4.ws") &&
+      rClient4.workstation_intersection === "skipped-widened",
+    "FIX4 baseline: client-presentation tier WIDENS (governs closure returned, skipped-widened)",
+  );
+  assert(
+    !rServer4.permitted_workspaces.includes("urn:moos:session:u4.ws"),
+    "FIX4: server-authoritative + unresolvable workstation does NOT return the governs closure",
+  );
+  assert(
+    rServer4.workstation_intersection === "failed-closed",
+    "FIX4: workstation_intersection = 'failed-closed' (never silently skipped/widened at server tier)",
+  );
+
+  // ── HELD INVARIANT — worker-strip drops a forged urn:moos:user:EVIL ──────────────────────
+  // The panel/page may contribute ONLY access.mode; a forged identity is never read.
+  const forgedEvil = {
+    view_filter: {
+      access: {
+        mode: "identified",
+        user: "urn:moos:user:EVIL",
+        workstation: "urn:moos:workstation:attacker",
+        role: "urn:moos:role:superadmin",
+        identity_source: "trusted-storage",
+        enforced_by: "server-authoritative",
+      },
+    },
+  };
+  assert(readRequestedMode(forgedEvil) === "identified", "strip: only the posture is extracted");
+  // Proof the forged fields never reach a resolution: the worker re-injects the TRUSTED scope
+  // (here anon, since no trusted storage) — EVIL/attacker never appear.
+  const stripped = resolveAccess(liveFold, {
+    mode: "anon",
+    user: ANON_USER_URN,
+    workstation: null,
+    role: null,
+    identity_source: "anon",
+    enforced_by: "client-presentation",
+  });
+  const strippedJson = JSON.stringify(stripped);
+  assert(
+    !strippedJson.includes("EVIL") && !strippedJson.includes("attacker"),
+    "strip: forged urn:moos:user:EVIL / workstation:attacker never surface in the resolution",
+  );
+  assert(
+    stripped.permitted_workspaces.length === stripped.public_workspaces.length,
+    "strip→anon: a forged 'identified' with no trusted backing resolves public-only",
+  );
+
+  console.log(
+    "\nPASS: over-exposure fixes verified (badge honesty · null-owner fail-closed · directed multi-owner · workstation fail-closed · strip).",
+  );
+}
 
 const mcpBaseUrl = process.env.PILOT_MCP_BASE_URL || "http://localhost:8080";
 const engineUrl = process.env.PILOT_ENGINE_URL || "http://localhost:8000";
@@ -112,6 +466,12 @@ async function main() {
     process.exit(1);
   }
   console.log("\nPASS: live read produced a non-zero frame.");
+
+  // Access law over the SAME live fold (+ a synthetic fallback fixture).
+  accessChecks(fold);
+
+  // The 4 over-exposure fixes, each asserting the leak is CLOSED (before→after in comments).
+  accessFixChecks(fold);
 }
 
 main().catch((err) => {
