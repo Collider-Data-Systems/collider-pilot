@@ -16,7 +16,7 @@ import { ProvenanceHeader } from "./components/ProvenanceHeader";
 import { FrameGraph } from "./components/FrameGraph";
 import { NodeInspector } from "./components/NodeInspector";
 import {
-  isDocumentPipSupported,
+  isPopOutSupported,
   isPipOpen,
   focusPip,
   openPipMirror,
@@ -38,8 +38,10 @@ function SidePanel() {
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
-  // Feature-detect Document PiP once (criterion 6). Unsupported ⇒ button disabled.
-  const [pipSupported] = useState(() => isDocumentPipSupported());
+  // Feature-detect Pop-out once (criterion 6). Enabled whenever EITHER Document PiP or
+  // chrome.windows is available — in the extension that's always, so the button always
+  // opens SOMETHING (Document PiP, or the chrome.windows popup fallback from the panel).
+  const [popOutSupported] = useState(() => isPopOutSupported());
   const [pipOpen, setPipOpen] = useState(false);
 
   const loadFrame = useCallback(async () => {
@@ -120,7 +122,7 @@ function SidePanel() {
   // Open (or focus) the Document PiP mirror. The click IS the user gesture — call
   // openPipMirror synchronously so requestWindow() runs with a valid activation.
   const handlePopOut = useCallback(() => {
-    if (!pipSupported) return;
+    if (!popOutSupported) return;
     if (isPipOpen()) {
       focusPip();
       return;
@@ -129,7 +131,7 @@ function SidePanel() {
       onOpen: () => setPipOpen(true),
       onClose: () => setPipOpen(false),
     });
-  }, [pipSupported]);
+  }, [popOutSupported]);
 
   const selectedNode = useMemo(
     () => frame?.nodes.find((n) => n.urn === selectedUrn) ?? null,
@@ -145,19 +147,21 @@ function SidePanel() {
             title={status}
           />
           <h1>Collider Pilot</h1>
-          <span className="header-sub">read-only · mock</span>
+          <span className="header-sub">
+            read-only · {frame && frame.provenance.mock === false ? "live" : "mock"}
+          </span>
         </div>
         <div className="header-right">
           <button
             className={`pip-btn ${pipOpen ? "is-active" : ""}`}
             onClick={handlePopOut}
-            disabled={!pipSupported}
+            disabled={!popOutSupported}
             title={
-              pipSupported
+              popOutSupported
                 ? pipOpen
-                  ? "PiP mirror is open — click to focus it"
-                  : "Pop out a Document Picture-in-Picture mirror of this frame"
-                : "Document PiP not supported in this browser"
+                  ? "Mirror window is open — click to focus it"
+                  : "Pop out a mirror window of this frame"
+                : "Pop-out is unavailable in this context"
             }
           >
             Pop out ⧉
