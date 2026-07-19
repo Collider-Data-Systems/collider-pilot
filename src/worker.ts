@@ -10,21 +10,38 @@
  *
  *   2. Answer GET_FRAME with a mock frame via the MCP adapter.
  *
- * There are NO correctness-critical service-worker globals. The adapter is pure and
- * stateless, so a worker terminated between request and response restarts and
- * re-answers identically. Durable UI state (selected node, cached frame) lives in
- * chrome.storage.session, owned by the side panel — not here.
+ * There are NO correctness-critical service-worker globals. Both adapters are effectively
+ * stateless (the live one holds no session — the server is stateless per request), so a
+ * worker terminated between request and response restarts and re-answers. Durable UI
+ * state (selected node, cached frame) lives in chrome.storage.session, owned by the side
+ * panel — not here.
+ *
+ * Phase 2: the adapter is chosen at runtime by src/mcp/adapter-factory.ts. The EXTENSION
+ * defaults to the LIVE StreamableHttpMcpAdapter (read-only MCP over :8080 + REST :8000);
+ * 'mock' remains selectable via VITE_PILOT_ADAPTER_MODE or chrome.storage.local. Still
+ * READ-ONLY: only graph_state / node_lookup / healthz / state are ever called — no apply.
  *
  * Stripped from the legacy scaffold (per #158): Gemini SDK, API-key/auth-token
- * handling, page-provided secret relay, ad-hoc ```tool``` parser, old :8000 backend
- * fetch, global broadcast, and all in-memory chat/model/context state.
+ * handling, page-provided secret relay, ad-hoc ```tool``` parser, global broadcast, and
+ * all in-memory chat/model/context state.
  */
 
-import type { PilotRequest, PilotResponse } from "./mcp/types";
-import { MockMcpAdapter } from "./mcp/mock-adapter";
+import type { McpAdapter, PilotRequest, PilotResponse } from "./mcp/types";
+import { createAdapter, resolveAdapterMode } from "./mcp/adapter-factory";
 
-// Phase 1: mock adapter. Phase 2 seam -> new StreamableHttpMcpAdapter().
-const adapter = new MockMcpAdapter();
+// Lazily resolve the adapter (mode = build-time default 'live', overridable via storage),
+// then memoize it. No correctness-critical global: if the worker is terminated, the next
+// message rebuilds it identically.
+let adapterPromise: Promise<McpAdapter> | null = null;
+function getAdapter(): Promise<McpAdapter> {
+  if (!adapterPromise) {
+    adapterPromise = resolveAdapterMode().then((mode) => {
+      console.log(`[pilot] adapter mode: ${mode}`);
+      return createAdapter(mode);
+    });
+  }
+  return adapterPromise;
+}
 
 // No popup is configured, so let onClicked drive panel opening explicitly.
 chrome.sidePanel
@@ -50,11 +67,14 @@ chrome.runtime.onMessage.addListener(
     sendResponse: (response: PilotResponse) => void,
   ): boolean => {
     if (message?.type === "GET_FRAME") {
-      adapter
-        .getFrame(message.request)
+      getAdapter()
+        .then((adapter) => adapter.getFrame(message.request))
         .then((frame) => sendResponse({ type: "FRAME", frame }))
         .catch((err: unknown) =>
-          sendResponse({ type: "ERROR", error: String(err) }),
+          sendResponse({
+            type: "ERROR",
+            error: err instanceof Error ? err.message : String(err),
+          }),
         );
       return true; // keep the message channel open for the async response
     }
@@ -63,7 +83,9 @@ chrome.runtime.onMessage.addListener(
 );
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("[pilot] service worker installed (Phase 1: read-only, mock frame)");
+  console.log(
+    "[pilot] service worker installed (Phase 2: read-only; live MCP by default)",
+  );
 });
 
 console.log("[pilot] service worker started");

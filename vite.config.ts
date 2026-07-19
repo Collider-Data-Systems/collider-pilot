@@ -3,11 +3,14 @@ import react from "@vitejs/plugin-react";
 
 // MV3 extension build.
 //
-// Two independent entry points:
-//   - sidepanel.html  -> the extension-owned side-panel React app (the "seat").
-//   - src/worker.ts   -> the MV3 service worker (module worker).
+// Entry points:
+//   - sidepanel.html      -> the extension-owned side-panel React app (the "seat").
+//   - src/worker.ts       -> the MV3 service worker (module worker).
+//   - preview.html        -> dev/CI harness on the MOCK adapter (Phase 1).
+//   - preview-live.html   -> dev/CI harness on the LIVE StreamableHttpMcpAdapter (Phase 2).
 //
-// Inputs are relative to the project root (Vite resolves them against `root`).
+// The preview* entries are dev harnesses (not part of the loaded extension), built here
+// only so CI type-checks + bundles them. Inputs are relative to the project root.
 //
 // The service worker is emitted at a STABLE, unhashed path (dist/worker.js) so the
 // manifest can reference it directly. Everything the side panel needs (React,
@@ -30,6 +33,8 @@ export default defineConfig({
       input: {
         sidepanel: "sidepanel.html",
         worker: "src/worker.ts",
+        preview: "preview.html",
+        "preview-live": "preview-live.html",
       },
       output: {
         entryFileNames: (chunk) =>
