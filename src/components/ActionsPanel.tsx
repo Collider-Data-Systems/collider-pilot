@@ -1,25 +1,31 @@
 /**
- * Collider Pilot - Actions section (Phase 4)
- * ==========================================
- * The side-panel section that mounts the FIRST apply capability. It:
+ * Collider Pilot - Actions section (Phase 4 + Phase 7 LLM)
+ * =======================================================
+ * The side-panel section that mounts the apply capability. It:
  *   - projects the actor/workspace/purpose affordance pack (live tools/list or mock),
- *   - offers a provider-neutral model selector (default 'manual'; a seam, no calls),
+ *   - offers a REAL model selector (Phase 7; default ollama-local, on-box, keyless) + an
+ *     "ask the model" box: the model PROPOSES one structured tool call, which is then GATED
+ *     exactly like a hand-composed act,
  *   - exposes the two curated mutating acts, each behind the confirmation UI:
  *       1. copy_urn_to_clipboard — a harmless BROWSER act (executes on Confirm),
  *       2. pin_ki_to_workspace  — a REVIEW-ONLY HG rewrite preview (reveals on Confirm),
  *   - lists the discovered catalog for transparency (read + gated mutate; not actionable).
  *
- * SAFETY: every mutating path passes through `openAction` → the confirmation modal →
- * `resolve`. There is no code path that reaches an act without a Confirm. The HG act only
- * ever builds/reveals a preview; it has no posting path. Actions are PANEL-ONLY — the PiP
- * mirror never mounts this (it stays read/observe); a note states so.
+ * SAFETY: every mutating path — whether a button or a model proposal — passes through
+ * `dispatchProposal`/`openAction` → `validateToolCall` → the confirmation modal → `resolve`.
+ * There is no code path that reaches a mutate without a Confirm. The LLM only PROPOSES; a
+ * malformed/hallucinated call is rejected by validateToolCall, never executed. The HG act
+ * only ever builds/reveals a preview; it has no posting path. Cloud egress (Phase 7) is
+ * gated on the A3 access resolution — an anon frame never sends a prompt to a cloud model;
+ * the on-box Ollama endpoint is always allowed. Actions are PANEL-ONLY — the PiP mirror
+ * never mounts this (it stays read/observe); a note states so.
  *
  * Defensive + ErrorBoundary-wrapped: guarded fields, and the parent wraps this subtree.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { HgFrame, RawMcpTool } from "../mcp/types";
-import type { PendingAction, ToolSpec } from "../tools/types";
+import type { PendingAction, ToolCall, ToolSpec } from "../tools/types";
 import {
   CLIPBOARD_TOOL,
   PIN_PREVIEW_TOOL,
@@ -39,9 +45,16 @@ import {
   DEFAULT_PROVIDER_ID,
   MODEL_PROVIDERS,
   getProvider,
-  hasWebGpu,
+  isCloudProvider,
+  isModelProvider,
   isProviderAvailable,
+  providerDefaultModel,
+  resolveModelName,
+  resolveProviderId,
+  saveModelName,
+  saveProviderId,
 } from "../tools/model-providers";
+import { evaluateEgress, proposeToolCall } from "../tools/llm-provider";
 import { ConfirmActionModal } from "./ConfirmActionModal";
 
 export interface ActionsPanelProps {
@@ -78,11 +91,44 @@ export function ActionsPanel({
 
   const [providerId, setProviderId] = useState<string>(DEFAULT_PROVIDER_ID);
   const provider = getProvider(providerId);
+  const [modelName, setModelName] = useState<string>(() =>
+    providerDefaultModel(getProvider(DEFAULT_PROVIDER_ID)),
+  );
 
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [resolving, setResolving] = useState(false);
   const [result, setResult] = useState<ActResult | null>(null);
   const [preview, setPreview] = useState<HgProgramPreview | null>(null);
+
+  // Phase 7 LLM state (all panel-local).
+  const [llmText, setLlmText] = useState<string>("");
+  const [llmBusy, setLlmBusy] = useState(false);
+  const [llmNotice, setLlmNotice] = useState<ActResult | null>(null);
+  const [proposed, setProposed] = useState<{
+    call: ToolCall;
+    tool: ToolSpec | null;
+    source: string;
+    valid: boolean;
+    errors: string[];
+  } | null>(null);
+
+  // The DERIVED access fiber for THIS frame (A3). Gates cloud egress.
+  const access = frame?.provenance?.access ?? null;
+
+  // Restore the selected provider + model from chrome.storage (mirrors resolveAdapterMode).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const id = await resolveProviderId();
+      const name = await resolveModelName(getProvider(id));
+      if (cancelled) return;
+      setProviderId(id);
+      setModelName(name);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectedNode = useMemo(
     () => (frame?.nodes ?? []).find((n) => n.urn === selectedUrn) ?? null,
@@ -175,8 +221,154 @@ export function ActionsPanel({
     }
   }, [preview]);
 
+  // Provider selection (persisted, mirrors adapter-factory). Switching resets the model to
+  // the new provider's default and clears any stale proposal.
+  const handleProviderChange = useCallback((id: string) => {
+    setProviderId(id);
+    void saveProviderId(id);
+    const p = getProvider(id);
+    const name = providerDefaultModel(p);
+    setModelName(name);
+    if (name) void saveModelName(name);
+    setProposed(null);
+    setLlmNotice(null);
+  }, []);
+
+  const handleModelChange = useCallback((name: string) => {
+    setModelName(name);
+    void saveModelName(name);
+  }, []);
+
+  // THE GATE. A model-proposed structured call is validated (the security net) and then
+  // routed: READ auto-runs; MUTATE goes into the EXISTING ConfirmActionModal. Nothing is
+  // ever auto-applied, and a call outside the actionable allowlist / a malformed call is
+  // rejected here, never executed.
+  const dispatchProposal = useCallback(
+    (call: ToolCall, source: string) => {
+      setResult(null);
+      setPreview(null);
+      // The model is only ever shown actionable tools; a name outside that set is a
+      // hallucination — reject it (never fall through to execution).
+      const tool = actions.find((t) => t.name === call.name) ?? null;
+      if (!tool) {
+        setProposed({
+          call,
+          tool: null,
+          source,
+          valid: false,
+          errors: [`"${call.name}" is not in the actionable allowlist`],
+        });
+        setLlmNotice({
+          ok: false,
+          message: `Rejected: "${call.name}" is not an available action.`,
+        });
+        return;
+      }
+      // The safety net (src/tools/tool-call.ts). Same validator the modal + resolver use.
+      const validation = validateToolCall(call, tool);
+      setProposed({
+        call,
+        tool,
+        source,
+        valid: validation.ok,
+        errors: validation.errors,
+      });
+      if (!validation.ok) {
+        setLlmNotice({
+          ok: false,
+          message: "Rejected by validateToolCall — the proposed call is malformed.",
+        });
+        return; // never execute an invalid/hallucinated call
+      }
+      if (tool.kind === "read") {
+        // General contract: read tools auto-run. The current actionable set is mutate-only,
+        // so this branch is unreachable via the LLM (only actionable tools are exposed, and
+        // validateToolCall rejects any name outside them). Kept for the read-tool future.
+        setLlmNotice({
+          ok: true,
+          message: `read tool ${tool.name} would auto-run (no wired read executor in this build).`,
+        });
+        return;
+      }
+      // MUTATE: route into the EXISTING confirmation modal. No auto-apply, ever. The HG
+      // channel stays a review-only preview that never POSTs.
+      const target = String(
+        call.args.urn ?? call.args.ki_urn ?? selectedUrn ?? "(model-proposed)",
+      );
+      setLlmNotice({
+        ok: true,
+        message: `Proposed ${tool.name} — review and confirm in the modal.`,
+      });
+      openAction(tool, call.args as Record<string, unknown>, target);
+    },
+    [actions, openAction, selectedUrn],
+  );
+
+  // Send the user's request to the selected model. The cloud-egress access gate runs FIRST;
+  // an on-box provider (Ollama) is always allowed. The model only PROPOSES — dispatchProposal
+  // then validates + routes.
+  const runLlm = useCallback(async () => {
+    const text = llmText.trim();
+    if (!text) return;
+    setProposed(null);
+    setResult(null);
+    setPreview(null);
+    setLlmNotice(null);
+
+    const egress = evaluateEgress(provider, access);
+    if (!egress.allowed) {
+      setLlmNotice({
+        ok: false,
+        message: `${egress.reason}${egress.fallbackProviderId ? " — switch to Ollama (local) to proceed." : ""}`,
+      });
+      return;
+    }
+
+    setLlmBusy(true);
+    try {
+      const res = await proposeToolCall({
+        provider,
+        model: modelName,
+        userText: text,
+        tools: actions,
+        context: { actor, workspace, purpose, selectedUrn },
+      });
+      if (!res.ok) {
+        setLlmNotice({ ok: false, message: `LLM error: ${res.error}` });
+        return;
+      }
+      if (res.kind === "message") {
+        setLlmNotice({
+          ok: false,
+          message: `The model proposed no tool call${res.content ? `: ${res.content.slice(0, 300)}` : "."}`,
+        });
+        return;
+      }
+      dispatchProposal(res.call, res.source);
+    } catch (err) {
+      setLlmNotice({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setLlmBusy(false);
+    }
+  }, [
+    llmText,
+    provider,
+    access,
+    modelName,
+    actions,
+    actor,
+    workspace,
+    purpose,
+    selectedUrn,
+    dispatchProposal,
+  ]);
+
   const canClipboard = !!selectedUrn;
   const canPin = !!selectedUrn && selectedNode?.type_id === "knowledge_item";
+  const llmUsable = isModelProvider(provider) && isProviderAvailable(provider);
+  const egressPreview = isCloudProvider(provider)
+    ? evaluateEgress(provider, access)
+    : null;
 
   return (
     <section className="actions" aria-label="Actions">
@@ -205,28 +397,115 @@ export function ActionsPanel({
         </div>
       </div>
 
-      {/* Provider-neutral model seam (criteria 5 + 6). Default manual; no calls. */}
+      {/* Phase 7: the model provider is now REAL. Default ollama-local (on-box, keyless).
+          The model only PROPOSES; the existing gate decides. */}
       <div className="actions-block">
-        <div className="actions-block-title">model provider (seam — no calls)</div>
+        <div className="actions-block-title">model provider</div>
         <select
           className="provider-select"
           value={providerId}
-          onChange={(e) => setProviderId(e.target.value)}
+          onChange={(e) => handleProviderChange(e.target.value)}
         >
           {MODEL_PROVIDERS.map((p) => {
             const avail = isProviderAvailable(p);
             return (
               <option key={p.id} value={p.id} disabled={!avail}>
                 {p.label}
-                {p.requiresCapability === "webgpu" && !avail ? " (no WebGPU)" : ""}
+                {!avail ? " (pending kernel-proxy)" : ""}
               </option>
             );
           })}
         </select>
+        {provider.models && provider.models.length > 1 && (
+          <select
+            className="provider-select model-select"
+            value={modelName}
+            onChange={(e) => handleModelChange(e.target.value)}
+            title="Model id sent to the endpoint (persisted to chrome.storage.local['pilot.modelName'])"
+          >
+            {provider.models.map((m) => (
+              <option key={m} value={m}>
+                {m}
+                {m === provider.model ? " (default · structured tool_calls)" : " (fallback path)"}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="provider-note">{provider.note}</div>
-        <div className="provider-cap">
-          WebGPU capability (stub): {hasWebGpu() ? "present" : "absent"}
+        {egressPreview && (
+          <div className={`provider-egress ${egressPreview.allowed ? "ok" : "blocked"}`}>
+            cloud egress: {egressPreview.allowed ? "permitted" : "BLOCKED"} — {egressPreview.reason}
+          </div>
+        )}
+      </div>
+
+      {/* Phase 7: the LLM request box. Type a request → the model proposes ONE structured
+          tool call → validateToolCall → read auto-runs / mutate hits the modal. Never applied. */}
+      <div className="actions-block llm-block">
+        <div className="actions-block-title">ask the model (proposes only)</div>
+        <textarea
+          className="llm-input"
+          rows={3}
+          value={llmText}
+          placeholder={
+            llmUsable
+              ? "e.g. copy the selected node's urn to my clipboard"
+              : "Select a callable model provider to enable the model"
+          }
+          onChange={(e) => setLlmText(e.target.value)}
+          disabled={!llmUsable || llmBusy}
+        />
+        <div className="llm-actions">
+          <button
+            className="act-btn llm-send"
+            onClick={() => void runLlm()}
+            disabled={!llmUsable || llmBusy || llmText.trim() === ""}
+            title={
+              llmUsable
+                ? "Send to the model — it PROPOSES a tool call; you gate it"
+                : provider.enabled === false
+                  ? "This provider is not yet available (pending kernel-proxy)"
+                  : "Manual mode — no model is invoked"
+            }
+          >
+            {llmBusy ? "Proposing…" : "Propose"}
+          </button>
+          <span className="llm-model-tag">
+            {isModelProvider(provider) ? `${provider.id} · ${modelName}` : "manual"}
+          </span>
         </div>
+        <div className="llm-hint">
+          The model NEVER auto-applies. Reads auto-run; mutating acts go through the
+          confirmation modal (HG rewrites stay review-only previews that never POST).
+        </div>
+
+        {llmNotice && (
+          <div className={`act-result ${llmNotice.ok ? "ok" : "err"}`} role="status">
+            {llmNotice.message}
+          </div>
+        )}
+
+        {proposed && (
+          <div className={`llm-proposed ${proposed.valid ? "valid" : "invalid"}`}>
+            <div className="llm-proposed-head">
+              proposed tool call
+              <span className={`llm-source ${proposed.source}`}>{proposed.source}</span>
+              <span className={`llm-valid ${proposed.valid ? "ok" : "bad"}`}>
+                {proposed.valid ? "validated" : "rejected"}
+              </span>
+            </div>
+            <pre className="llm-proposed-json">
+              {JSON.stringify(proposed.call, null, 2)}
+            </pre>
+            {!proposed.valid && proposed.errors.length > 0 && (
+              <ul className="llm-proposed-errors">
+                {proposed.errors.map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       {/* The two curated mutating acts — each behind the confirmation UI. */}
