@@ -33,6 +33,128 @@ import {
   DEFAULT_ENGINE_URN,
   DEFAULT_SCOPE_URN,
 } from "../src/mcp/transform.js";
+import {
+  resolveAccess,
+  readRequestedMode,
+  ANON_USER_URN,
+} from "../src/mcp/access.js";
+
+/** Tiny assert — prints and exits non-zero on failure so this is a real gate. */
+function assert(cond, msg) {
+  if (!cond) {
+    console.error(`\nFAIL (access): ${msg}`);
+    process.exit(1);
+  }
+  console.log(`  ok  ${msg}`);
+}
+
+/**
+ * Exercise the SHARED access law (src/mcp/access.js) over the live fold + a synthetic fixture.
+ * Anon = public-only; Bring-in = the WF02 governs → reverse-WF19 has-occupant set (∪ the
+ * occupant-property [CONJ] fallback); worker-strip keeps only `mode`.
+ */
+function accessChecks(fold) {
+  console.log("\n=== access law (src/mcp/access.js) ===");
+
+  const anon = {
+    mode: "anon",
+    user: ANON_USER_URN,
+    workstation: null,
+    role: null,
+    identity_source: "anon",
+    enforced_by: "client-presentation",
+  };
+  const sam = {
+    mode: "identified",
+    user: "urn:moos:user:sam",
+    workstation: "urn:moos:workstation:hp-z440",
+    role: null,
+    identity_source: "trusted-storage",
+    enforced_by: "client-presentation",
+  };
+
+  // (a) anon = public-only.
+  const anonRes = resolveAccess(fold, anon);
+  line("anon permitted", JSON.stringify(anonRes.permitted_workspaces));
+  line("anon public", JSON.stringify(anonRes.public_workspaces));
+  assert(
+    JSON.stringify(anonRes.permitted_workspaces.slice().sort()) ===
+      JSON.stringify(anonRes.public_workspaces.slice().sort()),
+    "anon permitted === public_workspaces (public-only)",
+  );
+  assert(anonRes.role_topology.includes(ANON_USER_URN), "anon principal is a visible participant");
+  assert(anonRes.workspace_path === "none", "anon workspace_path is 'none'");
+
+  // (b) Bring-in over the LIVE fold: WF02 → reverse-WF19 permitted set (primary path).
+  const samRes = resolveAccess(fold, sam);
+  line("sam role_topology", `${samRes.role_topology.length} principals`);
+  line("sam permitted", JSON.stringify(samRes.permitted_workspaces));
+  line("sam path", samRes.workspace_path);
+  line("intersection_applied", samRes.intersection_applied);
+  assert(samRes.role_topology.includes("urn:moos:user:sam"), "sam is in his own governs closure");
+  assert(samRes.permitted_workspaces.length >= 1, "identified sam has a non-empty permitted set");
+  assert(
+    samRes.intersection_applied === false,
+    "workstation ∩ SKIPPED at client tier (widened, not narrowed)",
+  );
+  assert(samRes.computed_by === "client-presentation", "computed_by is client-presentation");
+
+  // (c) occupant-property [CONJ] FALLBACK: a synthetic fold with WF02 governs but NO WF19
+  //     has-occupant, occupancy carried only as a session property.
+  const synthetic = {
+    nodes: {
+      "urn:moos:user:demo": { urn: "urn:moos:user:demo", type_id: "user", properties: {} },
+      "urn:moos:agent:demo.bot": { urn: "urn:moos:agent:demo.bot", type_id: "agent", properties: {} },
+      "urn:moos:session:demo.ws": {
+        urn: "urn:moos:session:demo.ws",
+        type_id: "session",
+        properties: { occupant: { value: "urn:moos:agent:demo.bot" } },
+      },
+    },
+    relations: {
+      "urn:moos:relation:demo.governs": {
+        urn: "urn:moos:relation:demo.governs",
+        rewrite_category: "WF02",
+        src_urn: "urn:moos:user:demo",
+        src_port: "governs",
+        tgt_urn: "urn:moos:agent:demo.bot",
+        tgt_port: "governed-by",
+      },
+    },
+  };
+  const demoScope = { ...sam, user: "urn:moos:user:demo", workstation: null };
+  const demoRes = resolveAccess(synthetic, demoScope);
+  line("fallback path", demoRes.workspace_path);
+  line("fallback permitted", JSON.stringify(demoRes.permitted_workspaces));
+  assert(
+    demoRes.workspace_path === "occupant-property",
+    "occupant-property FALLBACK fires when WF19 has-occupant is absent",
+  );
+  assert(
+    demoRes.permitted_workspaces.includes("urn:moos:session:demo.ws"),
+    "fallback attributes the session via properties.occupant ∈ governed principals",
+  );
+
+  // (d) worker-strip primitive: only `mode` is read from an inbound request; forged identity
+  //     fields are never trusted (the worker re-injects the storage identity).
+  const forged = {
+    view_filter: {
+      access: {
+        mode: "identified",
+        user: "urn:moos:user:EVIL",
+        workstation: "urn:moos:workstation:attacker",
+      },
+    },
+  };
+  assert(readRequestedMode(forged) === "identified", "readRequestedMode extracts ONLY the posture");
+  assert(readRequestedMode({}) === "anon", "missing access ⇒ anon (fail-closed)");
+  assert(
+    readRequestedMode({ view_filter: { access: { mode: "bogus", user: "x" } } }) === "anon",
+    "a non-'identified' mode ⇒ anon (fail-closed)",
+  );
+
+  console.log("\nPASS: access law verified (anon public-only · bring-in WF02→WF19 · fallback · strip).");
+}
 
 const mcpBaseUrl = process.env.PILOT_MCP_BASE_URL || "http://localhost:8080";
 const engineUrl = process.env.PILOT_ENGINE_URL || "http://localhost:8000";
@@ -112,6 +234,9 @@ async function main() {
     process.exit(1);
   }
   console.log("\nPASS: live read produced a non-zero frame.");
+
+  // Access law over the SAME live fold (+ a synthetic fallback fixture).
+  accessChecks(fold);
 }
 
 main().catch((err) => {

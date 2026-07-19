@@ -27,12 +27,38 @@
  */
 
 import type {
+  FrameRequest,
   McpAdapter,
   PilotRequest,
   PilotResponse,
   ToolDiscoveryAdapter,
 } from "./mcp/types";
-import { createAdapter, resolveAdapterMode } from "./mcp/adapter-factory";
+import {
+  createAdapter,
+  resolveAdapterMode,
+  resolveAdapterConfig,
+} from "./mcp/adapter-factory";
+import { resolveTrustedAccess } from "./state/access-identity";
+import { readRequestedMode } from "./mcp/access.js";
+
+/**
+ * The ACCESS TRUST SEAM (invariant 3). Rebuild `view_filter.access` AUTHORITATIVELY: read
+ * the ONLY page-influenced input — `access.mode` — from the inbound request, then re-inject
+ * the trusted scope resolved from chrome.storage.local. Any inbound user/workstation/role/
+ * identity_source is DISCARDED and overwritten. A compromised panel or page-bridge can
+ * toggle posture ("anon" | "identified") but can NEVER assert an identity or name a
+ * workstation — the identity is page-inaccessible by construction.
+ */
+async function withTrustedAccess(
+  request: FrameRequest | undefined,
+): Promise<FrameRequest> {
+  const requestedMode = readRequestedMode(request); // extracts ONLY inbound access.mode
+  const trusted = await resolveTrustedAccess(requestedMode); // from chrome.storage.local
+  return {
+    ...request,
+    view_filter: { ...(request?.view_filter ?? {}), access: trusted },
+  };
+}
 
 /** Duck-type: does this adapter expose the read-only `tools/list` discovery seam? */
 function hasToolDiscovery(
@@ -47,10 +73,14 @@ function hasToolDiscovery(
 let adapterPromise: Promise<McpAdapter> | null = null;
 function getAdapter(): Promise<McpAdapter> {
   if (!adapterPromise) {
-    adapterPromise = resolveAdapterMode().then((mode) => {
-      console.log(`[pilot] adapter mode: ${mode}`);
-      return createAdapter(mode);
-    });
+    adapterPromise = Promise.all([resolveAdapterMode(), resolveAdapterConfig()]).then(
+      ([mode, config]) => {
+        console.log(
+          `[pilot] adapter mode: ${mode} · access tier: ${config.enforcement ?? "client-presentation"}`,
+        );
+        return createAdapter(mode, config);
+      },
+    );
   }
   return adapterPromise;
 }
@@ -79,8 +109,10 @@ chrome.runtime.onMessage.addListener(
     sendResponse: (response: PilotResponse) => void,
   ): boolean => {
     if (message?.type === "GET_FRAME") {
-      getAdapter()
-        .then((adapter) => adapter.getFrame(message.request))
+      // Strip inbound access + re-inject the trusted identity BEFORE the adapter reads. The
+      // panel only ever contributes view_filter.access.mode; identity comes from storage.
+      Promise.all([getAdapter(), withTrustedAccess(message.request)])
+        .then(([adapter, request]) => adapter.getFrame(request))
         .then((frame) => sendResponse({ type: "FRAME", frame }))
         .catch((err: unknown) =>
           sendResponse({

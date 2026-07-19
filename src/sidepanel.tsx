@@ -34,7 +34,11 @@ import {
   DEFAULT_GRAPH_LAYOUT,
   loadLayoutPref,
   saveLayoutPref,
+  DEFAULT_ACCESS_POSTURE,
+  loadAccessPosturePref,
+  saveAccessPosturePref,
   type GraphLayoutName,
+  type AccessPosture,
 } from "./state/prefs";
 import { ProvenanceHeader } from "./components/ProvenanceHeader";
 import { FrameGraph } from "./components/FrameGraph";
@@ -107,6 +111,9 @@ function SidePanel() {
   const [focusSignal, setFocusSignal] = useState(0);
   const [viewTypes, setViewTypes] = useState<string[]>(DEFAULT_VIEW_TYPES);
   const [viewT, setViewT] = useState("");
+  // Access posture (A3). DEFAULT anon (fail-closed). The toggle sends ONLY access.mode; the
+  // identity is worker-resolved from chrome.storage.local and is unreachable from this panel.
+  const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
 
   // The currently-applied FrameRequest — a ref so the SSE re-fetch always uses the latest
   // applied filter without re-subscribing the stream.
@@ -167,11 +174,13 @@ function SidePanel() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [scratch, savedLayout] = await Promise.all([
+      const [scratch, savedLayout, savedPosture] = await Promise.all([
         loadScratch(),
         loadLayoutPref(),
+        loadAccessPosturePref(),
       ]);
       if (!cancelled) setLayout(savedLayout);
+      if (!cancelled) setAccessMode(savedPosture);
       if (
         !cancelled &&
         scratch.frame &&
@@ -182,7 +191,11 @@ function SidePanel() {
         setSelectedUrn(scratch.selectedUrn);
         setStatus("ready");
       }
-      await loadFrame();
+      // Seed the first read under the restored posture so an "identified" toggle survives a
+      // reopen (default anon on a fresh profile). The worker still resolves the identity.
+      const initialReq = buildFrameRequest(DEFAULT_VIEW_TYPES, "", savedPosture);
+      frameRequestRef.current = initialReq;
+      await loadFrame(initialReq);
       void loadTools();
     })();
     return () => {
@@ -240,17 +253,33 @@ function SidePanel() {
   }, []);
 
   const applyFilter = useCallback(() => {
-    const req = buildFrameRequest(viewTypes, viewT);
+    const req = buildFrameRequest(viewTypes, viewT, accessMode);
     frameRequestRef.current = req;
     void loadFrame(req);
-  }, [viewTypes, viewT, loadFrame]);
+  }, [viewTypes, viewT, accessMode, loadFrame]);
 
   const resetFilter = useCallback(() => {
     setViewTypes(DEFAULT_VIEW_TYPES);
     setViewT("");
-    frameRequestRef.current = undefined;
-    void loadFrame(undefined);
-  }, [loadFrame]);
+    // Preserve the access posture across a view_filter reset (it is a separate control).
+    const req = buildFrameRequest(DEFAULT_VIEW_TYPES, "", accessMode);
+    frameRequestRef.current = req;
+    void loadFrame(req);
+  }, [accessMode, loadFrame]);
+
+  // Access-posture toggle. Persists the UI pref (NOT the identity) and re-requests the frame
+  // under the new posture. The worker resolves the trusted identity from storage — the toggle
+  // only carries `mode`.
+  const handleAccessModeChange = useCallback(
+    (mode: AccessPosture) => {
+      setAccessMode(mode);
+      void saveAccessPosturePref(mode);
+      const req = buildFrameRequest(viewTypes, viewT, mode);
+      frameRequestRef.current = req;
+      void loadFrame(req);
+    },
+    [viewTypes, viewT, loadFrame],
+  );
 
   // Mirror the PiP window: adopt SELECTION changes from the shared scratch (frame is
   // panel-authored, so scratch frame changes are ignored here). Event-driven, no polling.
@@ -393,6 +422,8 @@ function SidePanel() {
               onApplyFilter={applyFilter}
               onResetFilter={resetFilter}
               filterHonored={isLive}
+              accessMode={accessMode}
+              onAccessModeChange={handleAccessModeChange}
             />
             <FrameGraph
               frame={frame}

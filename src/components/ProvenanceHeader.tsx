@@ -52,6 +52,36 @@ export function ProvenanceHeader({
     <span className="prov-badge live">LIVE</span>
   );
 
+  // ACCESS (A3). The tier badge is verbatim + load-bearing: it names which tier is
+  // authoritative so the client-presentation posture is NEVER socially misread as
+  // enforcement. Rendered even when collapsed.
+  const access = provenance.access;
+  const enforced = access?.computed_by === "server-authoritative";
+  // Verbatim strings — do not reword. "ACCESS: PRESENTATION" (client) vs "ACCESS: ENFORCED".
+  const tierText = enforced ? "ACCESS: ENFORCED" : "ACCESS: PRESENTATION";
+  const effectiveAnon =
+    !access ||
+    access.scope?.identity_source !== "trusted-storage" ||
+    access.scope?.mode !== "identified";
+  const permittedCount = Array.isArray(access?.permitted_workspaces)
+    ? access.permitted_workspaces.length
+    : 0;
+  const roleTopoCount = Array.isArray(access?.role_topology)
+    ? access.role_topology.length
+    : 0;
+  const accessBadge = access ? (
+    <span
+      className={`prov-badge access-tier ${enforced ? "enforced" : "presentation"}`}
+      title={
+        enforced
+          ? "Server-authoritative: the kernel returned only the permitted subgraph."
+          : "Client-presentation: NOT a security boundary. The full fold still crosses the wire; access only changes what is RENDERED."
+      }
+    >
+      {tierText}
+    </span>
+  ) : null;
+
   return (
     <section className="provenance" aria-label="Frame provenance">
       <button
@@ -73,7 +103,52 @@ export function ProvenanceHeader({
         )}
         {badge}
         <span className="prov-badge readonly">READ-ONLY</span>
+        {accessBadge}
       </button>
+
+      {!collapsed && access && (
+        <div className="prov-access" aria-label="Access resolution">
+          <div className="prov-access-row">
+            <span className="prov-label">access</span>
+            <span className="prov-access-body">
+              <span className="prov-k">mode</span> {access.scope?.mode ?? "anon"}
+              <span className="prov-k">identity</span>{" "}
+              {access.scope?.identity_source ?? "anon"}
+              <span className="prov-k">user</span>{" "}
+              <span title={access.scope?.user ?? ""}>
+                {(access.scope?.user ?? "—").split(":").pop()}
+              </span>
+              <span className="prov-k">permitted</span> {permittedCount}
+              <span className="prov-k">role_topology</span> {roleTopoCount}
+              <span className="prov-k">tier</span> {access.computed_by}
+              <span className="prov-k">path</span> {access.workspace_path}
+            </span>
+          </div>
+          {permittedCount > 0 && (
+            <div className="prov-access-list" title="permitted_workspaces = f(group_topology × user × workstation)">
+              <span className="prov-label">permitted_workspaces</span>
+              <ul className="prov-scope">
+                {access.permitted_workspaces.map((u) => (
+                  <li key={u} title={u}>
+                    {u.split(":").slice(-1)[0]}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!access.intersection_applied && access.scope?.workstation && (
+            <div className="prov-access-note" title="The workstation ∩ was NOT applied — the named engine→workstation binding is absent (or deferred to the server tier). The set is WIDENED, not narrowed by workstation. Never read this as enforcement.">
+              workstation ∩ skipped — {String(access.scope.workstation).split(":").pop()}{" "}
+              (widened, not narrowed)
+            </div>
+          )}
+          {effectiveAnon && permittedCount === 0 && (
+            <div className="prov-access-empty">
+              ANON — no public workspaces exposed
+            </div>
+          )}
+        </div>
+      )}
 
       {!collapsed && (
         <>

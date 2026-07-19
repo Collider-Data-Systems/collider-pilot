@@ -16,7 +16,7 @@
  * renders data in a CORS-exempt context (a loaded extension). See README.
  */
 
-import type { McpAdapter } from "./types";
+import type { AccessEnforcement, McpAdapter } from "./types";
 import { MockMcpAdapter } from "./mock-adapter";
 import {
   StreamableHttpMcpAdapter,
@@ -26,6 +26,7 @@ import {
 export type AdapterMode = "mock" | "live";
 
 const STORAGE_MODE_KEY = "pilot.adapterMode";
+const STORAGE_ACCESS_KEY = "pilot.access";
 
 function normalizeMode(value: unknown): AdapterMode | null {
   return value === "mock" || value === "live" ? value : null;
@@ -63,4 +64,29 @@ export async function resolveAdapterMode(): Promise<AdapterMode> {
     // storage unavailable -> fall back to the build-time default
   }
   return DEFAULT_ADAPTER_MODE;
+}
+
+function normalizeEnforcement(value: unknown): AccessEnforcement {
+  return value === "server-authoritative" ? "server-authoritative" : "client-presentation";
+}
+
+/**
+ * Resolve the adapter config from `chrome.storage.local['pilot.access'].enforcement` (A3).
+ * Threads the tier posture into the adapter. NO-OP at the client-presentation tier — the
+ * access set is computed in the pure transform after the read; this only pre-wires the seam
+ * the future server-authoritative tier flips. Safe outside an extension (returns {}).
+ */
+export async function resolveAdapterConfig(): Promise<StreamableHttpAdapterConfig> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const got = await chrome.storage.local.get(STORAGE_ACCESS_KEY);
+      const cfg = got?.[STORAGE_ACCESS_KEY] as { enforcement?: unknown } | undefined;
+      if (cfg && cfg.enforcement != null) {
+        return { enforcement: normalizeEnforcement(cfg.enforcement) };
+      }
+    }
+  } catch {
+    // storage unavailable -> default (client-presentation) tier
+  }
+  return {};
 }

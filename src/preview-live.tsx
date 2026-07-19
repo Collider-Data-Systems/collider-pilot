@@ -22,8 +22,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import type { FrameRequest, HgFrame } from "./mcp/types";
+import type { AccessScope, FrameRequest, HgFrame } from "./mcp/types";
 import { selectFrame, DEFAULT_ENGINE_URL } from "./mcp/transform.js";
+import { readRequestedMode, ANON_USER_URN } from "./mcp/access.js";
 import { ProvenanceHeader } from "./components/ProvenanceHeader";
 import { FrameGraph } from "./components/FrameGraph";
 import {
@@ -34,15 +35,68 @@ import {
 import { NodeInspector } from "./components/NodeInspector";
 import {
   DEFAULT_GRAPH_LAYOUT,
+  DEFAULT_ACCESS_POSTURE,
   type GraphLayoutName,
+  type AccessPosture,
 } from "./state/prefs";
 import { useFoldStream } from "./state/use-fold-stream";
 import "./sidepanel.css";
 
 type Status = "loading" | "ready" | "error";
 
+/**
+ * PREVIEW SIMULATION of the trusted identity. In the PACKED extension the identity comes from
+ * chrome.storage.local['pilot.access'] resolved in the MV3 worker (page-inaccessible). A served
+ * page has NO such storage, so this stand-in supplies a demo identity for "Bring me in" — the
+ * SAME shape resolveTrustedAccess() would return. It is a DEMO CONSTANT, not a real credential.
+ */
+const PREVIEW_TRUSTED = {
+  user: "urn:moos:user:sam",
+  workstation: "urn:moos:workstation:hp-z440",
+  role: null as string | null,
+};
+
+/** Preview stand-in for src/state/access-identity.ts resolveTrustedAccess(). */
+function previewResolveTrustedAccess(mode: AccessPosture): AccessScope {
+  if (mode === "identified") {
+    return {
+      mode: "identified",
+      user: PREVIEW_TRUSTED.user,
+      workstation: PREVIEW_TRUSTED.workstation,
+      role: PREVIEW_TRUSTED.role,
+      identity_source: "trusted-storage",
+      enforced_by: "client-presentation",
+    };
+  }
+  return {
+    mode: "anon",
+    user: ANON_USER_URN,
+    workstation: null,
+    role: null,
+    identity_source: "anon",
+    enforced_by: "client-presentation",
+  };
+}
+
+/**
+ * Faithful stand-in for the MV3 worker seam (src/worker.ts withTrustedAccess): read the ONLY
+ * page-influenced input — access.mode — from the inbound request, DISCARD any inbound
+ * user/workstation/role/identity_source, and re-inject the trusted scope. A page can toggle
+ * posture but can NEVER assert an identity or name a workstation.
+ */
+function simulateWorkerSeam(request: FrameRequest | undefined): FrameRequest {
+  const mode = readRequestedMode(request); // extracts ONLY inbound access.mode
+  const trusted = previewResolveTrustedAccess(mode);
+  return {
+    ...request,
+    view_filter: { ...(request?.view_filter ?? {}), access: trusted },
+  };
+}
+
 /** Read a live frame from the CORS-open REST surface + the shared pure transform. */
 async function fetchLiveFrame(request?: FrameRequest): Promise<HgFrame> {
+  // Strip inbound access + re-inject the trusted identity, exactly as the worker does.
+  const sanitized = simulateWorkerSeam(request);
   const [foldRes, healthRes] = await Promise.all([
     fetch(`${DEFAULT_ENGINE_URL}/fold`),
     fetch(`${DEFAULT_ENGINE_URL}/healthz`),
@@ -54,7 +108,7 @@ async function fetchLiveFrame(request?: FrameRequest): Promise<HgFrame> {
   const fold = { nodes: foldJson.nodes ?? {}, relations: foldJson.relations ?? {} };
   return selectFrame(fold, {
     healthz: health,
-    request,
+    request: sanitized,
     engineEndpoint: `${DEFAULT_ENGINE_URL} (HTTP /fold · served-page harness)`,
     foldedAt: new Date().toISOString(),
   });
@@ -73,8 +127,11 @@ function PreviewLive() {
   const [focusSignal, setFocusSignal] = useState(0);
   const [viewTypes, setViewTypes] = useState<string[]>(DEFAULT_VIEW_TYPES);
   const [viewT, setViewT] = useState("");
+  const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
 
-  const frameRequestRef = useRef<FrameRequest | undefined>(undefined);
+  const frameRequestRef = useRef<FrameRequest | undefined>(
+    buildFrameRequest(DEFAULT_VIEW_TYPES, "", DEFAULT_ACCESS_POSTURE),
+  );
 
   const loadFrame = useCallback(async (request?: FrameRequest) => {
     const req = request ?? frameRequestRef.current;
@@ -101,6 +158,39 @@ function PreviewLive() {
   useEffect(() => {
     void loadFrame();
   }, [loadFrame]);
+
+  // (d) WORKER-STRIP PROOF (dev console). A page-forged access.user/workstation is DROPPED by
+  // the seam — the resolved identity comes only from trusted storage. This mirrors what the MV3
+  // worker enforces; here it runs against the preview's worker-seam simulation.
+  useEffect(() => {
+    const forged: FrameRequest = {
+      view_filter: {
+        access: {
+          mode: "identified",
+          user: "urn:moos:user:EVIL-INJECTED",
+          workstation: "urn:moos:workstation:attacker",
+          role: "urn:moos:role:superadmin",
+          identity_source: "trusted-storage",
+          enforced_by: "server-authoritative",
+        },
+      },
+    };
+    const sanitized = simulateWorkerSeam(forged);
+    const forgedUser = forged.view_filter?.access?.user;
+    const resolvedUser = sanitized.view_filter?.access?.user;
+    // eslint-disable-next-line no-console
+    console.log(
+      "[pilot][access] worker-strip proof — inbound forged user:",
+      forgedUser,
+      "→ resolved user:",
+      resolvedUser,
+      "| forged DROPPED:",
+      resolvedUser !== forgedUser,
+      "| forged workstation DROPPED:",
+      sanitized.view_filter?.access?.workstation !==
+        forged.view_filter?.access?.workstation,
+    );
+  }, []);
 
   const handleSelect = useCallback((urn: string | null) => {
     setSelectedUrn(urn);
@@ -142,17 +232,28 @@ function PreviewLive() {
   }, []);
 
   const applyFilter = useCallback(() => {
-    const req = buildFrameRequest(viewTypes, viewT);
+    const req = buildFrameRequest(viewTypes, viewT, accessMode);
     frameRequestRef.current = req;
     void loadFrame(req);
-  }, [viewTypes, viewT, loadFrame]);
+  }, [viewTypes, viewT, accessMode, loadFrame]);
 
   const resetFilter = useCallback(() => {
     setViewTypes(DEFAULT_VIEW_TYPES);
     setViewT("");
-    frameRequestRef.current = undefined;
-    void loadFrame(undefined);
-  }, [loadFrame]);
+    const req = buildFrameRequest(DEFAULT_VIEW_TYPES, "", accessMode);
+    frameRequestRef.current = req;
+    void loadFrame(req);
+  }, [accessMode, loadFrame]);
+
+  const handleAccessModeChange = useCallback(
+    (mode: AccessPosture) => {
+      setAccessMode(mode);
+      const req = buildFrameRequest(viewTypes, viewT, mode);
+      frameRequestRef.current = req;
+      void loadFrame(req);
+    },
+    [viewTypes, viewT, loadFrame],
+  );
 
   const isLive = frame != null && frame.provenance?.mock === false;
   const reloadForStream = useCallback(() => void loadFrame(), [loadFrame]);
@@ -229,6 +330,8 @@ function PreviewLive() {
               onApplyFilter={applyFilter}
               onResetFilter={resetFilter}
               filterHonored={isLive}
+              accessMode={accessMode}
+              onAccessModeChange={handleAccessModeChange}
             />
             <FrameGraph
               frame={frame}

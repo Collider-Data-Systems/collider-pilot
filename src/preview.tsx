@@ -31,7 +31,9 @@ import { NodeInspector } from "./components/NodeInspector";
 import { ActionsPanel } from "./components/ActionsPanel";
 import {
   DEFAULT_GRAPH_LAYOUT,
+  DEFAULT_ACCESS_POSTURE,
   type GraphLayoutName,
+  type AccessPosture,
 } from "./state/prefs";
 import "./sidepanel.css";
 
@@ -48,6 +50,9 @@ function Preview() {
   const [focusSignal, setFocusSignal] = useState(0);
   const [viewTypes, setViewTypes] = useState<string[]>(DEFAULT_VIEW_TYPES);
   const [viewT, setViewT] = useState("");
+  // Access posture is inert on the MOCK adapter (it ignores view_filter) — the toggle is
+  // present only so this harness renders the same GraphControls as the shipped panel.
+  const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
 
   const loadFrame = useCallback(async () => {
     const f = await adapter.getFrame();
@@ -144,6 +149,8 @@ function Preview() {
               onApplyFilter={() => void loadFrame()}
               onResetFilter={resetFilter}
               filterHonored={false}
+              accessMode={accessMode}
+              onAccessModeChange={setAccessMode}
             />
             <FrameGraph
               frame={frame}

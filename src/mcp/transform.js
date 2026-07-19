@@ -29,7 +29,11 @@
  * @typedef {import("./types").ViewFilter} ViewFilter
  * @typedef {import("./types").FrameRequest} FrameRequest
  * @typedef {import("./types").FrameProvenance} FrameProvenance
+ * @typedef {import("./types").AccessScope} AccessScope
+ * @typedef {import("./types").AccessResolution} AccessResolution
  */
+
+import { resolveAccess, accessKeepSet } from "./access.js";
 
 /**
  * A single wrapped property value as the engine serialises it.
@@ -228,6 +232,9 @@ export function resolveViewFilter(request, healthz) {
       Array.isArray(vf.types) && vf.types.length > 0
         ? vf.types.slice()
         : DEFAULT_FRAME_TYPES.slice(),
+    // access rides inside view_filter. Carried through verbatim: the identity was already
+    // worker-injected upstream (src/worker.ts). undefined ⇒ no access gate (backward-compatible).
+    access: vf.access,
     // whether the caller explicitly pinned t (drives conservative t-filtering below)
   };
 }
@@ -241,13 +248,19 @@ export function resolveViewFilter(request, healthz) {
  *      property exceeds t (a lightweight stand-in until the engine exposes fold-at-t)
  *   4. retain only relations whose BOTH endpoints survive
  *
+ * The ACCESS GATE (A3) is composed AFTER the type/scope/t selection: when `accessKeep` is
+ * provided, a node additionally survives only if its urn is in that keep-set (computed once
+ * by access.js over the FULL fold). `accessKeep === null/undefined` ⇒ no access scope ⇒ the
+ * gate is a no-op (fully backward-compatible). Relations survive iff BOTH endpoints do.
+ *
  * @param {HgNode[]} nodes
  * @param {HgRelation[]} relations
  * @param {ViewFilter} viewFilter
  * @param {boolean} tPinned
+ * @param {Set<string>} [accessKeep] - access keep-set over the full fold, or undefined for no gate
  * @returns {{ nodes: HgNode[], relations: HgRelation[] }}
  */
-export function applyViewFilter(nodes, relations, viewFilter, tPinned) {
+export function applyViewFilter(nodes, relations, viewFilter, tPinned, accessKeep) {
   const typeSet = new Set(viewFilter.types);
   const allTypes = typeSet.size === 0;
   const nodeByUrn = new Map(nodes.map((n) => [n.urn, n]));
@@ -270,6 +283,7 @@ export function applyViewFilter(nodes, relations, viewFilter, tPinned) {
   const keptNodes = nodes.filter((n) => {
     if (!allTypes && !typeSet.has(n.type_id)) return false;
     if (!inScope.has(n.urn)) return false;
+    if (accessKeep && !accessKeep.has(n.urn)) return false; // access gate (composed last)
     if (tPinned) {
       const td = n.properties.t_day;
       if (typeof td === "number" && td > viewFilter.t) return false;
@@ -292,6 +306,9 @@ export function applyViewFilter(nodes, relations, viewFilter, tPinned) {
  * @property {string} [engine]            - engine urn (default hp-z440.primary)
  * @property {string} [engineEndpoint]    - human display of the read endpoints
  * @property {string} [foldedAt]          - ISO timestamp; defaults to now
+ * @property {AccessResolution} [serverAccess] - a server-computed resolution to trust+echo
+ *                                               (future A2); when present the local
+ *                                               resolveAccess call is skipped.
  */
 
 /**
@@ -316,11 +333,28 @@ export function selectFrame(fold, opts) {
   const tPinned = Boolean(
     opts.request && opts.request.view_filter && typeof opts.request.view_filter.t === "number",
   );
+
+  // ACCESS (A3): resolve the permitted-workspace fiber ONCE over the FULL raw fold, BEFORE
+  // applyViewFilter narrows types/scope. If a server resolution is already present (future
+  // A2), trust+echo it and skip the local call. No access scope ⇒ no gate (backward-compatible).
+  /** @type {AccessResolution | undefined} */
+  let accessResolution;
+  /** @type {Set<string> | undefined} */
+  let accessKeep;
+  if (opts.serverAccess) {
+    accessResolution = opts.serverAccess;
+    accessKeep = accessKeepSet(fold, accessResolution);
+  } else if (viewFilter.access) {
+    accessResolution = resolveAccess(fold, viewFilter.access);
+    accessKeep = accessKeepSet(fold, accessResolution);
+  }
+
   const { nodes, relations } = applyViewFilter(
     allNodes,
     allRelations,
     viewFilter,
     tPinned,
+    accessKeep,
   );
 
   // workspace = first in-scope node that is a session; else first scope urn.
@@ -348,6 +382,8 @@ export function selectFrame(fold, opts) {
     folded_at: foldedAt,
     ontology_version: healthz.ontology_version || "unknown",
     mock: false,
+    // Stamp the derived access fiber (or leave undefined when no access scope was requested).
+    ...(accessResolution ? { access: accessResolution } : {}),
   };
 
   return { provenance, nodes, relations };

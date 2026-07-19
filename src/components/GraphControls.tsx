@@ -14,9 +14,9 @@
  * lifted to the panel via a callback. No state, no I/O, no adapter here.
  */
 
-import type { GraphLayoutName } from "../state/prefs";
+import type { GraphLayoutName, AccessPosture } from "../state/prefs";
 import { GRAPH_LAYOUTS } from "../state/prefs";
-import type { FrameRequest, ViewFilter } from "../mcp/types";
+import type { AccessScope, FrameRequest, ViewFilter } from "../mcp/types";
 
 /** The node types the view_filter can toggle (matches the graph legend + transform). */
 export const SELECTABLE_TYPES = [
@@ -30,13 +30,33 @@ export const SELECTABLE_TYPES = [
 export const DEFAULT_VIEW_TYPES: string[] = [...SELECTABLE_TYPES];
 
 /**
- * Build a FrameRequest from a draft view_filter. Returns undefined when the draft is the
- * untouched default (all types, no `t`) so the default path stays a bare frame request.
- * Shared by the side panel and the live harness so both narrow the frame identically.
+ * The access posture the panel MAY contribute — ONLY `mode`. Identity_source is declared
+ * "anon" and user/workstation/role are null because a page/panel has NO authority to assert
+ * an identity: the worker (or the preview's worker simulation) DISCARDS this whole object and
+ * re-injects the trusted scope from chrome.storage.local, keeping only `mode`. This is a
+ * throwaway carrier for the toggle, never a claim.
+ */
+export function panelAccessScope(mode: AccessPosture): AccessScope {
+  return {
+    mode,
+    user: null,
+    workstation: null,
+    role: null,
+    identity_source: "anon",
+    enforced_by: "client-presentation",
+  };
+}
+
+/**
+ * Build a FrameRequest from a draft view_filter + access posture. When `accessMode` is
+ * supplied, the request always carries `view_filter.access` (mode only) so the toggle flows;
+ * otherwise it returns undefined for the untouched default (all types, no `t`) so the legacy
+ * path stays a bare frame request. Shared by the side panel and the live harness.
  */
 export function buildFrameRequest(
   types: string[],
   tText: string,
+  accessMode?: AccessPosture,
 ): FrameRequest | undefined {
   const trimmed = tText.trim();
   const tNum = trimmed === "" ? null : Number(trimmed);
@@ -44,10 +64,11 @@ export function buildFrameRequest(
   const allTypes =
     types.length === DEFAULT_VIEW_TYPES.length &&
     DEFAULT_VIEW_TYPES.every((t) => types.includes(t));
-  if (allTypes && !tValid) return undefined;
+  if (allTypes && !tValid && !accessMode) return undefined;
   const view_filter: Partial<ViewFilter> = {};
   if (!allTypes) view_filter.types = [...types];
   if (tValid) view_filter.t = tNum as number;
+  if (accessMode) view_filter.access = panelAccessScope(accessMode);
   return { view_filter };
 }
 
@@ -75,6 +96,14 @@ export interface GraphControlsProps {
   onResetFilter: () => void;
   /** Whether the current frame is a live read (view_filter is honored). */
   filterHonored: boolean;
+
+  /**
+   * Access posture (A3). DEFAULT "anon". The toggle sends ONLY view_filter.access.mode; the
+   * identity (user/workstation/role) is resolved by the worker from chrome.storage.local and
+   * is unreachable here. Changing it re-requests the frame under the new posture.
+   */
+  accessMode: AccessPosture;
+  onAccessModeChange: (mode: AccessPosture) => void;
 }
 
 export function GraphControls({
@@ -90,10 +119,43 @@ export function GraphControls({
   onApplyFilter,
   onResetFilter,
   filterHonored,
+  accessMode,
+  onAccessModeChange,
 }: GraphControlsProps) {
   const activeSet = new Set(activeTypes);
+  const identified = accessMode === "identified";
   return (
     <div className="graph-controls" aria-label="Graph controls">
+      <div className="gc-row gc-access-row">
+        <span className="gc-label" title="Access posture — DEFAULT anon. Sends only the posture; the identity is resolved by the service worker from chrome.storage.local (page-inaccessible).">
+          access
+        </span>
+        <div
+          className="gc-access-toggle"
+          role="group"
+          aria-label="Access posture (default anon)"
+        >
+          <button
+            type="button"
+            className={`gc-seg ${!identified ? "is-on" : ""}`}
+            aria-pressed={!identified}
+            onClick={() => onAccessModeChange("anon")}
+            title="Stay anon — see only public workspaces (the default, fail-closed)"
+          >
+            Stay anon
+          </button>
+          <button
+            type="button"
+            className={`gc-seg ${identified ? "is-on" : ""}`}
+            aria-pressed={identified}
+            onClick={() => onAccessModeChange("identified")}
+            title="Bring me in — resolve my trusted identity (worker-only) and show my permitted workspaces"
+          >
+            Bring me in
+          </button>
+        </div>
+      </div>
+
       <div className="gc-row">
         <label className="gc-field">
           <span className="gc-label">layout</span>

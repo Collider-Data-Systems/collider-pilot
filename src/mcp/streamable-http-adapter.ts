@@ -22,6 +22,7 @@
  */
 
 import type {
+  AccessEnforcement,
   FrameRequest,
   HgFrame,
   HgNode,
@@ -52,6 +53,14 @@ export interface StreamableHttpAdapterConfig {
   origin?: string;
   /** Retry attempts on transport failure. Default 3. */
   retries?: number;
+  /**
+   * Which tier is authoritative for access (A3). Threaded from
+   * chrome.storage.local['pilot.access'].enforcement by the adapter factory. NO-OP at the
+   * client-presentation tier (access is computed in the pure transform after the read); it
+   * exists as the seam the future server-authoritative tier reads to request `/fold/scoped`.
+   * Absent ⇒ "client-presentation".
+   */
+  enforcement?: AccessEnforcement;
 }
 
 /** The neighbourhood of a node: the node plus its incident relations and adjacent nodes. */
