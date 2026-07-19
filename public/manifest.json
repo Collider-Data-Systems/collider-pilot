@@ -9,7 +9,8 @@
   "host_permissions": [
     "http://localhost:8080/*",
     "http://localhost:8000/*",
-    "http://localhost:11434/*"
+    "http://localhost:11434/*",
+    "https://localhost:8443/*"
   ],
 
   "side_panel": {

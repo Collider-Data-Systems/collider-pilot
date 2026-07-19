@@ -60,6 +60,54 @@ node scripts/bench-frame-read.mjs --n 50
   Re-measure with `scripts/bench-frame-read.mjs` if a genuine high-rate surface is ever added.
   Reference: ffs0#158 (Steinberger review, Phase 5 "measure a real need first").
 
+- **2026-07-19 (T=260) — P9 SPIKE (feat/phase9-webtransport):** a **feature-flagged,
+  OFF-by-default** WebTransport datagram CLIENT was built to **prove the pipe**, paired with the
+  merged kernel spike (moos-kernel #59, `--wt-addr :8443`, `/wt/presence`). This is a SPIKE, not a
+  surface, and the gate above **still stands** — the spike makes **NO claim** to beat, or be needed
+  over, the reliable path. It exists so that IF an organic high-rate surface ever appears, we know
+  the datagram transport works end-to-end.
+
+  What shipped (pilot side, all READ-ONLY, all panel-side):
+  - `src/wt/wt-datagram.js` — pure, node-testable wire/config law (datagram parse, cert-hash
+    decode, config normalize, the feature-detect gate). Shared with `scripts/wt-smoke.mjs`.
+  - `src/wt/wt-client.ts` — `new WebTransport(url, { serverCertificateHashes })`, reads
+    `datagrams.readable`, exposes `onDatagram`/`onState` + `stats()`. Inert (never throws) when
+    `WebTransport` is undefined, the flag is off, or the connect rejects — the strip stays hidden,
+    exactly like the PiP feature-detect precedent.
+  - `src/components/PresenceStrip.tsx` + `src/state/use-wt-presence.ts` — a compact strip UNDER the
+    graph showing the synthetic `value` (sparkline + bar), `seq`, measured Hz, and inferred gaps.
+    Labelled "WebTransport spike (synthetic)". Hidden entirely when the flag is off / unavailable.
+  - `scripts/wt-bench.mjs` — this re-measure harness: re-reports the reliable baseline and documents
+    the browser-side datagram measurement (Node has no built-in WebTransport).
+
+  **Feature flag / config** — `chrome.storage.local['pilot.wt']`
+  (mirrors `adapter-factory` / `prefs`):
+  ```js
+  { enabled: false, url?: "https://localhost:8443/wt/presence", certHash?: "<sha-256 hex|base64>" }
+  ```
+  `enabled` defaults false. Any malformed stored value collapses to `{ enabled:false }` (fail-closed).
+
+  **Cert caveat (operational, the real spike challenge)** — a browser `WebTransport` connection to
+  the kernel's **self-signed dev cert** requires
+  `serverCertificateHashes: [{ algorithm:'sha-256', value:<ArrayBuffer of the cert SHA-256> }]`, and
+  browsers cap such certs at **≤ 14 days** validity and require **ECDSA** (the kernel's ephemeral
+  cert is ECDSA P-256 — compatible). Supply the hash via `pilot.wt.certHash` (hex or base64). BUT the
+  kernel's **default cert is EPHEMERAL** — minted in memory per start — so its SHA-256 **changes on
+  every restart**, staleing the pinned hash. For a stable live connection, start the kernel with a
+  fixed `--tls-cert`/`--tls-key` dev cert (ECDSA, ≤14 d) whose SHA-256 you pin, or have the kernel
+  expose its cert hash. The cert hash is **config, not a secret**.
+
+  **Structural verification (no live endpoint):** `node scripts/wt-smoke.mjs` proves the
+  feature-detect stays inert when `WebTransport` is absent or the flag is off; the parser decodes the
+  contract shape and tolerates malformed/dropped/wrong-kind frames; cert-hash hex+base64 decode to a
+  32-byte buffer; config normalize is fail-closed. `npm run typecheck` + `npm run build` green; the
+  MV3 worker bundle is byte-for-byte unchanged (this is panel-side).
+
+  **LIVE datagram receipt: PENDING** the kernel restart with `--wt-addr :8443` (Sam-gated). Once the
+  endpoint is up, enable `pilot.wt`, pin the cert hash, open the side panel, and read the strip's
+  live Hz/seq/gaps (verify Δt_ms/Δseq ≈ 50 ms ⇒ ~20 Hz). Re-run `scripts/wt-bench.mjs` to compare
+  against the reliable ~61 Hz p95 baseline. Kernel-side contract: `moos-kernel/docs/spike-p9-webtransport.md`.
+
 ## If/when the gate is crossed
 
 The build, in order, still gated by measurements at each step:

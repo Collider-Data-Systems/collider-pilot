@@ -1417,3 +1417,130 @@ body {
   font-size: 10px;
   color: var(--error);
 }
+
+/* ==========================================================================
+   P9 WebTransport SPIKE — synthetic presence strip (under the graph).
+   Rendered ONLY when the pilot.wt flag is on AND the datagram endpoint is
+   reachable; hidden entirely otherwise. Clearly marked synthetic.
+   ========================================================================== */
+.wt-strip {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+}
+.wt-strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.wt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  color: var(--accent-hover);
+  background: var(--accent-muted);
+}
+.wt-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.wt-dot.connected {
+  animation: wt-pulse 1s ease-out infinite;
+}
+.wt-dot.connecting {
+  opacity: 0.5;
+}
+@keyframes wt-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(99, 102, 241, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wt-dot.connected {
+    animation: none;
+  }
+}
+.wt-synth {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.wt-strip-connecting {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--mono);
+}
+.wt-strip-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.wt-spark {
+  width: 88px;
+  height: 24px;
+  flex-shrink: 0;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+.wt-spark polyline {
+  fill: none;
+  stroke: var(--accent-hover);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.wt-bar-wrap {
+  flex: 1;
+  height: 8px;
+  min-width: 40px;
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.wt-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.12s linear;
+}
+.wt-metrics {
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.wt-metrics > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.wt-metrics dt {
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.wt-metrics dd {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-primary);
+}
