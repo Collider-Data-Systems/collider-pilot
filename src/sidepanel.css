@@ -118,6 +118,56 @@ body {
   color: var(--text-primary);
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Pop-out (Document PiP) button — text + glyph, feature-detected/disabled when unsupported. */
+.pip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+.pip-btn:hover:not(:disabled) {
+  background: var(--accent-muted);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+.pip-btn.is-active {
+  color: var(--accent-hover);
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+.pip-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Document PiP mirror surface (styles adopted into the PiP document by copyStyles). */
+.pip-container {
+  height: 100vh;
+}
+.pip-header {
+  padding: 8px 12px;
+}
+.pip-waiting {
+  font-style: italic;
+}
+
 /* Provenance header */
 .provenance {
   padding: 10px 14px;

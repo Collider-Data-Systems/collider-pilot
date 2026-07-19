@@ -11,10 +11,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { HgFrame, PilotRequest, PilotResponse } from "./mcp/types";
-import { loadScratch, saveScratch } from "./state/scratch";
+import { loadScratch, saveScratch, subscribeScratch } from "./state/scratch";
 import { ProvenanceHeader } from "./components/ProvenanceHeader";
 import { FrameGraph } from "./components/FrameGraph";
 import { NodeInspector } from "./components/NodeInspector";
+import {
+  isDocumentPipSupported,
+  isPipOpen,
+  focusPip,
+  openPipMirror,
+} from "./pip/pip-window";
 import "./sidepanel.css";
 
 type Status = "loading" | "ready" | "error";
@@ -32,6 +38,9 @@ function SidePanel() {
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
+  // Feature-detect Document PiP once (criterion 6). Unsupported ⇒ button disabled.
+  const [pipSupported] = useState(() => isDocumentPipSupported());
+  const [pipOpen, setPipOpen] = useState(false);
 
   const loadFrame = useCallback(async () => {
     setStatus("loading");
@@ -98,6 +107,30 @@ function SidePanel() {
     [frame],
   );
 
+  // Mirror the PiP window: adopt SELECTION changes written to the shared scratch by the
+  // other surface (the panel authors the frame, so frame changes from scratch are ignored
+  // here). Event-driven via storage.onChanged — no polling, and no re-write (no loop).
+  useEffect(() => {
+    const unsub = subscribeScratch((s) => {
+      setSelectedUrn((prev) => (s.selectedUrn === prev ? prev : s.selectedUrn));
+    });
+    return unsub;
+  }, []);
+
+  // Open (or focus) the Document PiP mirror. The click IS the user gesture — call
+  // openPipMirror synchronously so requestWindow() runs with a valid activation.
+  const handlePopOut = useCallback(() => {
+    if (!pipSupported) return;
+    if (isPipOpen()) {
+      focusPip();
+      return;
+    }
+    openPipMirror({
+      onOpen: () => setPipOpen(true),
+      onClose: () => setPipOpen(false),
+    });
+  }, [pipSupported]);
+
   const selectedNode = useMemo(
     () => frame?.nodes.find((n) => n.urn === selectedUrn) ?? null,
     [frame, selectedUrn],
@@ -115,6 +148,20 @@ function SidePanel() {
           <span className="header-sub">read-only · mock</span>
         </div>
         <div className="header-right">
+          <button
+            className={`pip-btn ${pipOpen ? "is-active" : ""}`}
+            onClick={handlePopOut}
+            disabled={!pipSupported}
+            title={
+              pipSupported
+                ? pipOpen
+                  ? "PiP mirror is open — click to focus it"
+                  : "Pop out a Document Picture-in-Picture mirror of this frame"
+                : "Document PiP not supported in this browser"
+            }
+          >
+            Pop out ⧉
+          </button>
           <button
             className="icon-btn"
             onClick={() => void loadFrame()}
