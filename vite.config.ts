@@ -33,9 +33,8 @@ export default defineConfig({
       input: {
         sidepanel: "sidepanel.html",
         preview: "preview.html",
-        worker: "src/worker.ts",
-        preview: "preview.html",
         "preview-live": "preview-live.html",
+        worker: "src/worker.ts",
       },
       output: {
         entryFileNames: (chunk) =>
