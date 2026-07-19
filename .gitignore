@@ -4,3 +4,5 @@ dist-extension/
 *.log
 .DS_Store
 .vite/
+.claude/
+vite-preview.log
