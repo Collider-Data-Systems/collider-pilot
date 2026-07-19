@@ -26,8 +26,20 @@
  * all in-memory chat/model/context state.
  */
 
-import type { McpAdapter, PilotRequest, PilotResponse } from "./mcp/types";
+import type {
+  McpAdapter,
+  PilotRequest,
+  PilotResponse,
+  ToolDiscoveryAdapter,
+} from "./mcp/types";
 import { createAdapter, resolveAdapterMode } from "./mcp/adapter-factory";
+
+/** Duck-type: does this adapter expose the read-only `tools/list` discovery seam? */
+function hasToolDiscovery(
+  adapter: McpAdapter,
+): adapter is McpAdapter & ToolDiscoveryAdapter {
+  return typeof (adapter as Partial<ToolDiscoveryAdapter>).listTools === "function";
+}
 
 // Lazily resolve the adapter (mode = build-time default 'live', overridable via storage),
 // then memoize it. No correctness-critical global: if the worker is terminated, the next
@@ -77,6 +89,25 @@ chrome.runtime.onMessage.addListener(
           }),
         );
       return true; // keep the message channel open for the async response
+    }
+
+    // Phase 4: READ-ONLY tool discovery. The live adapter answers with the MCP
+    // `tools/list` catalog; the mock adapter has no discovery seam, so we answer with
+    // an empty list and the side panel falls back to the MOCK affordance pack. No tool
+    // is ever invoked here — this only enumerates what exists.
+    if (message?.type === "LIST_TOOLS") {
+      getAdapter()
+        .then((adapter) =>
+          hasToolDiscovery(adapter) ? adapter.listTools() : Promise.resolve([]),
+        )
+        .then((tools) => sendResponse({ type: "TOOLS", tools }))
+        .catch((err: unknown) =>
+          sendResponse({
+            type: "ERROR",
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      return true;
     }
     return false;
   },

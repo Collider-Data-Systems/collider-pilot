@@ -9,16 +9,18 @@ identity, and the append-only rewrite log remains the sole source of truth. Revi
 [ffs0#158](https://github.com/Collider-Data-Systems/ffs0/issues/158) (Steinberger
 readback T=260, decisions D1-D6 approved).
 
-**Status: Phase 0 + Phase 1 + Phase 2 merged to `main`; Phase 3 built on
-`feat/phase3-pip`** — provenance preserved, sources pinned, secret-scanned, legacy builds
-attempted (see [PROVENANCE.md](PROVENANCE.md)); on top of that, a clean read-only MV3
-side-panel shell (narrow manifest, Cytoscape inspector); the **live MCP read path** — a
+**Status: Phase 0-3 merged to `main`; Phase 4 built on `feat/phase4-tools`** — provenance
+preserved, sources pinned, secret-scanned, legacy builds attempted (see
+[PROVENANCE.md](PROVENANCE.md)); on top of that, a clean read-only MV3 side-panel shell
+(narrow manifest, Cytoscape inspector); the **live MCP read path** — a
 `StreamableHttpMcpAdapter` that reads a live, purpose-selected HG frame from the Z440
-primary engine over MCP Streamable HTTP (read-only; no model, no writes); and now the
-**Document Picture-in-Picture mirror** — an always-on-top compact mirror of the side
-panel opened from an explicit button, sharing ONE state store, feature-detected, degrading
-gracefully when unsupported. Legacy lineage lives on `legacy/pilot-2026-01` and
-`legacy/sidepanel-2026-01`; `main` stays clean.
+primary engine over MCP Streamable HTTP (read-only); the **Document Picture-in-Picture
+mirror** — an always-on-top compact mirror opened from an explicit button, sharing ONE
+state store, feature-detected, degrading gracefully; and now **controlled tools + model
+targets** — the FIRST apply capability, where every mutating act is gated behind a
+confirmation UI, tool calls are structured (never text-parsed), and HG rewrites produce a
+REVIEW-ONLY program preview that is **never posted** (no live HG write exists). Legacy
+lineage lives on `legacy/pilot-2026-01` and `legacy/sidepanel-2026-01`; `main` stays clean.
 
 ## Phase plan (from #158)
 
@@ -61,7 +63,13 @@ src/mcp/streamable-http-client.js  SHARED read-only MCP/REST transport (Phase 2)
 src/mcp/streamable-http-adapter.ts StreamableHttpMcpAdapter — live read (Phase 2)
 src/mcp/adapter-factory.ts         mode switch: 'mock' | 'live' (extension defaults live)
 src/state/scratch.ts               chrome.storage.session helpers (selection + frame cache; onChanged subscription — Phase 3 shared store)
-src/components/                    ProvenanceHeader · FrameGraph (Cytoscape) · NodeInspector
+src/components/                    ProvenanceHeader · FrameGraph (Cytoscape) · NodeInspector · ActionsPanel + ConfirmActionModal (Phase 4)
+src/tools/types.ts                 controlled-tools contract: ToolKind/ToolChannel, ToolSpec, AffordancePack, ToolCall, PendingAction (Phase 4)
+src/tools/tool-call.ts             structured ToolCall validator (args_schema JSON-shape check; NO text parsing) (Phase 4)
+src/tools/affordance.ts            affordance-pack projection: tools/list classify + curated acts + mock fallback (Phase 4)
+src/tools/browser-acts.ts          the clipboard browser act executor (local; runs on Confirm) (Phase 4)
+src/tools/hg-program-preview.ts    REVIEW-ONLY WF19 pins-urn apply_program preview builder (stringifies; NEVER posts) (Phase 4)
+src/tools/model-providers.ts       provider-neutral model registry + WebGPU capability stub (seam; no calls, no keys) (Phase 4)
 src/pip/document-pip.d.ts          ambient Document PiP types (not yet in lib.dom.d.ts) (Phase 3)
 src/pip/pip-content.tsx            PipContent — pure compact frame view (reused by the PiP window + the pip-preview harness) (Phase 3)
 src/pip/pip-window.tsx             Document PiP controller: gesture open, shared-scratch sync, style adoption, teardown (Phase 3)
@@ -270,15 +278,14 @@ npm run dev:preview          # then open /pip-preview.html on an allowed dev por
 5. Close the PiP window → the button re-enables and the side panel keeps working. Close/reload
    the panel → the browser closes the PiP with it.
 
-### Phase 4 seam (next)
+### Phase 4 — now built (see the Phase 4 section below)
 
-Phase 4 is **controlled tools and model targets**: MCP affordance discovery, structured tool
-calls only, a confirmation UI for **every** mutating act, and a provider-neutral model adapter.
-It is the first phase that mounts an apply capability — nothing before it (Phases 0-3) can
-reach ADD/LINK/MUTATE/UNLINK. The PiP mirror and side panel are the read/observe surfaces a
-Phase 4 confirmation flow will sit beside; the `McpAdapter` seam, the `relationNeighborhood()`
-/ `node_lookup` read helpers, and the `view_filter` request shape already present are the hooks
-the confirmation UI will lean on, but the write tools remain unnamed and uncalled until then.
+Phase 4 is **controlled tools and model targets** and is implemented on `feat/phase4-tools`.
+It is the first phase that mounts an apply capability — nothing before it (Phases 0-3) could
+reach ADD/LINK/MUTATE/UNLINK. Crucially, Phase 4 still performs **no live HG write**: the
+apply capability is a REVIEW-ONLY preview, and every mutating act is gated behind a
+confirmation UI. The full write-up and exit-criteria checklist are in the Phase 4 section
+at the end of this document.
 
 ### Phase 3 exit criteria (from #158) — met
 
@@ -297,3 +304,103 @@ the confirmation UI will lean on, but the write tools remain unnamed and uncalle
 - [x] Still READ-ONLY: no adapter/engine call in the PiP path, no apply tool anywhere
       (`apply_rewrite` / `apply_program` / `POST /programs` appear only in read-only-guarantee
       comments); typecheck + build pass, `pip-preview` is a self-contained served page.
+
+## Phase 4 — controlled tools + confirmation UI (this branch)
+
+Phase 4 mounts the FIRST apply capability — and does so **without ever writing to the HG**.
+The controlling idea: an act is a typed object that must survive a confirmation gate, and an
+HG rewrite only ever becomes a **review-only preview**, never a live post.
+
+### The safety invariant (non-negotiable)
+
+- **No live HG write exists.** There is zero executable call to `apply_rewrite` /
+  `apply_program`, and zero `POST /programs` or `POST /rewrites`, anywhere in the build. The
+  HG act builds a preview envelope and *stringifies* it — that is the only thing that happens.
+- **Every mutating act is confirmation-gated.** A `mutate` tool cannot act until the user
+  clicks Confirm in `ConfirmActionModal`, which shows tool / target / args / actor / workspace
+  / purpose / expected effect. Cancel (and Escape) is a strict no-op.
+- **Structured calls only.** An act is a `ToolCall {name, args}` validated against the tool's
+  `args_schema` (a flat JSON-shape check in `src/tools/tool-call.ts`) before the modal opens
+  and again before Confirm resolves. There is **no** text/regex/fenced-block parser — the
+  legacy scaffold's ad-hoc `` ```tool `` `` reader was deleted in Phase 0 and never returns.
+- **Confirm's meaning is fixed by the tool's `channel`:** `browser` → run a local browser act
+  (no engine); `hg` → build/reveal the review-only preview (never post).
+
+### The affordance pack (criterion 1)
+
+`src/tools/affordance.ts` projects the tools reachable for the current frame's
+**actor / workspace / purpose**, modelling the SHAPE of the mo:os session-affordance map
+(`{actor, workspace, purpose, tools:[{name, kind, description, args_schema}]}`). It prefers
+the LIVE MCP `tools/list` catalog (fetched read-only through the worker — *listing is not
+calling*), classifies each tool read-vs-mutate by name (unknown ⇒ `mutate`, i.e. gated), and
+down-projects each `inputSchema` to a flat `args_schema`. Offline / against the mock adapter
+it falls back to a **labelled MOCK pack**. Discovered MCP tools are catalogued for
+transparency but are **not actionable** — no executable path exists for them, so the write
+invariant stays airtight regardless of what the server advertises.
+
+### The two curated acts (criterion 4)
+
+1. **`copy_urn_to_clipboard`** — a harmless BROWSER act: copies the selected node's urn to the
+   clipboard on Confirm. No engine, no HG. Still gated (it touches state outside the panel).
+2. **`pin_ki_to_workspace`** — a REVIEW-ONLY HG rewrite: Confirm builds a WF19 `pins-urn` LINK
+   `apply_program` envelope (kernel actor, `pins-urn` / `pinned-by-session` ports — the
+   canonical WF19 pin form) and displays it with a download button. It is **never posted**;
+   the panel shows *"Not posted. Applying is a separate, out-of-band, human step."*
+
+### The model-provider seam (criteria 5 + 6)
+
+`src/tools/model-providers.ts` is a provider-neutral registry modelling the shape of
+`model-providers.json` — a `ModelProvider {id, label, endpoint?, kind}` interface, selectable
+in the UI, defaulting to **`none-manual`** (no model). It is a SEAM only: **no model is
+invoked, no endpoint is called, no API key is requested or stored.** The **Local WebLLM**
+option is gated behind a WebGPU capability **stub** (`navigator.gpu` presence) — absent ⇒ the
+option is disabled; WebLLM is not bundled.
+
+### Where it runs
+
+The **Actions** section is wired into the side panel only (`ActionsPanel`, each surface
+ErrorBoundary-wrapped and defensively rendered). The PiP mirror deliberately does **not**
+mount it — it stays a read/observe surface; a note in the panel states so.
+
+### Manual test (loaded extension, live adapter)
+
+1. `npm ci && npm run build`, load `dist/` unpacked, click the toolbar action.
+2. In the Actions section, confirm the **affordance pack** shows the frame's actor/workspace/
+   purpose and a `LIVE` badge (or `MOCK` if the engine is unreachable — it degrades cleanly).
+3. Select a node → **Copy urn to clipboard** → the confirmation modal shows the structured
+   call → **Confirm & run** → the urn is on your clipboard. Cancel/Escape ⇒ nothing happens.
+4. Select a `knowledge_item` → **Preview: pin KI to workspace** → the modal shows the WF19
+   intent → **Reveal review-only preview** → inspect (and optionally download) the
+   `apply_program` envelope. Nothing is posted; `/healthz` `log_len` is unchanged.
+5. The model-provider selector defaults to **Manual**; **Local WebLLM** is disabled unless the
+   browser reports WebGPU. Choosing any provider changes nothing but UI state.
+
+### Served-page testing (`preview.html`)
+
+`preview.html` renders the real `ActionsPanel` on the MOCK adapter (`liveTools=null` ⇒ the
+labelled mock pack), so the whole confirmation flow, the review-only preview, and the provider
+seam are browser-testable without the extension.
+
+### Phase 4 exit criteria (from #158) — met
+
+- [x] **MCP affordance discovery filtered by actor/workspace/purpose** — `deriveAffordancePack`
+      projects the frame's actor (session occupant) / workspace / purpose; prefers the live
+      `tools/list` catalog (read-only), classifies read-vs-mutate, falls back to a labelled
+      MOCK pack.
+- [x] **Structured tool calls only** — a typed `ToolCall {name, args}` validated against
+      `args_schema` (`validateToolCall`) before the modal and before Confirm. No text parsing
+      anywhere.
+- [x] **Confirmation UI for every mutating act** — `ConfirmActionModal` shows tool / target /
+      args / actor / workspace / purpose / expected effect with Confirm / Cancel; Cancel and
+      Escape are strict no-ops.
+- [x] **One harmless browser act + one review-only HG preview** — `copy_urn_to_clipboard`
+      (executes on Confirm) and `pin_ki_to_workspace` (builds a WF19 `pins-urn` preview on
+      Confirm; never posts).
+- [x] **Provider-neutral model adapter** — `ModelProvider` registry defaulting to `none-manual`;
+      a seam with no real invocation and no credential.
+- [x] **Local WebLLM only after a capability check** — the WebLLM provider is gated behind the
+      `hasWebGpu()` stub (`navigator.gpu`); not bundled.
+- [x] **No live HG write** — zero executable `apply_rewrite` / `apply_program` calls; zero
+      `POST /programs` or `POST /rewrites`. Those strings appear only in comments, UI labels,
+      the mock catalog, and the preview builder that stringifies (never posts) an envelope.
+      typecheck + build pass; `preview.html` is a self-contained served page.

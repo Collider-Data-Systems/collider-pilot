@@ -106,8 +106,36 @@ export interface McpAdapter {
   getFrame(request?: FrameRequest): Promise<HgFrame>;
 }
 
+/**
+ * A tool as the MCP `tools/list` discovery method returns it. Phase 4 reads this list
+ * READ-ONLY (listing is not calling) to derive the actor/workspace/purpose affordance
+ * pack. `inputSchema` is a JSON-Schema-ish object; we down-project it to a flat
+ * `ArgsSchema` for the structured-call validator.
+ */
+export interface RawMcpTool {
+  name: string;
+  description?: string;
+  inputSchema?: {
+    type?: string;
+    properties?: Record<string, { type?: string; description?: string }>;
+    required?: string[];
+  };
+}
+
+/**
+ * The read-only tool-discovery seam. `StreamableHttpMcpAdapter` implements it (via the
+ * MCP `tools/list` method); the mock adapter does NOT (so the worker falls back to the
+ * mock affordance pack). Discovery only — never a `tools/call`, never an apply.
+ */
+export interface ToolDiscoveryAdapter {
+  listTools(): Promise<RawMcpTool[]>;
+}
+
 /** Worker <-> side-panel message envelope (typed, discriminated, request-scoped). */
-export type PilotRequest = { type: "GET_FRAME"; request?: FrameRequest };
+export type PilotRequest =
+  | { type: "GET_FRAME"; request?: FrameRequest }
+  | { type: "LIST_TOOLS" };
 export type PilotResponse =
   | { type: "FRAME"; frame: HgFrame }
+  | { type: "TOOLS"; tools: RawMcpTool[] }
   | { type: "ERROR"; error: string };

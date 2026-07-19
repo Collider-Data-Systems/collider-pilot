@@ -20,6 +20,7 @@ import { MockMcpAdapter } from "./mcp/mock-adapter";
 import { ProvenanceHeader } from "./components/ProvenanceHeader";
 import { FrameGraph } from "./components/FrameGraph";
 import { NodeInspector } from "./components/NodeInspector";
+import { ActionsPanel } from "./components/ActionsPanel";
 import "./sidepanel.css";
 
 const adapter = new MockMcpAdapter();
@@ -80,6 +81,15 @@ function Preview() {
               node={selectedNode}
               onSelect={setSelectedUrn}
             />
+            <ErrorBoundary>
+              {/* liveTools=null ⇒ the served-page harness projects the labelled MOCK pack. */}
+              <ActionsPanel
+                frame={frame}
+                selectedUrn={selectedUrn}
+                liveTools={null}
+                affordanceError={null}
+              />
+            </ErrorBoundary>
           </>
         )}
       </main>
