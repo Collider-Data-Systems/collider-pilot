@@ -151,6 +151,7 @@ function Preview() {
               filterHonored={false}
               accessMode={accessMode}
               onAccessModeChange={setAccessMode}
+              onReloadFrame={() => void loadFrame()}
             />
             <FrameGraph
               frame={frame}

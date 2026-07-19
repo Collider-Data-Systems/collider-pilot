@@ -424,6 +424,7 @@ function SidePanel() {
               filterHonored={isLive}
               accessMode={accessMode}
               onAccessModeChange={handleAccessModeChange}
+              onReloadFrame={() => void loadFrame()}
             />
             <FrameGraph
               frame={frame}
