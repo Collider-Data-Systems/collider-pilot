@@ -29,7 +29,11 @@ export function ProvenanceHeader({ provenance }: { provenance: FrameProvenance }
     <section className="provenance" aria-label="Frame provenance">
       <div className="prov-top">
         <span className="prov-title">Frame provenance</span>
-        {provenance.mock && <span className="prov-badge mock">MOCK</span>}
+        {provenance.mock ? (
+          <span className="prov-badge mock">MOCK</span>
+        ) : (
+          <span className="prov-badge live">LIVE</span>
+        )}
         <span className="prov-badge readonly">READ-ONLY</span>
       </div>
       <div className="prov-grid">

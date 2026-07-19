@@ -7,14 +7,17 @@
  * A frame is NOT a second graph. It is the selected read of the folded log at a
  * time `t`, per #158:  frame_{p,t} = L_p( fold(log[0..t]) ).
  *
- * PHASE 2 SEAM
- * ------------
- * `McpAdapter` is the single seam where the real transport plugs in. Phase 1 ships
- * `MockMcpAdapter` (fixed fixture, no I/O). Phase 2 replaces it with a
- * `StreamableHttpMcpAdapter` that speaks MCP Streamable HTTP to the Z440 primary
- * engine (:8080 MCP), validates `Origin`, holds session id in chrome.storage.session,
- * and exposes read-only tools (health / selected frame / node / relation neighborhood
- * / session context). No method signature here needs to change for that swap.
+ * PHASE 2 SEAM  — REALISED
+ * ------------------------
+ * `McpAdapter` is the single seam where the real transport plugs in. Phase 1 shipped
+ * `MockMcpAdapter` (fixed fixture, no I/O). Phase 2 adds `StreamableHttpMcpAdapter`
+ * (src/mcp/streamable-http-adapter.ts) that speaks MCP Streamable HTTP to the Z440
+ * primary engine (:8080 MCP), sets an `Origin` posture, and exposes read-only tools
+ * (health / selected frame / node / relation neighborhood). No method signature in this
+ * file changed for that swap — only `FrameProvenance.mock` was widened from the literal
+ * `true` to `boolean` so a live (non-mock) frame can state `mock: false`. The adapter is
+ * selected at runtime by src/mcp/adapter-factory.ts ('mock' | 'live'). Read-only only:
+ * no ADD/LINK/MUTATE/UNLINK path exists anywhere in this phase.
  */
 
 /** Node property bag. Kept to JSON-serializable scalars for storage round-trips. */
@@ -73,8 +76,13 @@ export interface FrameProvenance {
   view_filter: ViewFilter; // the L_p selection
   folded_at: string; // ISO timestamp the frame was computed
   ontology_version: string; // engine runtime ontology version
-  /** Explicit: this frame did NOT come from a live engine. Always true in Phase 1. */
-  mock: true;
+  /**
+   * Whether this frame is fixture data rather than a live engine read.
+   * `true`  → MockMcpAdapter fixture (Phase 1).
+   * `false` → StreamableHttpMcpAdapter live read (Phase 2).
+   * The provenance header renders a MOCK or LIVE badge off this flag.
+   */
+  mock: boolean;
 }
 
 /** A projected frame: provenance + the selected nodes and relations. */

@@ -148,6 +148,10 @@ body {
   background: var(--warning);
   color: #1a1400;
 }
+.prov-badge.live {
+  background: var(--success);
+  color: #04170a;
+}
 .prov-badge.readonly {
   background: var(--bg-tertiary);
   color: var(--text-secondary);
