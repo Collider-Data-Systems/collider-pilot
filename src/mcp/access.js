@@ -35,6 +35,19 @@
  *       properties.visibility==="public" || properties.anon_visible===true, UNIONED with the
  *       client-side PUBLIC_WORKSPACE_DEFAULTS. Bring-in unions it in; anon returns ONLY it.
  *
+ *   (2b) SEAT-OWNERSHIP PERMIT (ADDITIVE, seat-grounded). The frame's placement is a SEAT —
+ *       persona × agent × workspace(session) × engine × surface — and every `session` node
+ *       records its owner in `owner_urn`. An IDENTIFIED principal is ALSO permitted every
+ *       session it OWNS OUTRIGHT (`owner_urn === scope.user`), INDEPENDENT of the (2)
+ *       governs→reverse-WF19 closure. So permitted = (governs-occupant closure) ∪ (sessions the
+ *       user owns) ∪ public. This is why Sam (who owns all his seats, incl. the workspace he is
+ *       viewing) sees them all, where the closure alone under-resolved to a 2-seat fragment.
+ *       FAIL-CLOSED PRESERVED: it is keyed on `owner_urn === scope.user` and NEVER fires for
+ *       anon (anon returns before this step, and the helper guards `user===anon`) nor for a
+ *       low-priv identified user who owns nothing (empty set) — it only ever ADDS literally-owned
+ *       sessions, never widens. At the server-authoritative tier the owned sessions ride inside
+ *       `permitted` and are subject to the SAME workstation ∩ / fail-closed drop as everything else.
+ *
  * `owningWorkspaces(fold, urn)` (owner attribution): a session is its own workspace; else the
  * SET of owning sessions found by walking the WF12 `provides-kb`/`kb-source` lineage in the
  * provider→item direction ONLY (session --provides-kb--> item), unioned with its WF19
@@ -199,6 +212,36 @@ export function workspacesForPrincipals(fold, principals) {
 }
 
 /**
+ * (2b) SEAT-OWNERSHIP PERMIT — the sessions a user OWNS outright (`owner_urn === userUrn`).
+ * ---------------------------------------------------------------------------------------
+ * Seat grounding: every `session` node carries `owner_urn` naming its owner; the owner is
+ * permitted that seat's workspace INDEPENDENT of the WF02-governs → reverse-WF19 has-occupant
+ * closure (which under-resolves — a user occupies far fewer seats than it owns). This is an
+ * ADDITIVE permit path unioned into the identified permitted set; it never subtracts.
+ *
+ * FAIL-CLOSED, by construction:
+ *   - anon owns nothing: guarded out (`!userUrn || userUrn === ANON_USER_URN` ⇒ []), AND anon
+ *     never reaches this step (permittedWorkspaces returns in the anon branch first). So the
+ *     anon boundary is untouched — anon stays public-only.
+ *   - a low-priv identified user who owns no session ⇒ [] (no `owner_urn` matches). Ownership
+ *     therefore CANNOT leak a workspace to someone who does not literally own it.
+ * @param {any} fold
+ * @param {string | null | undefined} userUrn - the IDENTIFIED user urn (scope.user)
+ * @returns {string[]} session urns whose `owner_urn` === userUrn (empty for anon / no-owner)
+ */
+export function ownedSessions(fold, userUrn) {
+  if (!userUrn || userUrn === ANON_USER_URN) return []; // anon (or unset) owns nothing
+  /** @type {Set<string>} */
+  const out = new Set();
+  for (const n of foldNodes(fold)) {
+    if (n && n.type_id === "session" && rawProp(n, "owner_urn") === userUrn) {
+      out.add(n.urn);
+    }
+  }
+  return [...out];
+}
+
+/**
  * (3) WorkspacesOnWorkstation — sessions bound to a workstation via the design's named
  * engine→workstation relation D7 `realizes`, or a direct session `opens-on` a workstation.
  * Returns null when NEITHER named relation resolves (⇒ SKIP the intersection / widen).
@@ -352,9 +395,16 @@ export function permittedWorkspaces(fold, scope) {
   // (2) reverse WF19 has-occupant (∪ occupant-property fallback).
   const { workspaces, path } = workspacesForPrincipals(fold, principals);
 
+  // (2b) SEAT-OWNERSHIP PERMIT (ADDITIVE): every session the user OWNS outright (owner_urn ===
+  // scope.user), independent of the (2) closure. This is the seat grounding — a user always sees
+  // the seats they own, INCLUDING the workspace node they are viewing. Keyed on scope.user (NOT
+  // the governed principals), guarded against anon, and empty for a user who owns nothing, so it
+  // is fail-closed for anon/low-priv and only ever ADDS literally-owned sessions.
+  const owned = ownedSessions(fold, scope.user);
+
   // (4) union public.
   /** @type {Set<string>} */
-  let permitted = new Set([...workspaces, ...pub]);
+  let permitted = new Set([...workspaces, ...owned, ...pub]);
 
   // (3) workstation ∩.
   let intersectionApplied = false;
