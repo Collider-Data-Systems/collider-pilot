@@ -56,15 +56,18 @@ export function panelAccessScope(mode: AccessPosture): AccessScope {
 }
 
 /**
- * Build a FrameRequest from a draft view_filter + access posture. When `accessMode` is
- * supplied, the request always carries `view_filter.access` (mode only) so the toggle flows;
- * otherwise it returns undefined for the untouched default (all types, no `t`) so the legacy
- * path stays a bare frame request. Shared by the side panel and the live harness.
+ * Build a FrameRequest from a draft view_filter + access posture + optional scope. When
+ * `accessMode` is supplied, the request always carries `view_filter.access` (mode only) so the
+ * toggle flows; a non-empty `scopeUrns` pins the view to that seat. Otherwise it returns
+ * undefined for the untouched default (all types, no `t`, no scope) so the legacy path stays a
+ * bare frame request (⇒ transform's EMPTY default scope = "All permitted"). Shared by the side
+ * panel and the live harness.
  */
 export function buildFrameRequest(
   types: string[],
   tText: string,
   accessMode?: AccessPosture,
+  scopeUrns?: string[],
 ): FrameRequest | undefined {
   const trimmed = tText.trim();
   const tNum = trimmed === "" ? null : Number(trimmed);
@@ -72,11 +75,14 @@ export function buildFrameRequest(
   const allTypes =
     types.length === DEFAULT_VIEW_TYPES.length &&
     DEFAULT_VIEW_TYPES.every((t) => types.includes(t));
-  if (allTypes && !tValid && !accessMode) return undefined;
+  const scoped = Array.isArray(scopeUrns) && scopeUrns.length > 0;
+  if (allTypes && !tValid && !accessMode && !scoped) return undefined;
   const view_filter: Partial<ViewFilter> = {};
   if (!allTypes) view_filter.types = [...types];
   if (tValid) view_filter.t = tNum as number;
   if (accessMode) view_filter.access = panelAccessScope(accessMode);
+  // Empty scope is the seat-grounded default ("All permitted") — only pin when a seat is chosen.
+  if (scoped) view_filter.scope_urns = [...(scopeUrns as string[])];
   return { view_filter };
 }
 
@@ -104,6 +110,17 @@ export interface GraphControlsProps {
   onResetFilter: () => void;
   /** Whether the current frame is a live read (view_filter is honored). */
   filterHonored: boolean;
+
+  /**
+   * SEAT (scope) selector. `permittedWorkspaces` are the current frame's permitted-workspace
+   * seats (from provenance.access.permitted_workspaces); `activeScope` is the chosen single seat
+   * urn ("" = All permitted, the seat-grounded default). Changing it re-requests the frame with
+   * view_filter.scope_urns = [seat] (or [] for All), focusing the view to one seat without
+   * pinning any literal urn as the default. Read-only — it only narrows what is rendered.
+   */
+  permittedWorkspaces: string[];
+  activeScope: string;
+  onScopeChange: (scopeUrn: string) => void;
 
   /**
    * Access posture (A3). DEFAULT "anon". The toggle sends ONLY view_filter.access.mode; the
@@ -135,12 +152,20 @@ export function GraphControls({
   onApplyFilter,
   onResetFilter,
   filterHonored,
+  permittedWorkspaces,
+  activeScope,
+  onScopeChange,
   accessMode,
   onAccessModeChange,
   onReloadFrame,
 }: GraphControlsProps) {
   const activeSet = new Set(activeTypes);
   const identified = accessMode === "identified";
+  // Guard the <select> value: if the chosen seat is no longer in the permitted set (e.g. the
+  // posture changed), fall back to "All permitted" ("") so the control never shows a phantom option.
+  const scopeValue = permittedWorkspaces.includes(activeScope) ? activeScope : "";
+  /** Short seat label — the last urn segment (the whole urn stays as the option title). */
+  const seatLabel = (urn: string) => urn.split(":").pop() || urn;
   return (
     <div className="graph-controls" aria-label="Graph controls">
       <div className="gc-row gc-access-row">
@@ -212,6 +237,24 @@ export function GraphControls({
       <details className="gc-filter">
         <summary className="gc-filter-summary">view_filter</summary>
         <div className="gc-filter-body">
+          <div className="gc-row gc-filter-scope">
+            <label className="gc-field gc-scope-field">
+              <span className="gc-label">seat</span>
+              <select
+                className="gc-select gc-scope-select"
+                value={scopeValue}
+                onChange={(e) => onScopeChange(e.target.value)}
+                title="Focus the view to one permitted seat (workspace), or All permitted. Read-only scope — no literal urn is pinned as the default."
+              >
+                <option value="">All permitted ({permittedWorkspaces.length})</option>
+                {permittedWorkspaces.map((urn) => (
+                  <option key={urn} value={urn} title={urn}>
+                    {seatLabel(urn)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="gc-types">
             {SELECTABLE_TYPES.map((ty) => (
               <label key={ty} className="gc-check" title={ty}>

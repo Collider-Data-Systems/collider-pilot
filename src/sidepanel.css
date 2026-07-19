@@ -1059,6 +1059,16 @@ body {
 .gc-filter-body {
   margin-top: 6px;
 }
+/* seat (scope) selector — one permitted seat, or All permitted. */
+.gc-filter-scope {
+  margin-bottom: 8px;
+}
+.gc-scope-field {
+  flex: 1 1 auto;
+}
+.gc-scope-select {
+  width: 100%;
+}
 .gc-types {
   display: flex;
   flex-wrap: wrap;

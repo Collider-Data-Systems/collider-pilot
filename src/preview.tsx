@@ -149,6 +149,12 @@ function Preview() {
               onApplyFilter={() => void loadFrame()}
               onResetFilter={resetFilter}
               filterHonored={false}
+              // The MOCK frame carries no access fiber, so there are no permitted seats to focus;
+              // the seat selector renders inert ("All permitted (0)"), like the other view_filter
+              // controls on this adapter. The live harness (preview-live.tsx) exercises it for real.
+              permittedWorkspaces={[]}
+              activeScope=""
+              onScopeChange={() => void loadFrame()}
               accessMode={accessMode}
               onAccessModeChange={setAccessMode}
               onReloadFrame={() => void loadFrame()}

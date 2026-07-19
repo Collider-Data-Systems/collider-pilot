@@ -223,10 +223,16 @@ export function resolveViewFilter(request, healthz) {
   const tDay = typeof healthz.t_day === "number" ? healthz.t_day : 0;
   return {
     purpose: vf.purpose ?? DEFAULT_PURPOSE_URN,
+    // SEAT-GROUNDED (de-hardcoded): the DEFAULT scope is now EMPTY — nothing is pinned to a
+    // literal seat urn. Empty scope_urns ⇒ applyViewFilter narrows by nothing, so the frame shows
+    // ALL permitted-workspace nodes (the access gate is the only narrowing). The previous default
+    // pinned `sam.z440-cowork-workspace`, which — being outside the under-resolved permitted set —
+    // dropped Sam's own workspace node out of the view. The scope SELECTOR (GraphControls) sets
+    // scope_urns=[seat] to focus one seat on demand; [] (this default) means "All permitted".
     scope_urns:
       Array.isArray(vf.scope_urns) && vf.scope_urns.length > 0
         ? vf.scope_urns.slice()
-        : [DEFAULT_SCOPE_URN],
+        : [],
     t: typeof vf.t === "number" ? vf.t : tDay,
     types:
       Array.isArray(vf.types) && vf.types.length > 0

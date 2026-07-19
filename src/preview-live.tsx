@@ -190,6 +190,8 @@ function PreviewLive() {
   const [viewTypes, setViewTypes] = useState<string[]>(DEFAULT_VIEW_TYPES);
   const [viewT, setViewT] = useState("");
   const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
+  // SEAT (scope) selection. "" = All permitted (seat-grounded default); non-empty = focus one seat.
+  const [viewScope, setViewScope] = useState<string>("");
 
   const frameRequestRef = useRef<FrameRequest | undefined>(
     buildFrameRequest(DEFAULT_VIEW_TYPES, "", DEFAULT_ACCESS_POSTURE),
@@ -296,22 +298,35 @@ function PreviewLive() {
   }, []);
 
   const applyFilter = useCallback(() => {
-    const req = buildFrameRequest(viewTypes, viewT, accessMode);
+    const req = buildFrameRequest(viewTypes, viewT, accessMode, viewScope ? [viewScope] : []);
     frameRequestRef.current = req;
     void loadFrame(req);
-  }, [viewTypes, viewT, accessMode, loadFrame]);
+  }, [viewTypes, viewT, accessMode, viewScope, loadFrame]);
 
   const resetFilter = useCallback(() => {
     setViewTypes(DEFAULT_VIEW_TYPES);
     setViewT("");
+    setViewScope(""); // reset scope back to All permitted (part of the view_filter)
     const req = buildFrameRequest(DEFAULT_VIEW_TYPES, "", accessMode);
     frameRequestRef.current = req;
     void loadFrame(req);
   }, [accessMode, loadFrame]);
 
+  // SEAT (scope) selector — focus one permitted seat (or All permitted when ""). Read-only narrow.
+  const handleScopeChange = useCallback(
+    (scopeUrn: string) => {
+      setViewScope(scopeUrn);
+      const req = buildFrameRequest(viewTypes, viewT, accessMode, scopeUrn ? [scopeUrn] : []);
+      frameRequestRef.current = req;
+      void loadFrame(req);
+    },
+    [viewTypes, viewT, accessMode, loadFrame],
+  );
+
   const handleAccessModeChange = useCallback(
     (mode: AccessPosture) => {
       setAccessMode(mode);
+      setViewScope(""); // posture change ⇒ permitted set changes; reset scope to All permitted
       const req = buildFrameRequest(viewTypes, viewT, mode);
       frameRequestRef.current = req;
       void loadFrame(req);
@@ -329,6 +344,11 @@ function PreviewLive() {
   const selectedNode = useMemo(
     () => frame?.nodes.find((n) => n.urn === selectedUrn) ?? null,
     [frame, selectedUrn],
+  );
+
+  const permittedWorkspaces = useMemo(
+    () => frame?.provenance?.access?.permitted_workspaces ?? [],
+    [frame],
   );
 
   const liveLabel = streamStatus === "reconnecting" ? "RECONNECTING" : "LIVE";
@@ -394,6 +414,9 @@ function PreviewLive() {
               onApplyFilter={applyFilter}
               onResetFilter={resetFilter}
               filterHonored={isLive}
+              permittedWorkspaces={permittedWorkspaces}
+              activeScope={viewScope}
+              onScopeChange={handleScopeChange}
               accessMode={accessMode}
               onAccessModeChange={handleAccessModeChange}
               onReloadFrame={() => void loadFrame()}

@@ -111,6 +111,9 @@ function SidePanel() {
   const [focusSignal, setFocusSignal] = useState(0);
   const [viewTypes, setViewTypes] = useState<string[]>(DEFAULT_VIEW_TYPES);
   const [viewT, setViewT] = useState("");
+  // SEAT (scope) selection. "" = All permitted (the seat-grounded default; no literal urn pinned).
+  // A non-empty value focuses the view to that one permitted seat.
+  const [viewScope, setViewScope] = useState<string>("");
   // Access posture (A3). DEFAULT anon (fail-closed). The toggle sends ONLY access.mode; the
   // identity is worker-resolved from chrome.storage.local and is unreachable from this panel.
   const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
@@ -253,19 +256,33 @@ function SidePanel() {
   }, []);
 
   const applyFilter = useCallback(() => {
-    const req = buildFrameRequest(viewTypes, viewT, accessMode);
+    const req = buildFrameRequest(viewTypes, viewT, accessMode, viewScope ? [viewScope] : []);
     frameRequestRef.current = req;
     void loadFrame(req);
-  }, [viewTypes, viewT, accessMode, loadFrame]);
+  }, [viewTypes, viewT, accessMode, viewScope, loadFrame]);
 
   const resetFilter = useCallback(() => {
     setViewTypes(DEFAULT_VIEW_TYPES);
     setViewT("");
+    setViewScope(""); // reset scope back to All permitted (it is part of the view_filter)
     // Preserve the access posture across a view_filter reset (it is a separate control).
     const req = buildFrameRequest(DEFAULT_VIEW_TYPES, "", accessMode);
     frameRequestRef.current = req;
     void loadFrame(req);
   }, [accessMode, loadFrame]);
+
+  // SEAT (scope) selector. Focus the view to one permitted seat (or All permitted when ""). The
+  // permitted set is unchanged — this only narrows what is RENDERED. Re-requests under the current
+  // posture (worker re-resolves the trusted identity); no literal urn is pinned as a default.
+  const handleScopeChange = useCallback(
+    (scopeUrn: string) => {
+      setViewScope(scopeUrn);
+      const req = buildFrameRequest(viewTypes, viewT, accessMode, scopeUrn ? [scopeUrn] : []);
+      frameRequestRef.current = req;
+      void loadFrame(req);
+    },
+    [viewTypes, viewT, accessMode, loadFrame],
+  );
 
   // Access-posture toggle. Persists the UI pref (NOT the identity) and re-requests the frame
   // under the new posture. The worker resolves the trusted identity from storage — the toggle
@@ -274,6 +291,9 @@ function SidePanel() {
     (mode: AccessPosture) => {
       setAccessMode(mode);
       void saveAccessPosturePref(mode);
+      // The permitted set changes with the posture, so a previously-chosen seat may no longer be
+      // permitted — reset scope to All permitted to avoid focusing on a now-invisible seat.
+      setViewScope("");
       const req = buildFrameRequest(viewTypes, viewT, mode);
       frameRequestRef.current = req;
       void loadFrame(req);
@@ -325,6 +345,13 @@ function SidePanel() {
   const selectedNode = useMemo(
     () => frame?.nodes.find((n) => n.urn === selectedUrn) ?? null,
     [frame, selectedUrn],
+  );
+
+  // The permitted seats for the SEAT selector — the derived access fiber's permitted_workspaces
+  // (empty until an access-scoped frame has been read). Read-only projection of provenance.
+  const permittedWorkspaces = useMemo(
+    () => frame?.provenance?.access?.permitted_workspaces ?? [],
+    [frame],
   );
 
   const liveLabel =
@@ -422,6 +449,9 @@ function SidePanel() {
               onApplyFilter={applyFilter}
               onResetFilter={resetFilter}
               filterHonored={isLive}
+              permittedWorkspaces={permittedWorkspaces}
+              activeScope={viewScope}
+              onScopeChange={handleScopeChange}
               accessMode={accessMode}
               onAccessModeChange={handleAccessModeChange}
               onReloadFrame={() => void loadFrame()}
