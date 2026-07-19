@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { HgFrame, PilotRequest, PilotResponse } from "./mcp/types";
 import { loadScratch, saveScratch } from "./state/scratch";
 import { ProvenanceHeader } from "./components/ProvenanceHeader";
@@ -38,13 +39,20 @@ function SidePanel() {
     try {
       const res = await requestFrame();
       if (res.type === "FRAME") {
-        setFrame(res.frame);
+        // Normalize: never let a frame with a missing/non-array nodes/relations
+        // reach the renderer (Cytoscape init throws on a non-array).
+        const safeFrame: HgFrame = {
+          ...res.frame,
+          nodes: Array.isArray(res.frame?.nodes) ? res.frame.nodes : [],
+          relations: Array.isArray(res.frame?.relations) ? res.frame.relations : [],
+        };
+        setFrame(safeFrame);
         setStatus("ready");
         // Cache to browser scratch; drop a stale selection not present in the frame.
         setSelectedUrn((prev) => {
           const stillThere =
-            prev && res.frame.nodes.some((n) => n.urn === prev) ? prev : null;
-          void saveScratch({ selectedUrn: stillThere, frame: res.frame });
+            prev && safeFrame.nodes.some((n) => n.urn === prev) ? prev : null;
+          void saveScratch({ selectedUrn: stillThere, frame: safeFrame });
           return stillThere;
         });
       } else {
@@ -63,7 +71,14 @@ function SidePanel() {
     let cancelled = false;
     void (async () => {
       const scratch = await loadScratch();
-      if (!cancelled && scratch.frame) {
+      // Only restore a well-shaped cached frame; a stale/partial one (e.g. from an
+      // earlier extension version) must not reach the renderer.
+      if (
+        !cancelled &&
+        scratch.frame &&
+        Array.isArray(scratch.frame.nodes) &&
+        Array.isArray(scratch.frame.relations)
+      ) {
         setFrame(scratch.frame);
         setSelectedUrn(scratch.selectedUrn);
         setStatus("ready");
@@ -145,5 +160,5 @@ function SidePanel() {
 
 const container = document.getElementById("root");
 if (container) {
-  createRoot(container).render(<SidePanel />);
+  createRoot(container).render(<ErrorBoundary><SidePanel /></ErrorBoundary>);
 }

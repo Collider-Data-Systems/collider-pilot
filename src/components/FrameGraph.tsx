@@ -13,7 +13,7 @@
  *     React state / chrome.storage.session. Neither is written back into node data.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import cytoscape from "cytoscape";
 import type { HgFrame } from "../mcp/types";
 
@@ -26,14 +26,19 @@ const TYPE_COLOR: Record<string, string> = {
 const DEFAULT_COLOR = "#a0a0b0";
 
 function toElements(frame: HgFrame): cytoscape.ElementDefinition[] {
-  const nodes: cytoscape.ElementDefinition[] = frame.nodes.map((n) => ({
+  // Defensive: a frame delivered via the worker message channel or restored from
+  // stale scratch may be missing an array. Never let a bad shape reach Cytoscape
+  // (whose init throws a "non-array … Symbol.iterator" TypeError on non-arrays).
+  const frameNodes = Array.isArray(frame?.nodes) ? frame.nodes : [];
+  const frameRelations = Array.isArray(frame?.relations) ? frame.relations : [];
+  const nodes: cytoscape.ElementDefinition[] = frameNodes.map((n) => ({
     group: "nodes",
     // Node id === URN (stable semantic id). Only semantic fields go in data.
     data: { id: n.urn, label: n.label, type_id: n.type_id },
   }));
   // Cytoscape "edges" == mo:os relations. Guard against dangling endpoints.
-  const nodeUrns = new Set(frame.nodes.map((n) => n.urn));
-  const edges: cytoscape.ElementDefinition[] = frame.relations
+  const nodeUrns = new Set(frameNodes.map((n) => n.urn));
+  const edges: cytoscape.ElementDefinition[] = frameRelations
     .filter((r) => nodeUrns.has(r.source_urn) && nodeUrns.has(r.target_urn))
     .map((r) => ({
       group: "edges",
@@ -118,19 +123,29 @@ export function FrameGraph({
   const cyRef = useRef<cytoscape.Core | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const [graphError, setGraphError] = useState<string | null>(null);
 
-  // Init once.
+  // Init once. Cytoscape init runs in an effect, so a throw here escapes React
+  // error boundaries — catch it and surface a clean message instead of a blank
+  // panel + a cryptic extension-card error.
   useEffect(() => {
     if (!containerRef.current) return;
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements: [],
-      style: STYLE,
-      layout: { name: "cose", animate: false, padding: 12 },
-      wheelSensitivity: 0.2,
-      minZoom: 0.2,
-      maxZoom: 3,
-    });
+    let cy: cytoscape.Core;
+    try {
+      cy = cytoscape({
+        container: containerRef.current,
+        elements: [],
+        style: STYLE,
+        layout: { name: "cose", animate: false, padding: 12 },
+        // wheelSensitivity left at the default (1) — a custom value both warns in
+        // the console and is discouraged by Cytoscape for portability.
+        minZoom: 0.2,
+        maxZoom: 3,
+      });
+    } catch (err) {
+      setGraphError(`graph init failed: ${String(err)}`);
+      return;
+    }
 
     cy.on("tap", "node", (evt: cytoscape.EventObject) => {
       onSelectRef.current((evt.target as cytoscape.NodeSingular).id());
@@ -150,10 +165,15 @@ export function FrameGraph({
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    cy.elements().remove();
-    cy.add(toElements(frame));
-    cy.layout({ name: "cose", animate: false, padding: 12 }).run();
-    cy.fit(undefined, 16);
+    try {
+      cy.elements().remove();
+      cy.add(toElements(frame));
+      cy.layout({ name: "cose", animate: false, padding: 12 }).run();
+      cy.fit(undefined, 16);
+      setGraphError(null);
+    } catch (err) {
+      setGraphError(`graph render failed: ${String(err)}`);
+    }
   }, [frame]);
 
   // Reflect external selection (e.g. restored from scratch) into the graph.
@@ -171,6 +191,7 @@ export function FrameGraph({
 
   return (
     <div className="graph-wrap">
+      {graphError && <div className="pilot-state error">{graphError}</div>}
       <div className="graph-canvas" ref={containerRef} />
       <div className="graph-legend" aria-hidden="true">
         <span className="legend-item">

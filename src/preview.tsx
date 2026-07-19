@@ -14,6 +14,7 @@
 
 import { useCallback, useMemo, useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { HgFrame } from "./mcp/types";
 import { MockMcpAdapter } from "./mcp/mock-adapter";
 import { ProvenanceHeader } from "./components/ProvenanceHeader";
@@ -88,5 +89,5 @@ function Preview() {
 
 const container = document.getElementById("root");
 if (container) {
-  createRoot(container).render(<Preview />);
+  createRoot(container).render(<ErrorBoundary><Preview /></ErrorBoundary>);
 }

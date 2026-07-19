@@ -20,7 +20,11 @@ function Field({ label, value }: { label: string; value: string }) {
 }
 
 export function ProvenanceHeader({ provenance }: { provenance: FrameProvenance }) {
-  const vf = provenance.view_filter;
+  // Defensive: any of these may be absent on a live/partial frame. A missing
+  // sub-field must never blank the whole panel.
+  const vf = provenance.view_filter ?? {};
+  const vfTypes = Array.isArray(vf.types) ? vf.types : [];
+  const vfScope = Array.isArray(vf.scope_urns) ? vf.scope_urns : [];
   return (
     <section className="provenance" aria-label="Frame provenance">
       <div className="prov-top">
@@ -44,15 +48,15 @@ export function ProvenanceHeader({ provenance }: { provenance: FrameProvenance }
         <span className="prov-label">view_filter</span>
         <div className="prov-filter-body">
           <div>
-            <span className="prov-k">t</span> {vf.t}
+            <span className="prov-k">t</span> {vf.t ?? "—"}
           </div>
           <div>
-            <span className="prov-k">types</span> {vf.types.join(", ")}
+            <span className="prov-k">types</span> {vfTypes.join(", ")}
           </div>
           <div>
             <span className="prov-k">scope</span>
             <ul className="prov-scope">
-              {vf.scope_urns.map((u) => (
+              {vfScope.map((u) => (
                 <li key={u} title={u}>
                   {u}
                 </li>
