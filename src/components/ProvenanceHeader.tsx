@@ -55,6 +55,10 @@ export function ProvenanceHeader({
   // ACCESS (A3). The tier badge is verbatim + load-bearing: it names which tier is
   // authoritative so the client-presentation posture is NEVER socially misread as
   // enforcement. Rendered even when collapsed.
+  // FIX 1 (badge honesty): `enforced` is gated ONLY on provably-server-computed provenance
+  // (`computed_by === "server-authoritative"`), NEVER on the config's `enforced_by` intent
+  // flag. A chrome.storage enforcement flag over a client-side computation now renders
+  // ACCESS: PRESENTATION, because resolveAccess hard-codes computed_by to client-presentation.
   const access = provenance.access;
   const enforced = access?.computed_by === "server-authoritative";
   // Verbatim strings — do not reword. "ACCESS: PRESENTATION" (client) vs "ACCESS: ENFORCED".
@@ -136,10 +140,16 @@ export function ProvenanceHeader({
               </ul>
             </div>
           )}
-          {!access.intersection_applied && access.scope?.workstation && (
+          {access.workstation_intersection === "skipped-widened" && access.scope?.workstation && (
             <div className="prov-access-note" title="The workstation ∩ was NOT applied — the named engine→workstation binding is absent (or deferred to the server tier). The set is WIDENED, not narrowed by workstation. Never read this as enforcement.">
               workstation ∩ skipped — {String(access.scope.workstation).split(":").pop()}{" "}
               (widened, not narrowed)
+            </div>
+          )}
+          {access.workstation_intersection === "failed-closed" && (
+            <div className="prov-access-note failclosed" title="Server-authoritative claim, but the workstation binding could NOT be resolved from the fold. The permitted set FAILED CLOSED — the governs-closure was dropped to public-only rather than widened. This is fail-safe, not enforcement of the claimed workstation.">
+              workstation binding UNRESOLVED — {String(access.scope?.workstation).split(":").pop()}{" "}
+              (FAILED CLOSED · governs-closure dropped)
             </div>
           )}
           {effectiveAnon && permittedCount === 0 && (

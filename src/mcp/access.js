@@ -35,11 +35,17 @@
  *       properties.visibility==="public" || properties.anon_visible===true, UNIONED with the
  *       client-side PUBLIC_WORKSPACE_DEFAULTS. Bring-in unions it in; anon returns ONLY it.
  *
- * `workspaceOfNode(fold, urn)` (owner attribution): a session is its own workspace; else the
- * node's owning workspace = the session reachable via its WF12 `provides-kb` / `kb-source`
- * lineage, else its WF19 `has-occupant` lineage; unattributable ⇒ null. The gate treats a
- * null (unattributable) node as SHOWN for identified (never under-hide a legit user) and
- * HIDDEN for anon (fail-closed) — anon sees ONLY explicitly-public nodes.
+ * `owningWorkspaces(fold, urn)` (owner attribution): a session is its own workspace; else the
+ * SET of owning sessions found by walking the WF12 `provides-kb`/`kb-source` lineage in the
+ * provider→item direction ONLY (session --provides-kb--> item), unioned with its WF19
+ * `has-occupant` lineage; unattributable ⇒ [] (empty set). Multi-owner is FAIL-CLOSED: the
+ * gate keeps a node only if EVERY owning workspace is permitted (an item owned by a
+ * non-permitted session but merely cited by a permitted one is HIDDEN — no insertion-order
+ * over-exposure). The gate treats an unattributable (empty-owner) node as HIDDEN for EVERYONE
+ * (fail-closed) unless it is explicitly public. A legit user's real workspaces are
+ * attributable, so this never under-hides them; anon likewise sees ONLY explicitly-public
+ * nodes. NOTE: ownership here is a heuristic (WF12 lineage direction) — DEBT until ownership
+ * is a first-class folded relation; the fail-closed multi-owner rule bounds the blast radius.
  *
  * THE ANONYMOUS USER (Sam's explicit requirement): `urn:moos:user:anon` is a first-class
  * principal. Anon mode ⇒ permitted = public_workspaces, and the anon principal appears in
@@ -201,44 +207,69 @@ export function workspacesForPrincipals(fold, principals) {
  * is a WF03 `hosts` two-hop (workstation --hosts--> kernel, session --opens-on--> kernel). That
  * two-hop IS derivable, but a plain `workstation=` is a CLAIM not proof (§8), so it is NOT
  * applied at the client-presentation tier — it is where the server-authoritative tier, with a
- * cert-bound workstation, would enforce. Hence this returns null today and the caller skips.
+ * cert-bound workstation, would enforce. Hence this returns null today and the caller skips
+ * (client tier) or FAILS CLOSED (server-authoritative tier — see permittedWorkspaces).
+ *
+ * GUARD (should-fix): match ONLY the intended placement rewrite_category (WF19, the family
+ * `opens-on`/`realizes` live in — confirmed against the live fold) AND verify the collected
+ * src is a `session` node. A bare `src_port==="opens-on"` with no WFxx/type guard would let a
+ * mislabeled relation inflate the on-workstation set at the server tier.
  * @param {any} fold
  * @param {string} workstationUrn
- * @returns {string[] | null} bound session urns, or null to SKIP (widened)
+ * @param {Map<string, any>} [idx] - precomputed node index (built once by the caller)
+ * @returns {string[] | null} bound session urns, or null to SKIP/fail-closed decision by caller
  */
-export function workspacesOnWorkstation(fold, workstationUrn) {
+export function workspacesOnWorkstation(fold, workstationUrn, idx) {
   if (!workstationUrn) return null;
+  const index = idx || nodeIndex(fold);
+  const isSession = (u) => index.get(u)?.type_id === "session";
   /** @type {Set<string>} */
   const ws = new Set();
   for (const r of foldRelations(fold)) {
-    if (!r) continue;
-    // D7 `realizes`: session/surface realizes-on the workstation (design's named relation).
-    if (r.src_port === "realizes" && r.tgt_urn === workstationUrn && r.src_urn) ws.add(r.src_urn);
-    // direct session opens-on a workstation (vs the live fold's session opens-on kernel).
-    if (r.src_port === "opens-on" && r.tgt_urn === workstationUrn && r.src_urn) ws.add(r.src_urn);
+    if (!r || r.tgt_urn !== workstationUrn || !r.src_urn) continue;
+    // Placement family only: WF19 `opens-on` (session opens-on workstation) or the design's
+    // D7 `realizes` (same placement family). rewrite_category + session-type guarded so a
+    // mislabeled relation carrying these port names cannot inflate the set at the server tier.
+    const isPlacement =
+      r.rewrite_category === "WF19" &&
+      (r.src_port === "opens-on" || r.src_port === "realizes");
+    if (isPlacement && isSession(r.src_urn)) ws.add(r.src_urn);
   }
-  return ws.size > 0 ? [...ws] : null; // null ⇒ named binding absent ⇒ SKIP (widened)
+  return ws.size > 0 ? [...ws] : null; // null ⇒ no proven binding ⇒ caller SKIPs or fails closed
 }
 
 /**
- * Owner attribution: the workspace (session) a node belongs to, or null (unattributable).
- * Session ⇒ itself; else the session reachable via WF12 `provides-kb`/`kb-source` lineage;
- * else its WF19 `has-occupant` lineage (an agent's occupied session). [CONJ] heuristic until
- * ownership is a first-class folded relation.
+ * Owner attribution: the SET of workspaces (sessions) a node belongs to, or [] (unattributable).
+ * Session ⇒ [itself]; else the sessions reachable by walking the WF12 `provides-kb`/`kb-source`
+ * lineage in the provider→item direction ONLY (session --provides-kb--> item; we walk item←provider),
+ * UNIONED with its WF19 `has-occupant` lineage (an agent's occupied session). Every owning
+ * session is collected (multi-owner); the gate then keeps the node only if ALL owners are
+ * permitted (fail-closed). Directed-only so a node owned by a non-permitted session but merely
+ * cited by a permitted one (item --provides-kb--> permitted-session) is NOT attributed to the
+ * permitted one — that undirected hop was the insertion-order over-exposure defect.
+ *
+ * [CONJ] ownership-heuristic DEBT: until ownership is a first-class folded relation this leans on
+ * WF12 lineage direction; the fail-closed multi-owner rule bounds the exposure of that heuristic.
  * @param {any} fold
  * @param {string} urn
- * @returns {string | null}
+ * @param {Map<string, any>} [idx] - precomputed node index (built once by the caller; perf)
+ * @param {any[]} [rels] - precomputed relations array (built once by the caller; perf)
+ * @returns {string[]} the set of owning workspace urns (empty ⇒ unattributable)
  */
-export function workspaceOfNode(fold, urn) {
-  const idx = nodeIndex(fold);
-  const node = idx.get(urn);
-  if (!node) return null;
-  if (node.type_id === "session") return urn;
+export function owningWorkspaces(fold, urn, idx, rels) {
+  const index = idx || nodeIndex(fold);
+  const relations = rels || foldRelations(fold);
+  const node = index.get(urn);
+  if (!node) return [];
+  if (node.type_id === "session") return [urn];
 
-  const rels = foldRelations(fold);
-  const isSession = (u) => idx.get(u)?.type_id === "session";
+  const isSession = (u) => index.get(u)?.type_id === "session";
+  /** @type {Set<string>} owning sessions (multi-owner union) */
+  const owners = new Set();
 
-  // WF12 provides-kb / kb-source lineage toward a session (bounded walk, cycle-guarded).
+  // WF12 provider→item lineage, DIRECTED: for the current item, an owning provider is the SRC of
+  // a `provides-kb` relation whose TGT is the item (tgt_port `kb-source` is the same relation's
+  // item-side port). Walk item→provider (match tgt_urn===cur) up to a session. Bounded + cycle-guarded.
   /** @type {Set<string>} */
   const seen = new Set([urn]);
   let frontier = [urn];
@@ -246,29 +277,27 @@ export function workspaceOfNode(fold, urn) {
     /** @type {string[]} */
     const next = [];
     for (const cur of frontier) {
-      for (const r of rels) {
+      for (const r of relations) {
         if (!r || r.rewrite_category !== "WF12") continue;
-        // follow provides-kb (src→tgt) and kb-source (tgt→src) toward the workspace.
-        let hop = null;
-        if (r.src_urn === cur && (r.src_port === "provides-kb" || r.tgt_port === "kb-source")) hop = r.tgt_urn;
-        else if (r.tgt_urn === cur && (r.src_port === "provides-kb" || r.tgt_port === "kb-source")) hop = r.src_urn;
-        if (hop && !seen.has(hop)) {
-          if (isSession(hop)) return hop;
-          seen.add(hop);
-          next.push(hop);
-        }
+        if (r.tgt_urn !== cur) continue; // provider→item ONLY (never item→provider)
+        if (r.src_port !== "provides-kb" && r.tgt_port !== "kb-source") continue;
+        const provider = r.src_urn;
+        if (!provider || seen.has(provider)) continue;
+        seen.add(provider);
+        if (isSession(provider)) owners.add(provider); // an owning session — collect, don't stop
+        else next.push(provider); // an intermediate item — keep walking up its providers
       }
     }
     frontier = next;
   }
 
-  // WF19 has-occupant lineage: if this node is an occupant agent, its occupied session.
-  for (const r of rels) {
+  // WF19 has-occupant lineage: if this node is an occupant, collect EVERY occupying session.
+  for (const r of relations) {
     if (r && r.rewrite_category === "WF19" && r.src_port === "has-occupant" && r.tgt_urn === urn && isSession(r.src_urn)) {
-      return r.src_urn;
+      owners.add(r.src_urn);
     }
   }
-  return null;
+  return [...owners];
 }
 
 /**
@@ -286,10 +315,19 @@ export function effectiveMode(scope) {
 }
 
 /**
+ * @typedef {"applied"|"skipped-widened"|"failed-closed"} WorkstationIntersection
+ * "applied"        — a concrete workstation binding was resolved and intersected (narrowed).
+ * "skipped-widened"— workstation ∩ NOT applied (client-presentation tier, or no workstation in
+ *                    scope); the set is left as-is (widened, NOT narrowed by workstation).
+ * "failed-closed"  — server-authoritative claim + UNRESOLVABLE workstation ⇒ the governs closure
+ *                    is dropped to public-only (never widened). See FIX 4.
+ */
+
+/**
  * (permitted set) — orchestrates (1)-(4) for a resolved AccessScope.
  * @param {any} fold
  * @param {AccessScope} scope
- * @returns {{ permitted: string[], role_topology: string[], public: string[], path: "wf19-has-occupant"|"occupant-property"|"none", intersection_applied: boolean }}
+ * @returns {{ permitted: string[], role_topology: string[], public: string[], path: "wf19-has-occupant"|"occupant-property"|"none", intersection_applied: boolean, workstation_intersection: WorkstationIntersection }}
  */
 export function permittedWorkspaces(fold, scope) {
   const pub = publicWorkspaces(fold);
@@ -303,6 +341,7 @@ export function permittedWorkspaces(fold, scope) {
       public: pub,
       path: "none",
       intersection_applied: false,
+      workstation_intersection: "skipped-widened",
     };
   }
 
@@ -317,14 +356,33 @@ export function permittedWorkspaces(fold, scope) {
   /** @type {Set<string>} */
   let permitted = new Set([...workspaces, ...pub]);
 
-  // (3) workstation ∩. null ⇒ named binding absent (or a client-tier claim) ⇒ SKIP (widen).
+  // (3) workstation ∩.
   let intersectionApplied = false;
-  if (scope.workstation && scope.enforced_by === "server-authoritative") {
-    const onWs = workspacesOnWorkstation(fold, scope.workstation);
-    if (onWs) {
-      const wsSet = new Set(onWs);
-      permitted = new Set([...permitted].filter((w) => wsSet.has(w)));
-      intersectionApplied = true;
+  /** @type {WorkstationIntersection} */
+  let workstationIntersection = "skipped-widened";
+  if (scope.workstation) {
+    if (scope.enforced_by === "server-authoritative") {
+      const onWs = workspacesOnWorkstation(fold, scope.workstation);
+      if (onWs) {
+        // A proven binding exists — narrow to workspaces on this workstation.
+        const wsSet = new Set(onWs);
+        permitted = new Set([...permitted].filter((w) => wsSet.has(w)));
+        intersectionApplied = true;
+        workstationIntersection = "applied";
+      } else {
+        // FIX 4 — FAIL CLOSED: a server-authoritative frame CLAIMS the workstation is
+        // cert-bound, but the binding cannot be resolved from the fold. Do NOT widen (do NOT
+        // silently skip and return the full governs closure). Drop every workstation-unprovable
+        // workspace; keep only public (public is anon-visible, not workstation-gated). This is
+        // the tier where the Go port MUST refuse to over-expose rather than fall through.
+        permitted = new Set(pub);
+        intersectionApplied = false;
+        workstationIntersection = "failed-closed";
+      }
+    } else {
+      // client-presentation tier: `workstation=` is a CLAIM not proof (§8) — SKIP the ∩ and
+      // leave the set WIDENED. This is the ONLY tier allowed to skip+widen on a workstation.
+      workstationIntersection = "skipped-widened";
     }
   }
 
@@ -334,47 +392,63 @@ export function permittedWorkspaces(fold, scope) {
     public: pub,
     path,
     intersection_applied: intersectionApplied,
+    workstation_intersection: workstationIntersection,
   };
 }
 
 /**
  * resolveAccess(fold, accessScope) -> AccessResolution. The single entry point selectFrame
- * calls ONCE over the FULL fold. Pure. If a server AccessResolution is already present the
- * caller skips this and trusts+echoes it (future A2).
+ * calls ONCE over the FULL fold. Pure, and CLIENT-SIDE by definition. If a genuine server
+ * AccessResolution is present the caller (selectFrame, via opts.serverAccess) skips this
+ * function entirely and trusts+echoes the server's own resolution (future A2).
+ *
+ * FIX 1 (badge honesty): `computed_by` is HARD-CODED to "client-presentation" here — this set
+ * was computed client-side, full stop. `scope.enforced_by` is an INTENT hint (what tier the
+ * config WANTS) and is NEVER echoed into `computed_by`; otherwise a chrome.storage flag could
+ * make the UI claim `ACCESS: ENFORCED` ("the kernel returned only the permitted subgraph")
+ * over a purely client-side computation. The only path to `computed_by:"server-authoritative"`
+ * is a real server AccessResolution flowing through opts.serverAccess.
  * @param {any} fold
  * @param {AccessScope} scope - a RESOLVED scope (identity already worker-injected)
  * @returns {AccessResolution}
  */
 export function resolveAccess(fold, scope) {
-  const { permitted, role_topology, public: pub, path, intersection_applied } =
+  const { permitted, role_topology, public: pub, path, intersection_applied, workstation_intersection } =
     permittedWorkspaces(fold, scope);
   return {
     scope,
     permitted_workspaces: permitted,
     role_topology,
     public_workspaces: pub,
-    computed_by: scope.enforced_by || "client-presentation",
+    computed_by: "client-presentation", // FIX 1: client-side computation ⇒ never "enforced"
     intersection_applied,
+    workstation_intersection,
     workspace_path: effectiveMode(scope) === "anon" ? "none" : path,
   };
 }
 
 /**
  * The access GATE as a keep-set over the FULL raw fold: the urns a resolution admits. The
- * caller intersects this with the type/scope/t selection in applyViewFilter. Rules:
- *   - explicitly-public node        → keep (always)
- *   - owner ∈ permitted_workspaces  → keep
- *   - unattributable (owner null)   → keep iff identified (never under-hide a legit user);
- *                                      anon drops it (fail-closed — anon sees only public)
- *   - owner ∉ permitted             → drop
+ * caller intersects this with the type/scope/t selection in applyViewFilter. Rules (fail-closed):
+ *   - explicitly-public node            → keep (always)
+ *   - owners ⊆ permitted_workspaces     → keep (EVERY owning workspace must be permitted)
+ *   - unattributable (no owner) node    → DROP for EVERYONE (fail-closed) unless explicitly
+ *                                          public (FIX 2 — a low-priv identified user must NOT
+ *                                          see confidential null-owner nodes; identity alone
+ *                                          never unlocks them)
+ *   - ANY owner ∉ permitted             → drop (FIX 3 — fail-closed on multi-owner ambiguity)
+ *
+ * PERF (should-fix): the node index + relations are built ONCE here and threaded into
+ * owningWorkspaces, so the keep-set is linear rather than the previous O(N²) (a full rebuild
+ * per node). The old `void idx` shim is gone.
  * @param {any} fold
  * @param {AccessResolution} resolution
  * @returns {Set<string>}
  */
 export function accessKeepSet(fold, resolution) {
   const permitted = new Set(resolution.permitted_workspaces);
-  const mode = effectiveMode(resolution.scope);
-  const idx = nodeIndex(fold);
+  const idx = nodeIndex(fold);        // built ONCE
+  const rels = foldRelations(fold);   // built ONCE
   /** @type {Set<string>} */
   const keep = new Set();
   for (const node of foldNodes(fold)) {
@@ -383,13 +457,14 @@ export function accessKeepSet(fold, resolution) {
       keep.add(node.urn);
       continue;
     }
-    const owner = node.type_id === "session" ? node.urn : workspaceOfNode(fold, node.urn);
-    if (owner && permitted.has(owner)) {
-      keep.add(node.urn);
-    } else if (owner === null && mode === "identified") {
+    const owners =
+      node.type_id === "session" ? [node.urn] : owningWorkspaces(fold, node.urn, idx, rels);
+    // Fail-closed: keep ONLY if the node has at least one owner AND every owner is permitted.
+    // Empty owners (unattributable) ⇒ drop (identity does not unlock null-owner nodes). Any
+    // non-permitted owner ⇒ drop (multi-owner ambiguity fails closed).
+    if (owners.length > 0 && owners.every((o) => permitted.has(o))) {
       keep.add(node.urn);
     }
-    void idx; // idx retained for symmetry with workspaceOfNode's index
   }
   return keep;
 }

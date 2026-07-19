@@ -98,14 +98,33 @@ export interface AccessScope {
   enforced_by: AccessEnforcement; // which tier is authoritative for THIS frame
 }
 
+/**
+ * How the workstation ∩ (step 3) resolved — an honest, auditable signal distinct from the
+ * `intersection_applied` boolean:
+ *  - "applied"        — a concrete workstation binding was resolved and intersected (narrowed).
+ *  - "skipped-widened"— the ∩ was NOT applied (client-presentation tier, or no workstation in
+ *                       scope); the set is left WIDENED (never read this as enforcement).
+ *  - "failed-closed"  — server-authoritative claim + an UNRESOLVABLE workstation ⇒ the governs
+ *                       closure was DROPPED to public-only rather than silently widened (FIX 4).
+ */
+export type WorkstationIntersection = "applied" | "skipped-widened" | "failed-closed";
+
 /** The DERIVED fiber — stamped into provenance, NOT the request. */
 export interface AccessResolution {
   scope: AccessScope; // the point, echoed
   permitted_workspaces: string[]; // f(group_topology × user × workstation)
   role_topology: string[]; // WF02 governs principals folded for this user (incl. user itself)
   public_workspaces: string[]; // anon-visible set (always unioned in)
-  computed_by: AccessEnforcement; // where the set was ACTUALLY computed
-  intersection_applied: boolean; // false ⇒ workstation ∩ skipped (widened) — a [CONJ] path
+  /**
+   * Where the set was ACTUALLY computed. HARD "client-presentation" for every client-side
+   * resolveAccess result (FIX 1) — a chrome.storage enforcement flag is an INTENT hint on
+   * scope.enforced_by and NEVER promotes this to "server-authoritative". Only a genuine server
+   * AccessResolution (opts.serverAccess) carries "server-authoritative".
+   */
+  computed_by: AccessEnforcement;
+  intersection_applied: boolean; // true ONLY when a concrete workstation binding was applied
+  /** Tri-state honesty for the workstation ∩ (supersedes reading `intersection_applied` alone). */
+  workstation_intersection: WorkstationIntersection;
   /** Which step-2 path produced the permitted set: the primary reverse-WF19 walk, the
    *  occupant-property [CONJ] fallback, or "none" (anon / empty). Auditable honesty. */
   workspace_path: "wf19-has-occupant" | "occupant-property" | "none";
