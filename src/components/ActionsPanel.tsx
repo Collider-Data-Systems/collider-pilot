@@ -294,9 +294,12 @@ export function ActionsPanel({
         </div>
       )}
 
-      {/* Discovered catalog — transparency (criterion 1); not actionable. */}
-      <div className="actions-block">
-        <div className="actions-block-title">discovered tools ({catalog.length})</div>
+      {/* Discovered catalog — transparency (criterion 1); not actionable. Phase 6: behind
+          a <details> disclosure (collapsed by default) to reclaim vertical space. */}
+      <details className="actions-block catalog-details">
+        <summary className="actions-block-title catalog-summary">
+          discovered tools ({catalog.length})
+        </summary>
         <ul className="catalog">
           {catalog.map((t) => (
             <li key={t.name} className="catalog-item">
@@ -307,7 +310,7 @@ export function ActionsPanel({
           ))}
           {catalog.length === 0 && <li className="aff-warn">no tools discovered</li>}
         </ul>
-      </div>
+      </details>
 
       <ConfirmActionModal
         pending={pending}

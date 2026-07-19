@@ -1,21 +1,51 @@
 /**
  * Collider Pilot - side panel (the seat)
  * ======================================
- * Read-only Phase 1 shell. Asks the service worker for a mock frame, renders the
- * provenance header + Cytoscape inspector + textual node inspector, and keeps
- * selection/frame in chrome.storage.session so the panel restores after a forced
- * service-worker termination. No model, no writes, no page access.
+ * Read-only seat. Asks the service worker for a frame (live MCP by default, mock
+ * fallback), renders the provenance header + Cytoscape inspector + textual node inspector
+ * + gated Actions, and keeps selection/frame in chrome.storage.session so the panel
+ * restores after a forced service-worker termination.
+ *
+ * PHASE 6 additions (all read-only, all in the panel):
+ *   - graph layout picker (concentric default) + node search (select + center a hit)
+ *   - view_filter controls (type toggles + optional t) that re-request the frame
+ *   - LIVE frames: when the frame is a live read, subscribe to the kernel SSE
+ *     (GET :8000/fold/stream) and DEBOUNCE a full adapter re-fetch on each `rewrite`,
+ *     pulsing a LIVE indicator; reconnect with backoff and resync on reconnect. The MOCK
+ *     path never opens a stream. The manual ⟳ stays as a force-refresh.
+ *   - "Open full tab" opens the read-only mirror (pip.html) in a browser tab.
+ *
+ * SAFETY: still no model, no writes, no page access. EventSource is GET-only — it cannot
+ * POST and has no apply path. Every mutating act stays behind the ActionsPanel modal.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import type { HgFrame, PilotRequest, PilotResponse, RawMcpTool } from "./mcp/types";
+import type {
+  FrameRequest,
+  HgFrame,
+  PilotRequest,
+  PilotResponse,
+  RawMcpTool,
+} from "./mcp/types";
 import { loadScratch, saveScratch, subscribeScratch } from "./state/scratch";
+import {
+  DEFAULT_GRAPH_LAYOUT,
+  loadLayoutPref,
+  saveLayoutPref,
+  type GraphLayoutName,
+} from "./state/prefs";
 import { ProvenanceHeader } from "./components/ProvenanceHeader";
 import { FrameGraph } from "./components/FrameGraph";
+import {
+  GraphControls,
+  DEFAULT_VIEW_TYPES,
+  buildFrameRequest,
+} from "./components/GraphControls";
 import { NodeInspector } from "./components/NodeInspector";
 import { ActionsPanel } from "./components/ActionsPanel";
+import { useFoldStream } from "./state/use-fold-stream";
 import {
   isPopOutSupported,
   isPipOpen,
@@ -26,19 +56,18 @@ import "./sidepanel.css";
 
 type Status = "loading" | "ready" | "error";
 
-async function requestFrame(): Promise<PilotResponse> {
-  // Waking the worker with a message is what restarts it if it was terminated;
-  // the mock adapter answers identically each time (no lost state).
+async function requestFrame(request?: FrameRequest): Promise<PilotResponse> {
+  // Waking the worker with a message is what restarts it if it was terminated. The
+  // request (view_filter) rides along; the worker forwards it to adapter.getFrame().
   return (await chrome.runtime.sendMessage({
     type: "GET_FRAME",
+    request,
   } as PilotRequest)) as PilotResponse;
 }
 
 /**
- * Phase 4: ask the worker for the MCP tools/list catalog (READ-ONLY discovery). The
- * worker answers with the live catalog (live adapter) or an empty list (mock adapter),
- * and the Actions section projects the affordance pack from it, falling back to the mock
- * pack. Listing is not calling — no tool is invoked here.
+ * Phase 4: ask the worker for the MCP tools/list catalog (READ-ONLY discovery). Listing
+ * is not calling — no tool is invoked here.
  */
 async function requestTools(): Promise<PilotResponse> {
   return (await chrome.runtime.sendMessage({
@@ -46,28 +75,52 @@ async function requestTools(): Promise<PilotResponse> {
   } as PilotRequest)) as PilotResponse;
 }
 
+/** Feature-detect the full-tab route (chrome.tabs.create needs no extra permission). */
+function isFullTabSupported(): boolean {
+  try {
+    return (
+      typeof chrome !== "undefined" &&
+      !!chrome.tabs?.create &&
+      !!chrome.runtime?.getURL
+    );
+  } catch {
+    return false;
+  }
+}
+
 function SidePanel() {
   const [frame, setFrame] = useState<HgFrame | null>(null);
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
-  // Feature-detect Pop-out once (criterion 6). Enabled whenever EITHER Document PiP or
-  // chrome.windows is available — in the extension that's always, so the button always
-  // opens SOMETHING (Document PiP, or the chrome.windows popup fallback from the panel).
   const [popOutSupported] = useState(() => isPopOutSupported());
+  const [fullTabSupported] = useState(() => isFullTabSupported());
   const [pipOpen, setPipOpen] = useState(false);
-  // Phase 4: the MCP tools/list catalog for the affordance pack (null ⇒ mock fallback).
   const [liveTools, setLiveTools] = useState<RawMcpTool[] | null>(null);
   const [affordanceError, setAffordanceError] = useState<string | null>(null);
 
-  const loadFrame = useCallback(async () => {
+  // Phase 6 UI state (all local, read-only).
+  const [layout, setLayout] = useState<GraphLayoutName>(DEFAULT_GRAPH_LAYOUT);
+  const [search, setSearch] = useState("");
+  const [searchHint, setSearchHint] = useState<string | null>(null);
+  const [focusUrn, setFocusUrn] = useState<string | null>(null);
+  const [focusSignal, setFocusSignal] = useState(0);
+  const [viewTypes, setViewTypes] = useState<string[]>(DEFAULT_VIEW_TYPES);
+  const [viewT, setViewT] = useState("");
+
+  // The currently-applied FrameRequest — a ref so the SSE re-fetch always uses the latest
+  // applied filter without re-subscribing the stream.
+  const frameRequestRef = useRef<FrameRequest | undefined>(undefined);
+
+  const loadFrame = useCallback(async (request?: FrameRequest) => {
+    const req = request ?? frameRequestRef.current;
     setStatus("loading");
     setError(null);
     try {
-      const res = await requestFrame();
+      const res = await requestFrame(req);
       if (res.type === "FRAME") {
-        // Normalize: never let a frame with a missing/non-array nodes/relations
-        // reach the renderer (Cytoscape init throws on a non-array).
+        // Normalize: never let a frame with a missing/non-array nodes/relations reach
+        // the renderer (Cytoscape init throws on a non-array).
         const safeFrame: HgFrame = {
           ...res.frame,
           nodes: Array.isArray(res.frame?.nodes) ? res.frame.nodes : [],
@@ -75,7 +128,6 @@ function SidePanel() {
         };
         setFrame(safeFrame);
         setStatus("ready");
-        // Cache to browser scratch; drop a stale selection not present in the frame.
         setSelectedUrn((prev) => {
           const stillThere =
             prev && safeFrame.nodes.some((n) => n.urn === prev) ? prev : null;
@@ -86,7 +138,6 @@ function SidePanel() {
         setStatus("error");
         setError(res.error);
       } else {
-        // A non-FRAME, non-ERROR response to GET_FRAME should never happen; treat defensively.
         setStatus("error");
         setError("unexpected response to GET_FRAME");
       }
@@ -96,8 +147,6 @@ function SidePanel() {
     }
   }, []);
 
-  // Phase 4: load the tool catalog for affordance discovery. Non-fatal — a failure just
-  // falls the Actions section back to the labelled mock pack.
   const loadTools = useCallback(async () => {
     try {
       const res = await requestTools();
@@ -114,14 +163,15 @@ function SidePanel() {
     }
   }, []);
 
-  // Mount: restore instantly from scratch (survives worker termination), then
-  // refresh from the worker.
+  // Mount: restore instantly from scratch, load the layout pref, then refresh.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const scratch = await loadScratch();
-      // Only restore a well-shaped cached frame; a stale/partial one (e.g. from an
-      // earlier extension version) must not reach the renderer.
+      const [scratch, savedLayout] = await Promise.all([
+        loadScratch(),
+        loadLayoutPref(),
+      ]);
+      if (!cancelled) setLayout(savedLayout);
       if (
         !cancelled &&
         scratch.frame &&
@@ -148,9 +198,62 @@ function SidePanel() {
     [frame],
   );
 
-  // Mirror the PiP window: adopt SELECTION changes written to the shared scratch by the
-  // other surface (the panel authors the frame, so frame changes from scratch are ignored
-  // here). Event-driven via storage.onChanged — no polling, and no re-write (no loop).
+  // Node search: match by urn/label, then select + center the first hit. Local only.
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setSearch(value);
+      const q = value.trim().toLowerCase();
+      if (!q || !frame) {
+        setSearchHint(null);
+        return;
+      }
+      const nodes = Array.isArray(frame.nodes) ? frame.nodes : [];
+      const matches = nodes.filter(
+        (n) =>
+          n.urn.toLowerCase().includes(q) ||
+          (n.label ?? "").toLowerCase().includes(q),
+      );
+      if (matches.length === 0) {
+        setSearchHint("no match");
+        return;
+      }
+      setSearchHint(
+        matches.length === 1 ? "1 match" : `${matches.length} matches — first shown`,
+      );
+      const hit = matches[0];
+      handleSelect(hit.urn);
+      setFocusUrn(hit.urn);
+      setFocusSignal((s) => s + 1);
+    },
+    [frame, handleSelect],
+  );
+
+  const handleLayoutChange = useCallback((next: GraphLayoutName) => {
+    setLayout(next);
+    void saveLayoutPref(next);
+  }, []);
+
+  const toggleType = useCallback((type: string) => {
+    setViewTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type],
+    );
+  }, []);
+
+  const applyFilter = useCallback(() => {
+    const req = buildFrameRequest(viewTypes, viewT);
+    frameRequestRef.current = req;
+    void loadFrame(req);
+  }, [viewTypes, viewT, loadFrame]);
+
+  const resetFilter = useCallback(() => {
+    setViewTypes(DEFAULT_VIEW_TYPES);
+    setViewT("");
+    frameRequestRef.current = undefined;
+    void loadFrame(undefined);
+  }, [loadFrame]);
+
+  // Mirror the PiP window: adopt SELECTION changes from the shared scratch (frame is
+  // panel-authored, so scratch frame changes are ignored here). Event-driven, no polling.
   useEffect(() => {
     const unsub = subscribeScratch((s) => {
       setSelectedUrn((prev) => (s.selectedUrn === prev ? prev : s.selectedUrn));
@@ -158,8 +261,16 @@ function SidePanel() {
     return unsub;
   }, []);
 
-  // Open (or focus) the Document PiP mirror. The click IS the user gesture — call
-  // openPipMirror synchronously so requestWindow() runs with a valid activation.
+  // LIVE frames. Only when the current frame is a live read (mock === false). `isLive` is
+  // a boolean, so it stays stable across frame refreshes (true stays true): the hook opens
+  // the stream once when live-ness turns on and closes it when it turns off / on unmount.
+  const isLive = frame != null && frame.provenance?.mock === false;
+  const reloadForStream = useCallback(() => void loadFrame(), [loadFrame]);
+  const { status: streamStatus, pulseKey } = useFoldStream({
+    active: isLive,
+    onReload: reloadForStream,
+  });
+
   const handlePopOut = useCallback(() => {
     if (!popOutSupported) return;
     if (isPipOpen()) {
@@ -172,10 +283,23 @@ function SidePanel() {
     });
   }, [popOutSupported]);
 
+  // Open the read-only mirror (pip.html) in a full browser tab. Feature-detected.
+  const handleFullTab = useCallback(() => {
+    if (!fullTabSupported) return;
+    try {
+      void chrome.tabs.create({ url: chrome.runtime.getURL("pip.html") });
+    } catch (err) {
+      console.error("[pilot] full-tab open failed:", err);
+    }
+  }, [fullTabSupported]);
+
   const selectedNode = useMemo(
     () => frame?.nodes.find((n) => n.urn === selectedUrn) ?? null,
     [frame, selectedUrn],
   );
+
+  const liveLabel =
+    streamStatus === "reconnecting" ? "RECONNECTING" : "LIVE";
 
   return (
     <div className="pilot-container">
@@ -187,10 +311,35 @@ function SidePanel() {
           />
           <h1>Collider Pilot</h1>
           <span className="header-sub">
-            read-only · {frame && frame.provenance.mock === false ? "live" : "mock"} · gated acts
+            read-only · {isLive ? "live" : "mock"} · gated acts
           </span>
+          {isLive && streamStatus !== "off" && (
+            <span
+              className={`live-indicator ${streamStatus}`}
+              title={
+                streamStatus === "reconnecting"
+                  ? "Stream dropped — reconnecting with backoff"
+                  : "Subscribed to the kernel fold stream"
+              }
+            >
+              <span key={pulseKey} className="live-dot" />
+              {liveLabel}
+            </span>
+          )}
         </div>
         <div className="header-right">
+          <button
+            className="pip-btn"
+            onClick={handleFullTab}
+            disabled={!fullTabSupported}
+            title={
+              fullTabSupported
+                ? "Open the read-only mirror in a full browser tab"
+                : "Full-tab is unavailable in this context"
+            }
+          >
+            Full tab ⛶
+          </button>
           <button
             className={`pip-btn ${pipOpen ? "is-active" : ""}`}
             onClick={handlePopOut}
@@ -208,7 +357,7 @@ function SidePanel() {
           <button
             className="icon-btn"
             onClick={() => void loadFrame()}
-            title="Reload frame (re-asks the worker; proves restart resilience)"
+            title="Reload frame (force-refresh; also the manual resync)"
           >
             ⟳
           </button>
@@ -219,7 +368,7 @@ function SidePanel() {
 
       <main className="pilot-body">
         {status === "loading" && !frame && (
-          <div className="pilot-state">Loading mock frame…</div>
+          <div className="pilot-state">Loading frame…</div>
         )}
         {status === "error" && !frame && (
           <div className="pilot-state error">
@@ -231,10 +380,27 @@ function SidePanel() {
         )}
         {frame && (
           <>
+            <GraphControls
+              layout={layout}
+              onLayoutChange={handleLayoutChange}
+              search={search}
+              onSearchChange={handleSearchChange}
+              searchHint={searchHint}
+              activeTypes={viewTypes}
+              onToggleType={toggleType}
+              t={viewT}
+              onTChange={setViewT}
+              onApplyFilter={applyFilter}
+              onResetFilter={resetFilter}
+              filterHonored={isLive}
+            />
             <FrameGraph
               frame={frame}
               selectedUrn={selectedUrn}
               onSelect={handleSelect}
+              layout={layout}
+              focusUrn={focusUrn}
+              focusSignal={focusSignal}
             />
             <NodeInspector
               frame={frame}

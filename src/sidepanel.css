@@ -182,6 +182,43 @@ body {
   gap: 8px;
   margin-bottom: 8px;
 }
+/* Phase 6: the provenance top row is a collapse toggle (button). Reset button chrome. */
+.prov-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  margin-bottom: 0;
+}
+.prov-toggle[aria-expanded="true"] {
+  margin-bottom: 8px;
+}
+.prov-caret {
+  color: var(--text-muted);
+  font-size: 9px;
+  width: 10px;
+  flex-shrink: 0;
+}
+.prov-summary {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.prov-toggle .prov-badge {
+  margin-left: auto;
+}
+.prov-toggle .prov-badge + .prov-badge {
+  margin-left: 4px;
+}
 .prov-title {
   font-weight: 600;
   font-size: 12px;
@@ -896,4 +933,198 @@ body {
 .cam-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Phase 6 — live-stream indicator, graph controls, disclosures
+   ========================================================================== */
+
+/* LIVE indicator (pulses on each rewrite; amber while reconnecting). */
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--success);
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.1);
+}
+.live-indicator.reconnecting {
+  border-color: var(--warning);
+  color: var(--warning);
+  background: rgba(234, 179, 8, 0.1);
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: live-pulse 0.7s ease-out;
+}
+@keyframes live-pulse {
+  0% {
+    transform: scale(0.7);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+}
+
+/* Graph controls strip (layout picker + node search + view_filter). */
+.graph-controls {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.gc-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.gc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.gc-search {
+  flex: 1 1 auto;
+}
+.gc-label {
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.gc-select,
+.gc-input {
+  padding: 4px 7px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+.gc-input {
+  width: 100%;
+}
+.gc-t-input {
+  width: 84px;
+}
+.gc-hint {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+/* view_filter disclosure inside the controls strip. */
+.gc-filter {
+  margin-top: 8px;
+}
+.gc-filter-summary {
+  cursor: pointer;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  list-style: none;
+}
+.gc-filter-summary::-webkit-details-marker {
+  display: none;
+}
+.gc-filter-summary::before {
+  content: "▸ ";
+  color: var(--text-muted);
+}
+.gc-filter[open] .gc-filter-summary::before {
+  content: "▾ ";
+}
+.gc-filter-body {
+  margin-top: 6px;
+}
+.gc-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.gc-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.gc-check input {
+  cursor: pointer;
+}
+.gc-filter-t {
+  margin-top: 8px;
+  align-items: flex-end;
+}
+.gc-btn {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+}
+.gc-btn:hover {
+  background: var(--accent-hover);
+}
+.gc-btn-ghost {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-color: var(--border-light);
+}
+.gc-btn-ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.gc-note {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Discovered-tools catalog disclosure (Phase 6). */
+.catalog-details > .catalog-summary {
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+}
+.catalog-details[open] > .catalog-summary {
+  margin-bottom: 6px;
+}
+.catalog-summary::-webkit-details-marker {
+  display: none;
+}
+.catalog-summary::before {
+  content: "▸ ";
+  color: var(--text-muted);
+}
+.catalog-details[open] > .catalog-summary::before {
+  content: "▾ ";
 }

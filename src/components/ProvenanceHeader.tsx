@@ -1,11 +1,17 @@
 /**
- * Collider Pilot - provenance header
- * ==================================
+ * Collider Pilot - provenance header (collapsible in Phase 6)
+ * ==========================================================
  * The header Steinberger requires: a frame must visibly state where it came from.
  * Renders source engine, log sequence + t_day, workspace/session, purpose, and the
  * view_filter. The MOCK badge makes the read-only, no-engine status unmissable.
+ *
+ * Phase 6: it now DEFAULTS COLLAPSED to a one-line summary (engine short · log_seq·T-day
+ * · LIVE/MOCK badge) to reclaim vertical space on a narrow panel; a click expands the
+ * full grid + view_filter. The collapsed summary still carries the load-bearing
+ * provenance signals (source + position + live/mock), so nothing safety-relevant hides.
  */
 
+import { useState } from "react";
 import type { FrameProvenance } from "../mcp/types";
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -19,24 +25,59 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function ProvenanceHeader({ provenance }: { provenance: FrameProvenance }) {
+/** Short engine label: the last urn segment (e.g. "hp-z440.primary"), guarded. */
+function engineShort(engine: string): string {
+  if (typeof engine !== "string" || engine.length === 0) return "unknown engine";
+  return engine.split(":").pop() || engine;
+}
+
+export function ProvenanceHeader({
+  provenance,
+  defaultCollapsed = true,
+}: {
+  provenance: FrameProvenance;
+  /** Start collapsed to a one-line summary (default true). */
+  defaultCollapsed?: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   // Defensive: any of these may be absent on a live/partial frame. A missing
   // sub-field must never blank the whole panel.
   const vf = provenance.view_filter ?? {};
   const vfTypes = Array.isArray(vf.types) ? vf.types : [];
   const vfScope = Array.isArray(vf.scope_urns) ? vf.scope_urns : [];
+
+  const badge = provenance.mock ? (
+    <span className="prov-badge mock">MOCK</span>
+  ) : (
+    <span className="prov-badge live">LIVE</span>
+  );
+
   return (
     <section className="provenance" aria-label="Frame provenance">
-      <div className="prov-top">
+      <button
+        type="button"
+        className="prov-top prov-toggle"
+        aria-expanded={!collapsed}
+        onClick={() => setCollapsed((c) => !c)}
+        title={collapsed ? "Expand frame provenance" : "Collapse frame provenance"}
+      >
+        <span className="prov-caret" aria-hidden="true">
+          {collapsed ? "▸" : "▾"}
+        </span>
         <span className="prov-title">Frame provenance</span>
-        {provenance.mock ? (
-          <span className="prov-badge mock">MOCK</span>
-        ) : (
-          <span className="prov-badge live">LIVE</span>
+        {collapsed && (
+          <span className="prov-summary" title={provenance.engine}>
+            {engineShort(provenance.engine)} · seq {provenance.log_seq} · T=
+            {provenance.t_day}
+          </span>
         )}
+        {badge}
         <span className="prov-badge readonly">READ-ONLY</span>
-      </div>
-      <div className="prov-grid">
+      </button>
+
+      {!collapsed && (
+        <>
+          <div className="prov-grid">
         <Field label="engine" value={provenance.engine} />
         <Field label="endpoint" value={provenance.engine_endpoint} />
         <Field
@@ -69,6 +110,8 @@ export function ProvenanceHeader({ provenance }: { provenance: FrameProvenance }
           </div>
         </div>
       </div>
+        </>
+      )}
     </section>
   );
 }

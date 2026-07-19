@@ -16,6 +16,8 @@
 import { useEffect, useRef, useState } from "react";
 import cytoscape from "cytoscape";
 import type { HgFrame } from "../mcp/types";
+import type { GraphLayoutName } from "../state/prefs";
+import { DEFAULT_GRAPH_LAYOUT } from "../state/prefs";
 
 const TYPE_COLOR: Record<string, string> = {
   knowledge_item: "#6366f1",
@@ -24,6 +26,43 @@ const TYPE_COLOR: Record<string, string> = {
   session: "#38bdf8",
 };
 const DEFAULT_COLOR = "#a0a0b0";
+
+// Semantic concentric ranking: purposes/sessions read best toward the center, KIs on
+// the rim (higher = closer to center). A degree fallback keeps unknown types sensible.
+const TYPE_RANK: Record<string, number> = {
+  purpose: 4,
+  session: 3,
+  derivation: 2,
+  knowledge_item: 1,
+};
+
+/**
+ * Per-layout Cytoscape options. All layouts ship in cytoscape core (no new dep). Every
+ * one is `animate:false` (deterministic, snappy on a narrow panel) with consistent
+ * padding. `concentric` is the default — it lays the DAG-ish frame out in semantic rings
+ * and eliminates the cose label-overlap on a narrow side panel.
+ */
+function layoutOptions(name: GraphLayoutName): cytoscape.LayoutOptions {
+  const base = { animate: false as const, padding: 12, fit: true };
+  switch (name) {
+    case "breadthfirst":
+      // Directed BFS tree — follows relation direction; good for provenance chains.
+      return { name: "breadthfirst", directed: true, spacingFactor: 1.1, ...base };
+    case "grid":
+      return { name: "grid", avoidOverlap: true, ...base };
+    case "concentric":
+    default:
+      return {
+        name: "concentric",
+        minNodeSpacing: 24,
+        // Rank rings by node type (fall back to raw degree for untyped nodes).
+        concentric: (node: cytoscape.NodeSingular) =>
+          TYPE_RANK[String(node.data("type_id"))] ?? node.degree(false),
+        levelWidth: () => 1,
+        ...base,
+      };
+  }
+}
 
 function toElements(frame: HgFrame): cytoscape.ElementDefinition[] {
   // Defensive: a frame delivered via the worker message channel or restored from
@@ -114,15 +153,28 @@ export function FrameGraph({
   frame,
   selectedUrn,
   onSelect,
+  layout = DEFAULT_GRAPH_LAYOUT,
+  focusUrn = null,
+  focusSignal = 0,
 }: {
   frame: HgFrame;
   selectedUrn: string | null;
   onSelect: (urn: string | null) => void;
+  /** Which cytoscape-core layout to run. Defaults to the concentric read. */
+  layout?: GraphLayoutName;
+  /** A node to center on when `focusSignal` bumps (used by node search). */
+  focusUrn?: string | null;
+  /** Increment to re-center on `focusUrn` (lets a repeat search re-center the same node). */
+  focusSignal?: number;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  // Keep the latest focus target reachable from the focusSignal effect without making it
+  // a dependency (searching the SAME urn twice still re-centers, driven by the signal).
+  const focusUrnRef = useRef(focusUrn);
+  focusUrnRef.current = focusUrn;
   const [graphError, setGraphError] = useState<string | null>(null);
 
   // Init once. Cytoscape init runs in an effect, so a throw here escapes React
@@ -136,7 +188,10 @@ export function FrameGraph({
         container: containerRef.current,
         elements: [],
         style: STYLE,
-        layout: { name: "cose", animate: false, padding: 12 },
+        // Init runs with no elements, so the concrete layout runs in the rebuild effect
+        // below (which reads the live `layout` prop). `grid` here is just a cheap no-op
+        // on the empty graph.
+        layout: { name: "grid", animate: false, padding: 12 },
         // wheelSensitivity left at the default (1) — a custom value both warns in
         // the console and is discouraged by Cytoscape for portability.
         minZoom: 0.2,
@@ -161,22 +216,25 @@ export function FrameGraph({
     };
   }, []);
 
-  // Rebuild elements + relayout when the frame changes.
+  // Rebuild elements + relayout when the frame OR the chosen layout changes. Re-adding
+  // the (small) element set on a layout-only change is cheap and keeps the graph always
+  // consistent — the same simplicity/consistency tradeoff as the live re-fetch path.
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
     try {
       cy.elements().remove();
       cy.add(toElements(frame));
-      cy.layout({ name: "cose", animate: false, padding: 12 }).run();
+      cy.layout(layoutOptions(layout)).run();
       cy.fit(undefined, 16);
       setGraphError(null);
     } catch (err) {
       setGraphError(`graph render failed: ${String(err)}`);
     }
-  }, [frame]);
+  }, [frame, layout]);
 
-  // Reflect external selection (e.g. restored from scratch) into the graph.
+  // Reflect external selection (e.g. restored from scratch, or a search hit) into the
+  // graph. Also re-runs after a layout change so the highlight survives a relayout.
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -187,7 +245,22 @@ export function FrameGraph({
         if (el.nonempty()) el.select();
       }
     });
-  }, [selectedUrn, frame]);
+  }, [selectedUrn, frame, layout]);
+
+  // Center on a searched node when the search bumps `focusSignal`. Kept separate from
+  // selection so clicking a node in the graph never yanks the viewport.
+  useEffect(() => {
+    if (!focusSignal) return;
+    const cy = cyRef.current;
+    const urn = focusUrnRef.current;
+    if (!cy || !urn) return;
+    try {
+      const el = cy.getElementById(urn);
+      if (el.nonempty()) cy.animate({ center: { eles: el } }, { duration: 200 });
+    } catch {
+      // centering is a best-effort nicety — never let it surface as a graph error
+    }
+  }, [focusSignal]);
 
   return (
     <div className="graph-wrap">
