@@ -451,6 +451,18 @@ export function accessKeepSet(fold, resolution) {
   const rels = foldRelations(fold);   // built ONCE
   /** @type {Set<string>} */
   const keep = new Set();
+  // Tier-aware handling of UNATTRIBUTABLE nodes (no folded workspace owner — the common case:
+  // the WF12/WF19 ownership heuristic places only a fraction of nodes). The client-presentation
+  // tier is honestly NOT a security boundary — the full fold is already fetched into the panel and
+  // the badge says PRESENTATION — and in a single-owner deployment an "unowned"/global node belongs
+  // to the identified owner, so hiding it buys ZERO confidentiality and only empties the view. So at
+  // the identified client tier, unattributable nodes are SHOWN. At the SERVER-authoritative tier
+  // (computed_by === "server-authoritative"), and for ANON in EVERY tier, unattributable fails
+  // CLOSED — that is the real multi-user boundary and the behavior that ports into access.go.
+  // ATTRIBUTED nodes always require every owner to be permitted (multi-owner ambiguity fails closed).
+  const mode = resolution.scope && resolution.scope.mode;
+  const serverEnforced = resolution.computed_by === "server-authoritative";
+  const keepUnattributed = mode === "identified" && !serverEnforced;
   for (const node of foldNodes(fold)) {
     if (!node || !node.urn) continue;
     if (isPublicWorkspace(node)) {
@@ -459,10 +471,11 @@ export function accessKeepSet(fold, resolution) {
     }
     const owners =
       node.type_id === "session" ? [node.urn] : owningWorkspaces(fold, node.urn, idx, rels);
-    // Fail-closed: keep ONLY if the node has at least one owner AND every owner is permitted.
-    // Empty owners (unattributable) ⇒ drop (identity does not unlock null-owner nodes). Any
-    // non-permitted owner ⇒ drop (multi-owner ambiguity fails closed).
-    if (owners.length > 0 && owners.every((o) => permitted.has(o))) {
+    if (owners.length === 0) {
+      if (keepUnattributed) keep.add(node.urn); // identified client tier only; anon + server drop
+      continue;
+    }
+    if (owners.every((o) => permitted.has(o))) {
       keep.add(node.urn);
     }
   }
