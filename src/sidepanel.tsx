@@ -10,11 +10,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import type { HgFrame, PilotRequest, PilotResponse } from "./mcp/types";
+import type { HgFrame, PilotRequest, PilotResponse, RawMcpTool } from "./mcp/types";
 import { loadScratch, saveScratch, subscribeScratch } from "./state/scratch";
 import { ProvenanceHeader } from "./components/ProvenanceHeader";
 import { FrameGraph } from "./components/FrameGraph";
 import { NodeInspector } from "./components/NodeInspector";
+import { ActionsPanel } from "./components/ActionsPanel";
 import {
   isPopOutSupported,
   isPipOpen,
@@ -33,6 +34,18 @@ async function requestFrame(): Promise<PilotResponse> {
   } as PilotRequest)) as PilotResponse;
 }
 
+/**
+ * Phase 4: ask the worker for the MCP tools/list catalog (READ-ONLY discovery). The
+ * worker answers with the live catalog (live adapter) or an empty list (mock adapter),
+ * and the Actions section projects the affordance pack from it, falling back to the mock
+ * pack. Listing is not calling — no tool is invoked here.
+ */
+async function requestTools(): Promise<PilotResponse> {
+  return (await chrome.runtime.sendMessage({
+    type: "LIST_TOOLS",
+  } as PilotRequest)) as PilotResponse;
+}
+
 function SidePanel() {
   const [frame, setFrame] = useState<HgFrame | null>(null);
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
@@ -43,6 +56,9 @@ function SidePanel() {
   // opens SOMETHING (Document PiP, or the chrome.windows popup fallback from the panel).
   const [popOutSupported] = useState(() => isPopOutSupported());
   const [pipOpen, setPipOpen] = useState(false);
+  // Phase 4: the MCP tools/list catalog for the affordance pack (null ⇒ mock fallback).
+  const [liveTools, setLiveTools] = useState<RawMcpTool[] | null>(null);
+  const [affordanceError, setAffordanceError] = useState<string | null>(null);
 
   const loadFrame = useCallback(async () => {
     setStatus("loading");
@@ -66,13 +82,35 @@ function SidePanel() {
           void saveScratch({ selectedUrn: stillThere, frame: safeFrame });
           return stillThere;
         });
-      } else {
+      } else if (res.type === "ERROR") {
         setStatus("error");
         setError(res.error);
+      } else {
+        // A non-FRAME, non-ERROR response to GET_FRAME should never happen; treat defensively.
+        setStatus("error");
+        setError("unexpected response to GET_FRAME");
       }
     } catch (err) {
       setStatus("error");
       setError(String(err));
+    }
+  }, []);
+
+  // Phase 4: load the tool catalog for affordance discovery. Non-fatal — a failure just
+  // falls the Actions section back to the labelled mock pack.
+  const loadTools = useCallback(async () => {
+    try {
+      const res = await requestTools();
+      if (res?.type === "TOOLS") {
+        setLiveTools(Array.isArray(res.tools) ? res.tools : []);
+        setAffordanceError(null);
+      } else if (res?.type === "ERROR") {
+        setLiveTools(null);
+        setAffordanceError(res.error);
+      }
+    } catch (err) {
+      setLiveTools(null);
+      setAffordanceError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
@@ -95,11 +133,12 @@ function SidePanel() {
         setStatus("ready");
       }
       await loadFrame();
+      void loadTools();
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadFrame]);
+  }, [loadFrame, loadTools]);
 
   const handleSelect = useCallback(
     (urn: string | null) => {
@@ -148,7 +187,7 @@ function SidePanel() {
           />
           <h1>Collider Pilot</h1>
           <span className="header-sub">
-            read-only · {frame && frame.provenance.mock === false ? "live" : "mock"}
+            read-only · {frame && frame.provenance.mock === false ? "live" : "mock"} · gated acts
           </span>
         </div>
         <div className="header-right">
@@ -202,6 +241,14 @@ function SidePanel() {
               node={selectedNode}
               onSelect={handleSelect}
             />
+            <ErrorBoundary>
+              <ActionsPanel
+                frame={frame}
+                selectedUrn={selectedUrn}
+                liveTools={liveTools}
+                affordanceError={affordanceError}
+              />
+            </ErrorBoundary>
           </>
         )}
       </main>

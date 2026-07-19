@@ -21,7 +21,15 @@
  * typed `{ type: "ERROR" }`). `getLastError()` exposes the last failure for UI status.
  */
 
-import type { FrameRequest, HgFrame, HgNode, HgRelation, McpAdapter } from "./types";
+import type {
+  FrameRequest,
+  HgFrame,
+  HgNode,
+  HgRelation,
+  McpAdapter,
+  RawMcpTool,
+  ToolDiscoveryAdapter,
+} from "./types";
 import { createStreamableHttpClient } from "./streamable-http-client.js";
 import {
   selectFrame,
@@ -53,7 +61,7 @@ export interface RelationNeighborhood {
   neighbors: HgNode[];
 }
 
-export class StreamableHttpMcpAdapter implements McpAdapter {
+export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapter {
   private readonly client: ReturnType<typeof createStreamableHttpClient>;
   private readonly engineUrn: string;
   private readonly engineEndpoint: string;
@@ -98,6 +106,24 @@ export class StreamableHttpMcpAdapter implements McpAdapter {
       });
       this.lastError = null;
       return frame;
+    } catch (err) {
+      this.lastError = err instanceof Error ? err.message : String(err);
+      throw err instanceof Error ? err : new Error(this.lastError);
+    }
+  }
+
+  /**
+   * READ-ONLY tool discovery (Phase 4): the MCP `tools/list` catalog. Listing is not
+   * calling — this never invokes a tool and never touches an apply path. The caller
+   * (the side panel via the worker) classifies each tool read-vs-mutate and projects
+   * the actor/workspace/purpose affordance pack from the result.
+   */
+  async listTools(): Promise<RawMcpTool[]> {
+    try {
+      await this.client.initialize();
+      const tools = await this.client.listTools();
+      this.lastError = null;
+      return tools as RawMcpTool[];
     } catch (err) {
       this.lastError = err instanceof Error ? err.message : String(err);
       throw err instanceof Error ? err : new Error(this.lastError);

@@ -192,6 +192,20 @@ export function createStreamableHttpClient(config = {}) {
     return rpc("tools/call", { name, arguments: args });
   }
 
+  /**
+   * MCP `tools/list` discovery (Phase 4). READ-ONLY: this LISTS the server's tool
+   * catalog; it does NOT invoke any tool. It never builds a `tools/call`, so no
+   * write/apply tool is reachable through it. Returns the raw tool descriptors so the
+   * caller can classify each read-vs-mutate and project the affordance pack.
+   * @returns {Promise<Array<{name: string, description?: string, inputSchema?: object}>>}
+   */
+  async function listTools() {
+    const res = await rpc("tools/list", {});
+    const result = res?.result ?? res;
+    const tools = Array.isArray(result?.tools) ? result.tools : [];
+    return tools;
+  }
+
   /** @returns {Promise<any>} raw graph_state RPC response */
   function graphState() {
     return callTool("graph_state", {});
@@ -249,6 +263,7 @@ export function createStreamableHttpClient(config = {}) {
     engineUrl,
     sseEndpoint,
     initialize,
+    listTools,
     callTool,
     graphState,
     nodeLookup,

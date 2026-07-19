@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Read-only mo:os harness seat: projects a purpose-selected HG frame into a side panel. Phase 1 is mock-only (no model, no writes).",
 
-  "permissions": ["sidePanel", "storage", "activeTab"],
+  "permissions": ["sidePanel", "storage", "activeTab", "clipboardWrite"],
 
   "host_permissions": ["http://localhost:8080/*", "http://localhost:8000/*"],
 
