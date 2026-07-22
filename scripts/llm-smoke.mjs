@@ -103,12 +103,22 @@ const ACTIONABLE = [CLIPBOARD_TOOL, PIN_PREVIEW_TOOL];
 /** Mirror of src/tools/tool-call.ts URN_PATTERN — keep in sync (asserted in section F). */
 const URN_PATTERN = /^urn:[a-z0-9][a-z0-9-]{0,31}:\S+$/i;
 
+/** Runtime kind in the ArgFieldType vocabulary (mirror of tool-call.ts kindOf). */
+function kindOf(v) {
+  if (v === null) return "null";
+  if (v === undefined) return "undefined";
+  if (Array.isArray(v)) return "array";
+  const t = typeof v;
+  return t === "string" || t === "number" || t === "boolean" || t === "object" ? t : "object";
+}
+
 /**
- * Mini validate — allowlist + required + the t263 SEMANTIC urn checks (shape, optional
- * exists-in-frame, optional node type). A stand-in mirror of the real validateToolCall
- * (src/tools/tool-call.ts is TS and cannot be imported here without a build step); the
- * real one is exercised end-to-end in the browser-pane flow test. The mirror exists so
- * THIS headless gate goes red if the semantic checks regress.
+ * Mini validate — allowlist + required + declared arg TYPES + the t263 SEMANTIC urn
+ * checks (shape, optional exists-in-frame, optional node type). A stand-in mirror of the
+ * real validateToolCall (src/tools/tool-call.ts is TS and cannot be imported here without
+ * a build step); the real one is exercised end-to-end in the browser-pane flow test. The
+ * mirror exists so THIS headless gate goes red if the type or semantic checks regress
+ * (Copilot #19 catch: the mirror originally skipped the type check).
  */
 function miniValidate(call, tools, ctx) {
   const tool = tools.find((t) => t.name === call.name);
@@ -119,6 +129,11 @@ function miniValidate(call, tools, ctx) {
     const v = call.args[k];
     if (spec.required && (v === undefined || v === null)) {
       return { ok: false, why: `missing required "${k}"` };
+    }
+    if (v === undefined || v === null) continue;
+    const kind = kindOf(v);
+    if (kind !== spec.type) {
+      return { ok: false, why: `"${k}" must be ${spec.type}, got ${kind}` };
     }
     if (spec.urn && typeof v === "string") {
       if (!URN_PATTERN.test(v)) return { ok: false, why: `"${k}" is not a urn (got "${v}")` };
@@ -342,6 +357,10 @@ assert(
 assert(
   miniValidate({ name: "copy_urn_to_clipboard", args: { urn: "urn:moos:x" } }, ACTIONABLE).ok,
   "no frame context => shape check only (structural callers unchanged)",
+);
+assert(
+  !miniValidate({ name: "copy_urn_to_clipboard", args: { urn: 42 } }, ACTIONABLE, FRAME_CTX).ok,
+  "wrong-typed arg (number where string declared) REJECTED (type mirror)",
 );
 
 /* ======================================================================================== */
