@@ -613,6 +613,35 @@ body {
   color: var(--text-muted);
   font-family: var(--mono);
 }
+/* t263: scope-split LLM bearer input (kernel-proxy providers only) */
+.llm-token-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+}
+.llm-token-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+.llm-token-state {
+  font-size: 10px;
+  font-family: var(--mono);
+  text-transform: uppercase;
+}
+.llm-token-state.ok {
+  color: var(--success, #4caf50);
+}
+.llm-token-state.missing {
+  color: var(--warning, #e0a030);
+}
 
 /* Controlled-act buttons */
 .act-buttons {
