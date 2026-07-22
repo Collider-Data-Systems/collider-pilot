@@ -30,6 +30,8 @@ import {
   parseGraphStateResult,
   parseNodeLookupResult,
   summarizeFrame,
+  applyViewFilter,
+  resolveViewFilter,
   DEFAULT_ENGINE_URN,
   DEFAULT_SCOPE_URN,
 } from "../src/mcp/transform.js";
@@ -517,6 +519,63 @@ async function main() {
 
   // The 4 over-exposure fixes, each asserting the leak is CLOSED (before→after in comments).
   accessFixChecks(fold);
+
+  // t264 slice axes: ports filter · N-hop scope · the ["*"] all-types sentinel.
+  sliceAxisChecks();
+}
+
+/**
+ * t264 — the new slice degrees of freedom, on a synthetic 4-node chain:
+ *   a --member-of(WF02)--> b --routes-to(WF16)--> c --pins-urn(WF19)--> d
+ */
+function sliceAxisChecks() {
+  console.log("\n=== t264 slice axes (ports · hops · all-types sentinel) ===");
+  const nodes = [
+    { urn: "urn:moos:user:a", type_id: "user", label: "a", properties: {} },
+    { urn: "urn:moos:group:b", type_id: "group", label: "b", properties: {} },
+    { urn: "urn:moos:channel:c", type_id: "channel", label: "c", properties: {} },
+    { urn: "urn:moos:knowledge_item:d", type_id: "knowledge_item", label: "d", properties: {} },
+  ];
+  const relations = [
+    { urn: "r1", type_id: "WF02", label: "member-of", source_urn: "urn:moos:user:a", target_urn: "urn:moos:group:b" },
+    { urn: "r2", type_id: "WF16", label: "routes-to", source_urn: "urn:moos:group:b", target_urn: "urn:moos:channel:c" },
+    { urn: "r3", type_id: "WF19", label: "pins-urn", source_urn: "urn:moos:channel:c", target_urn: "urn:moos:knowledge_item:d" },
+  ];
+  const vf = (over) =>
+    resolveViewFilter({ view_filter: { types: ["*"], ...over } }, { t_day: 264 });
+
+  // ["*"] sentinel ⇒ every type survives.
+  const all = applyViewFilter(nodes, relations, vf({}), false);
+  assert(all.nodes.length === 4 && all.relations.length === 3, "types ['*'] retains all 4 types + 3 relations");
+
+  // Ports filter narrows RELATIONS (nodes stay per types).
+  const memberOnly = applyViewFilter(nodes, relations, vf({ ports: ["member-of"] }), false);
+  assert(
+    memberOnly.relations.length === 1 && memberOnly.relations[0].label === "member-of",
+    "ports ['member-of'] keeps exactly the member-of relation",
+  );
+
+  // 1 hop from a ⇒ {a,b}; 3 hops ⇒ the whole chain. Expansion walks only visible ports.
+  const hop1 = applyViewFilter(nodes, relations, vf({ scope_urns: ["urn:moos:user:a"] }), false);
+  assert(hop1.nodes.length === 2, `1 hop from user:a reaches {a,b} (got ${hop1.nodes.length})`);
+  const hop3 = applyViewFilter(
+    nodes,
+    relations,
+    vf({ scope_urns: ["urn:moos:user:a"], scope_hops: 3 }),
+    false,
+  );
+  assert(hop3.nodes.length === 4, `3 hops from user:a reach the whole chain (got ${hop3.nodes.length})`);
+  const hop3member = applyViewFilter(
+    nodes,
+    relations,
+    vf({ scope_urns: ["urn:moos:user:a"], scope_hops: 3, ports: ["member-of"] }),
+    false,
+  );
+  assert(
+    hop3member.nodes.length === 2,
+    "hops expand ONLY along retained ports (member-of stops the walk at b)",
+  );
+  console.log("  ok  t264 slice axes hold");
 }
 
 main().catch((err) => {

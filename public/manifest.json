@@ -17,6 +17,13 @@
     "default_path": "sidepanel.html"
   },
 
+  "web_accessible_resources": [
+    {
+      "resources": ["sidepanel.html", "pip.html"],
+      "matches": ["http://localhost/*"]
+    }
+  ],
+
   "background": {
     "service_worker": "worker.js",
     "type": "module"

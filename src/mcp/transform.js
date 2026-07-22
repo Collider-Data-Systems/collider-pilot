@@ -221,6 +221,14 @@ export function parseNodeLookupResult(rpcResult) {
 export function resolveViewFilter(request, healthz) {
   const vf = (request && request.view_filter) || {};
   const tDay = typeof healthz.t_day === "number" ? healthz.t_day : 0;
+  // t264: `types: ["*"]` is the ALL-TYPES sentinel (the "everything" lens). An empty
+  // typeSet already means "all" in applyViewFilter; the sentinel exists because an
+  // EMPTY types array falls back to the default slice for backward compatibility.
+  const rawTypes =
+    Array.isArray(vf.types) && vf.types.length > 0
+      ? vf.types.slice()
+      : DEFAULT_FRAME_TYPES.slice();
+  const types = rawTypes.includes("*") ? [] : rawTypes;
   return {
     purpose: vf.purpose ?? DEFAULT_PURPOSE_URN,
     // SEAT-GROUNDED (de-hardcoded): the DEFAULT scope is now EMPTY — nothing is pinned to a
@@ -234,14 +242,16 @@ export function resolveViewFilter(request, healthz) {
         ? vf.scope_urns.slice()
         : [],
     t: typeof vf.t === "number" ? vf.t : tDay,
-    types:
-      Array.isArray(vf.types) && vf.types.length > 0
-        ? vf.types.slice()
-        : DEFAULT_FRAME_TYPES.slice(),
+    types,
     // access rides inside view_filter. Carried through verbatim: the identity was already
     // worker-injected upstream (src/worker.ts). undefined ⇒ no access gate (backward-compatible).
     access: vf.access,
-    // whether the caller explicitly pinned t (drives conservative t-filtering below)
+    // t264 slice controls (all optional, all backward-compatible):
+    // ports: relation port names retained ([] = all); scope_hops: BFS depth from the
+    // scope urns (clamped 1..4); lens: provenance echo of the preset name, never law.
+    ports: Array.isArray(vf.ports) ? vf.ports.slice() : [],
+    scope_hops: Math.min(4, Math.max(1, typeof vf.scope_hops === "number" ? Math.floor(vf.scope_hops) : 1)),
+    ...(typeof vf.lens === "string" && vf.lens ? { lens: vf.lens } : {}),
   };
 }
 
@@ -271,15 +281,34 @@ export function applyViewFilter(nodes, relations, viewFilter, tPinned, accessKee
   const allTypes = typeSet.size === 0;
   const nodeByUrn = new Map(nodes.map((n) => [n.urn, n]));
 
+  // t264 ports filter: which RELATIONS render (by port label; [] = all). Scope
+  // expansion below walks only these — what you expand along is what you see.
+  const portList = Array.isArray(viewFilter.ports) ? viewFilter.ports : [];
+  const portSet = new Set(portList);
+  const allPorts = portSet.size === 0;
+  const visibleRelations = allPorts
+    ? relations
+    : relations.filter((r) => portSet.has(r.label));
+
   const scope = viewFilter.scope_urns.filter((u) => nodeByUrn.has(u));
 
   /** @type {Set<string>} */
   let inScope;
   if (scope.length > 0) {
+    // t264: N-hop BFS neighborhood (was fixed 1-hop). Each hop adds the endpoints of
+    // every visible relation touching the current frontier.
+    const hops = Math.min(4, Math.max(1, typeof viewFilter.scope_hops === "number" ? viewFilter.scope_hops : 1));
     inScope = new Set(scope);
-    for (const r of relations) {
-      if (scope.includes(r.source_urn)) inScope.add(r.target_urn);
-      if (scope.includes(r.target_urn)) inScope.add(r.source_urn);
+    let frontier = new Set(scope);
+    for (let hop = 0; hop < hops && frontier.size > 0; hop++) {
+      /** @type {Set<string>} */
+      const next = new Set();
+      for (const r of visibleRelations) {
+        if (frontier.has(r.source_urn) && !inScope.has(r.target_urn)) next.add(r.target_urn);
+        if (frontier.has(r.target_urn) && !inScope.has(r.source_urn)) next.add(r.source_urn);
+      }
+      for (const u of next) inScope.add(u);
+      frontier = next;
     }
   } else {
     // No resolvable scope anchor: fall back to the whole type slice.
@@ -298,7 +327,7 @@ export function applyViewFilter(nodes, relations, viewFilter, tPinned, accessKee
   });
 
   const keptUrns = new Set(keptNodes.map((n) => n.urn));
-  const keptRelations = relations.filter(
+  const keptRelations = visibleRelations.filter(
     (r) => keptUrns.has(r.source_urn) && keptUrns.has(r.target_urn),
   );
 

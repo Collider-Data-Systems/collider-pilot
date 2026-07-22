@@ -108,9 +108,15 @@ function PipWindowApp() {
 
 const container = document.getElementById("root");
 if (container) {
-  createRoot(container).render(
-    <ErrorBoundary>
-      <PipWindowApp />
-    </ErrorBoundary>,
-  );
+  // Dev-bridge guard: the page may be WAR-navigated from localhost (top-level only).
+  // Refuse to render when EMBEDDED — an iframe on any origin gets nothing.
+  if (window.top !== window) {
+    container.textContent = "Collider Pilot does not render embedded.";
+  } else {
+    createRoot(container).render(
+      <ErrorBoundary>
+        <PipWindowApp />
+      </ErrorBoundary>,
+    );
+  }
 }

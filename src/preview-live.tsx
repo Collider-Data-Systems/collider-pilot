@@ -31,9 +31,15 @@ import { PostureStrip } from "./components/PostureStrip";
 import { FrameGraph } from "./components/FrameGraph";
 import {
   GraphControls,
-  DEFAULT_VIEW_TYPES,
   buildFrameRequest,
+  collectFocusOptions,
+  defaultSliceSpec,
+  specToggleType,
+  specTogglePort,
+  specWithLens,
+  type SliceSpec,
 } from "./components/GraphControls";
+import { LogFeed } from "./components/LogFeed";
 import { NodeInspector } from "./components/NodeInspector";
 import { SettingsPanel } from "./components/SettingsPanel";
 import {
@@ -189,15 +195,16 @@ function PreviewLive() {
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [focusUrn, setFocusUrn] = useState<string | null>(null);
   const [focusSignal, setFocusSignal] = useState(0);
-  const [viewTypes, setViewTypes] = useState<string[]>(DEFAULT_VIEW_TYPES);
-  const [viewT, setViewT] = useState("");
+  const [spec, setSpec] = useState<SliceSpec>(() => defaultSliceSpec());
   const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
   const [identitySet, setIdentitySet] = useState(false);
-  // SEAT (scope) selection. "" = All permitted (seat-grounded default); non-empty = focus one seat.
+  // FOCUS (scope) selection. "" = All permitted; non-empty = focus one spine node.
   const [viewScope, setViewScope] = useState<string>("");
+  // The harness is a wide page — inline graph ON here (the panel defaults off).
+  const [showGraph, setShowGraph] = useState(true);
 
   const frameRequestRef = useRef<FrameRequest | undefined>(
-    buildFrameRequest(DEFAULT_VIEW_TYPES, "", DEFAULT_ACCESS_POSTURE),
+    buildFrameRequest(defaultSliceSpec(), DEFAULT_ACCESS_POSTURE),
   );
 
   const loadFrame = useCallback(async (request?: FrameRequest) => {
@@ -294,47 +301,73 @@ function PreviewLive() {
     [frame],
   );
 
-  const toggleType = useCallback((type: string) => {
-    setViewTypes((prev) =>
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type],
-    );
-  }, []);
-
-  const applyFilter = useCallback(() => {
-    const req = buildFrameRequest(viewTypes, viewT, accessMode, viewScope ? [viewScope] : []);
-    frameRequestRef.current = req;
-    void loadFrame(req);
-  }, [viewTypes, viewT, accessMode, viewScope, loadFrame]);
-
-  const resetFilter = useCallback(() => {
-    setViewTypes(DEFAULT_VIEW_TYPES);
-    setViewT("");
-    setViewScope(""); // reset scope back to All permitted (part of the view_filter)
-    const req = buildFrameRequest(DEFAULT_VIEW_TYPES, "", accessMode);
-    frameRequestRef.current = req;
-    void loadFrame(req);
-  }, [accessMode, loadFrame]);
-
-  // SEAT (scope) selector — focus one permitted seat (or All permitted when ""). Read-only narrow.
-  const handleScopeChange = useCallback(
-    (scopeUrn: string) => {
-      setViewScope(scopeUrn);
-      const req = buildFrameRequest(viewTypes, viewT, accessMode, scopeUrn ? [scopeUrn] : []);
+  const commitSlice = useCallback(
+    (nextSpec: SliceSpec, mode: AccessPosture, scopeUrn: string) => {
+      const req = buildFrameRequest(nextSpec, mode, scopeUrn ? [scopeUrn] : []);
       frameRequestRef.current = req;
       void loadFrame(req);
     },
-    [viewTypes, viewT, accessMode, loadFrame],
+    [loadFrame],
+  );
+
+  const handleLensChange = useCallback(
+    (lensId: string) => {
+      setSpec((prev) => {
+        const next = specWithLens(prev, lensId);
+        commitSlice(next, accessMode, viewScope);
+        return next;
+      });
+    },
+    [accessMode, viewScope, commitSlice],
+  );
+
+  const toggleType = useCallback((ty: string) => {
+    setSpec((prev) => specToggleType(prev, ty));
+  }, []);
+  const togglePort = useCallback((p: string) => {
+    setSpec((prev) => specTogglePort(prev, p));
+  }, []);
+  const handleTChange = useCallback((t: string) => {
+    setSpec((prev) => ({ ...prev, t }));
+  }, []);
+  const handleHopsChange = useCallback(
+    (hops: number) => {
+      setSpec((prev) => {
+        const next = { ...prev, hops };
+        commitSlice(next, accessMode, viewScope);
+        return next;
+      });
+    },
+    [accessMode, viewScope, commitSlice],
+  );
+
+  const applyFilter = useCallback(() => {
+    commitSlice(spec, accessMode, viewScope);
+  }, [spec, accessMode, viewScope, commitSlice]);
+
+  const resetFilter = useCallback(() => {
+    const next = defaultSliceSpec();
+    setSpec(next);
+    setViewScope("");
+    commitSlice(next, accessMode, "");
+  }, [accessMode, commitSlice]);
+
+  // FOCUS selector — focus one spine node (or All permitted when ""). Read-only narrow.
+  const handleScopeChange = useCallback(
+    (scopeUrn: string) => {
+      setViewScope(scopeUrn);
+      commitSlice(spec, accessMode, scopeUrn);
+    },
+    [spec, accessMode, commitSlice],
   );
 
   const handleAccessModeChange = useCallback(
     (mode: AccessPosture) => {
       setAccessMode(mode);
-      setViewScope(""); // posture change ⇒ permitted set changes; reset scope to All permitted
-      const req = buildFrameRequest(viewTypes, viewT, mode);
-      frameRequestRef.current = req;
-      void loadFrame(req);
+      setViewScope(""); // posture change ⇒ permitted set changes; reset focus to All permitted
+      commitSlice(spec, mode, "");
     },
-    [viewTypes, viewT, loadFrame],
+    [spec, commitSlice],
   );
 
   const isLive = frame != null && frame.provenance?.mock === false;
@@ -352,6 +385,11 @@ function PreviewLive() {
   const permittedWorkspaces = useMemo(
     () => frame?.provenance?.access?.permitted_workspaces ?? [],
     [frame],
+  );
+
+  const focusOptions = useMemo(
+    () => collectFocusOptions(frame, permittedWorkspaces),
+    [frame, permittedWorkspaces],
   );
 
   return (
@@ -425,28 +463,38 @@ function PreviewLive() {
               search={search}
               onSearchChange={handleSearchChange}
               searchHint={searchHint}
-              activeTypes={viewTypes}
+              spec={spec}
+              onLensChange={handleLensChange}
               onToggleType={toggleType}
-              t={viewT}
-              onTChange={setViewT}
+              onTogglePort={togglePort}
+              onTChange={handleTChange}
+              onHopsChange={handleHopsChange}
               onApplyFilter={applyFilter}
               onResetFilter={resetFilter}
               filterHonored={isLive}
-              permittedWorkspaces={permittedWorkspaces}
+              focusOptions={focusOptions}
               activeScope={viewScope}
               onScopeChange={handleScopeChange}
+              selectedUrn={selectedUrn}
               accessMode={accessMode}
               onAccessModeChange={handleAccessModeChange}
               identitySet={identitySet}
+              showGraph={showGraph}
+              onToggleGraphVisible={() => setShowGraph((v) => !v)}
             />
-            <FrameGraph
-              frame={frame}
-              selectedUrn={selectedUrn}
-              onSelect={handleSelect}
-              layout={layout}
-              focusUrn={focusUrn}
-              focusSignal={focusSignal}
-            />
+            {showGraph && (
+              <FrameGraph
+                frame={frame}
+                selectedUrn={selectedUrn}
+                onSelect={handleSelect}
+                layout={layout}
+                focusUrn={focusUrn}
+                focusSignal={focusSignal}
+              />
+            )}
+            <ErrorBoundary>
+              <LogFeed live={isLive} frame={frame} onSelect={handleSelect} />
+            </ErrorBoundary>
             <NodeInspector
               frame={frame}
               node={selectedNode}

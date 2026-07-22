@@ -26,7 +26,12 @@ import { PostureStrip } from "./components/PostureStrip";
 import { FrameGraph } from "./components/FrameGraph";
 import {
   GraphControls,
-  DEFAULT_VIEW_TYPES,
+  collectFocusOptions,
+  defaultSliceSpec,
+  specToggleType,
+  specTogglePort,
+  specWithLens,
+  type SliceSpec,
 } from "./components/GraphControls";
 import { NodeInspector } from "./components/NodeInspector";
 import { ActionsPanel } from "./components/ActionsPanel";
@@ -55,8 +60,8 @@ function Preview() {
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [focusUrn, setFocusUrn] = useState<string | null>(null);
   const [focusSignal, setFocusSignal] = useState(0);
-  const [viewTypes, setViewTypes] = useState<string[]>(DEFAULT_VIEW_TYPES);
-  const [viewT, setViewT] = useState("");
+  const [spec, setSpec] = useState<SliceSpec>(() => defaultSliceSpec());
+  const [showGraph, setShowGraph] = useState(true);
   // Access posture is inert on the MOCK adapter (it ignores view_filter) — the toggle is
   // present only so this harness renders the same GraphControls as the shipped panel.
   const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
@@ -117,15 +122,15 @@ function Preview() {
     [frame],
   );
 
-  const toggleType = useCallback((type: string) => {
-    setViewTypes((prev) =>
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type],
-    );
+  const toggleType = useCallback((ty: string) => {
+    setSpec((prev) => specToggleType(prev, ty));
+  }, []);
+  const togglePort = useCallback((p: string) => {
+    setSpec((prev) => specTogglePort(prev, p));
   }, []);
 
   const resetFilter = useCallback(() => {
-    setViewTypes(DEFAULT_VIEW_TYPES);
-    setViewT("");
+    setSpec(defaultSliceSpec());
   }, []);
 
   const selectedNode = useMemo(
@@ -190,31 +195,37 @@ function Preview() {
               search={search}
               onSearchChange={handleSearchChange}
               searchHint={searchHint}
-              activeTypes={viewTypes}
+              spec={spec}
+              onLensChange={(id) => setSpec((prev) => specWithLens(prev, id))}
               onToggleType={toggleType}
-              t={viewT}
-              onTChange={setViewT}
+              onTogglePort={togglePort}
+              onTChange={(t) => setSpec((prev) => ({ ...prev, t }))}
+              onHopsChange={(hops) => setSpec((prev) => ({ ...prev, hops }))}
               onApplyFilter={() => void loadFrame()}
               onResetFilter={resetFilter}
               filterHonored={false}
-              // The MOCK frame carries no access fiber, so there are no permitted seats to focus;
-              // the seat selector renders inert ("All permitted (0)"), like the other view_filter
-              // controls on this adapter. The live harness (preview-live.tsx) exercises it for real.
-              permittedWorkspaces={[]}
+              // The MOCK adapter ignores the slice; the controls render inert, like the
+              // old view_filter note said. The live harness exercises them for real.
+              focusOptions={collectFocusOptions(frame, [])}
               activeScope=""
               onScopeChange={() => void loadFrame()}
+              selectedUrn={selectedUrn}
               accessMode={accessMode}
               onAccessModeChange={setAccessMode}
               identitySet={identitySet}
+              showGraph={showGraph}
+              onToggleGraphVisible={() => setShowGraph((v) => !v)}
             />
-            <FrameGraph
-              frame={frame}
-              selectedUrn={selectedUrn}
-              onSelect={setSelectedUrn}
-              layout={layout}
-              focusUrn={focusUrn}
-              focusSignal={focusSignal}
-            />
+            {showGraph && (
+              <FrameGraph
+                frame={frame}
+                selectedUrn={selectedUrn}
+                onSelect={setSelectedUrn}
+                layout={layout}
+                focusUrn={focusUrn}
+                focusSignal={focusSignal}
+              />
+            )}
             <NodeInspector
               frame={frame}
               node={selectedNode}
