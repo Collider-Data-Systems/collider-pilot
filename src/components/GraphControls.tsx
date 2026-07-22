@@ -256,18 +256,30 @@ export function specWithLens(spec: SliceSpec, lensId: string): SliceSpec {
  * Toggle one node type in a spec. The ["*"] sentinel concretizes to the full drawer
  * list first; re-completing the full list collapses back to ["*"]. The lens field is
  * re-derived (a deviation flips it to "custom"; landing exactly on a preset names it).
+ *
+ * The LAST remaining type cannot be unticked (Copilot #21 catch): an empty `types`
+ * array is the transform's legacy "fall back to the default slice" signal, so a
+ * 0-type UI state would silently request a 4-type frame. Refusing the final untick
+ * keeps the UI and the request telling the same story.
  */
 export function specToggleType(spec: SliceSpec, ty: string): SliceSpec {
   const base = spec.types.includes("*") ? [...ALL_TYPES] : [...spec.types];
   const next = base.includes(ty) ? base.filter((t) => t !== ty) : [...base, ty];
+  if (next.length === 0) return spec; // never emit [] — it would silently mean "default"
   const types = sameSet(next, ALL_TYPES) ? ["*"] : next;
   return { ...spec, types, lens: matchLens(types, spec.ports) };
 }
 
-/** Toggle one relation port. [] (= all) concretizes first; full list collapses to []. */
+/**
+ * Toggle one relation port. [] (= all) concretizes first; full list collapses to [].
+ * Same last-item guard as types (Copilot #21 catch, mirrored): [] means ALL ports in
+ * the transform, so unticking the final port would silently flip the slice from
+ * "one port" to "every port".
+ */
 export function specTogglePort(spec: SliceSpec, p: string): SliceSpec {
   const base = spec.ports.length === 0 ? [...ALL_PORTS] : [...spec.ports];
   const next = base.includes(p) ? base.filter((x) => x !== p) : [...base, p];
+  if (next.length === 0) return spec; // never emit [] — it would silently mean "all"
   const ports = sameSet(next, ALL_PORTS) ? [] : next;
   return { ...spec, ports, lens: matchLens(spec.types, ports) };
 }
@@ -426,10 +438,19 @@ export function GraphControls({
   const allTypes = typeSet.has("*");
   const portSet = new Set(spec.ports);
   const allPorts = portSet.size === 0;
-  // Guard the <select> value: a focus that dropped out of the options (lens/posture
-  // change) falls back to "All permitted" so the control never shows a phantom option.
-  const scopeValue = focusOptions.some((o) => o.urn === activeScope) ? activeScope : "";
-  const groups = [...new Set(focusOptions.map((o) => o.group))];
+  // The focus select must always DISPLAY the actual focus (Copilot #21 catch): a
+  // "focus selection" target or a focus that dropped out of the spine options
+  // (lens/posture change) gets a synthetic "(focused)" entry rather than the select
+  // silently falling back to "All permitted" while the request stays pinned.
+  const displayOptions =
+    activeScope && !focusOptions.some((o) => o.urn === activeScope)
+      ? [
+          { urn: activeScope, label: activeScope.split(":").pop() || activeScope, group: "(focused)" },
+          ...focusOptions,
+        ]
+      : focusOptions;
+  const scopeValue = displayOptions.some((o) => o.urn === activeScope) ? activeScope : "";
+  const groups = [...new Set(displayOptions.map((o) => o.group))];
 
   const stateEcho = `${allTypes ? "all" : spec.types.length} types · ${
     allPorts ? "all" : spec.ports.length
@@ -520,7 +541,7 @@ export function GraphControls({
             <option value="">All permitted</option>
             {groups.map((g) => (
               <optgroup key={g} label={g}>
-                {focusOptions
+                {displayOptions
                   .filter((o) => o.group === g)
                   .map((o) => (
                     <option key={o.urn} value={o.urn} title={o.urn}>

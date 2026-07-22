@@ -14,9 +14,11 @@
  * ACCESS (presentation-tier consistency): /log returns the raw log — the kernel does no
  * per-user filtering on reads (that is the ruled-but-unbuilt server-side enforcement).
  * The panel's client-presentation posture must not leak through this side door: under an
- * effective-anon frame the feed renders a "bring yourself in" note instead of entries —
- * the same what-is-RENDERED discipline the graph follows, with the same honesty caveat
- * (this is presentation, not a security boundary; the bytes cross the wire regardless).
+ * effective-anon frame the feed renders a "bring yourself in" note and does NOT fetch or
+ * subscribe at all — the same what-is-RENDERED discipline the graph follows. Honesty
+ * caveat unchanged: this is presentation, not a security boundary — any local process
+ * (or this browser, outside the panel) can still call the open read endpoint directly;
+ * only server-side enforcement closes that.
  *
  * Clicking an entry selects its subject node when the current frame renders it (the
  * shared scratch mirrors the selection to the PiP / pop-out / full-tab). Entries whose
