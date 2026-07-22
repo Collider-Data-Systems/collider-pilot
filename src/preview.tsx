@@ -5,8 +5,9 @@
  * FrameGraph + NodeInspector + ActionsPanel) against the REAL MockMcpAdapter, WITHOUT the MV3 extension
  * chrome. It reimplements only the worker-messaging wrapper — precisely the part that
  * cannot be exercised outside a loaded extension. Everything a served-page browser test
- * can verify (render, provenance collapse, layout picker, node search, Cytoscape relations
- * inspector, node selection, gated Actions + the tools disclosure) is exercised here.
+ * can verify (render, posture strip + audit drawer, consolidated Settings, node search,
+ * Cytoscape relations inspector, node selection, gated Actions + the tools disclosure) is
+ * exercised here.
  *
  * The MOCK adapter has no live stream — so, correctly, NO EventSource is opened here and
  * the view_filter is inert (the note in GraphControls states so). The live SSE loop is
@@ -153,28 +154,38 @@ function Preview() {
       </header>
 
       {frame && <PostureStrip provenance={frame.provenance} />}
+      {!frame && (
+        <section className="provenance posture-strip" aria-label="Frame posture (no frame)">
+          <div className="prov-top">
+            <span className="prov-badge readonly">READ-ONLY</span>
+            <span className="prov-summary">no frame loaded — posture renders with the frame</span>
+          </div>
+        </section>
+      )}
 
       <main className="pilot-body">
         {!frame && <div className="pilot-state">Loading mock frame…</div>}
         {frame && (
           <>
-            <SettingsPanel
-              frame={frame}
-              accessMode={accessMode}
-              onReloadFrame={() => void loadFrame()}
-              onIdentityChanged={setIdentitySet}
-              layout={layout}
-              onLayoutChange={setLayout}
-              provider={{
-                providerId,
-                onProviderChange: handleProviderChange,
-                modelName,
-                onModelChange: setModelName,
-                llmTokenSet,
-                onLlmTokenChanged: setLlmTokenSet,
-                access: frame.provenance?.access ?? null,
-              }}
-            />
+            <ErrorBoundary>
+              <SettingsPanel
+                frame={frame}
+                accessMode={accessMode}
+                onReloadFrame={() => void loadFrame()}
+                onIdentityChanged={setIdentitySet}
+                layout={layout}
+                onLayoutChange={setLayout}
+                provider={{
+                  providerId,
+                  onProviderChange: handleProviderChange,
+                  modelName,
+                  onModelChange: setModelName,
+                  llmTokenSet,
+                  onLlmTokenChanged: setLlmTokenSet,
+                  access: frame.provenance?.access ?? null,
+                }}
+              />
+            </ErrorBoundary>
             <GraphControls
               search={search}
               onSearchChange={handleSearchChange}

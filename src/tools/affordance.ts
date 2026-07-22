@@ -85,6 +85,7 @@ export const PIN_PREVIEW_TOOL: ToolSpec = {
         description: "knowledge_item to pin",
         urn: true,
         mustExistInFrame: true,
+        nodeType: "knowledge_item",
       },
       workspace_urn: {
         type: "string",

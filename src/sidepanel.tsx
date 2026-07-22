@@ -382,10 +382,11 @@ function SidePanel() {
   }, [popOutSupported]);
 
   // Open the read-only mirror (pip.html) in a full browser tab. Feature-detected.
+  // surface=tab keeps the NodeInspector there (the lean-down applies to the PiP only).
   const handleFullTab = useCallback(() => {
     if (!fullTabSupported) return;
     try {
-      void chrome.tabs.create({ url: chrome.runtime.getURL("pip.html") });
+      void chrome.tabs.create({ url: chrome.runtime.getURL("pip.html") + "?surface=tab" });
     } catch (err) {
       console.error("[pilot] full-tab open failed:", err);
     }
@@ -458,6 +459,24 @@ function SidePanel() {
           streamStatus={isLive ? streamStatus : "off"}
           pulseKey={pulseKey}
         />
+      )}
+      {/* Pre-frame posture fallback (t263 review catch): the header dedupe removed the
+          unconditional "read-only" text, so loading/error states must still declare the
+          seat's posture somewhere until the full strip can render. */}
+      {!frame && (
+        <section className="provenance posture-strip" aria-label="Frame posture (no frame)">
+          <div className="prov-top">
+            <span
+              className="prov-badge readonly"
+              title="No write path exists: mutating acts are confirmation-gated; HG rewrites are review-only previews that are never posted."
+            >
+              READ-ONLY
+            </span>
+            <span className="prov-summary">
+              no frame loaded — provenance renders with the frame
+            </span>
+          </div>
+        </section>
       )}
 
       <main className="pilot-body">

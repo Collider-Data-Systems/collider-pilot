@@ -1,10 +1,11 @@
 /**
  * Collider Pilot - LIVE preview harness (dev/test only, Phase 6)
  * =============================================================
- * A served-page harness that exercises the Phase 6 live loop against the REAL kernel:
- * graph layout picker, node search, view_filter controls, the collapsible provenance
- * header, and — the headline — the live SSE stream (pulse + debounced re-fetch + reconnect
- * resync) via the SAME `useFoldStream` hook + `transform.js` the extension ships.
+ * A served-page harness that exercises the live loop against the REAL kernel: the
+ * posture strip (+ audit drawer), the consolidated Settings (identity + layout; no
+ * provider section here), node search, view_filter controls, and — the headline — the
+ * live SSE stream (pulse + debounced re-fetch + reconnect resync) via the SAME
+ * `useFoldStream` hook + `transform.js` the extension ships.
  *
  * WHY REST /fold HERE (and not the MCP adapter):
  *   The shipped side panel reads frames through `StreamableHttpMcpAdapter` (MCP :8080).
@@ -50,7 +51,7 @@ type Status = "loading" | "ready" | "error";
  * PREVIEW-ONLY chrome.storage.local shim.
  * ---------------------------------------
  * The packed extension resolves the identity from chrome.storage.local['pilot.access'] in the
- * MV3 worker (page-inaccessible). A served page has NO such storage, so the new IdentityControl
+ * MV3 worker (page-inaccessible). A served page has NO such storage, so the Settings identity editor
  * — which writes ONLY that key — would have nowhere to land. This shim gives the harness a
  * faithful chrome.storage.local (backed by window.localStorage so a "Save identity" survives a
  * reload), so the SAME control drives this preview EXACTLY as it drives the extension. Dev-only:
@@ -382,6 +383,14 @@ function PreviewLive() {
           pulseKey={pulseKey}
         />
       )}
+      {!frame && (
+        <section className="provenance posture-strip" aria-label="Frame posture (no frame)">
+          <div className="prov-top">
+            <span className="prov-badge readonly">READ-ONLY</span>
+            <span className="prov-summary">no frame loaded — posture renders with the frame</span>
+          </div>
+        </section>
+      )}
 
       <main className="pilot-body">
         {status === "loading" && !frame && (
@@ -401,15 +410,17 @@ function PreviewLive() {
         )}
         {frame && (
           <>
-            <SettingsPanel
-              frame={frame}
-              accessMode={accessMode}
-              onReloadFrame={() => void loadFrame()}
-              onIdentityChanged={setIdentitySet}
-              layout={layout}
-              onLayoutChange={setLayout}
-              // no provider section here: this harness exercises the frame/identity loop only
-            />
+            <ErrorBoundary>
+              {/* no provider section here: this harness exercises the frame/identity loop only */}
+              <SettingsPanel
+                frame={frame}
+                accessMode={accessMode}
+                onReloadFrame={() => void loadFrame()}
+                onIdentityChanged={setIdentitySet}
+                layout={layout}
+                onLayoutChange={setLayout}
+              />
+            </ErrorBoundary>
             <GraphControls
               search={search}
               onSearchChange={handleSearchChange}

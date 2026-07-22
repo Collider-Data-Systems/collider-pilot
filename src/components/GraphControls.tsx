@@ -11,10 +11,12 @@
  *                        default (t263 item 2: it is the highest-value settable feature
  *                        the panel has — it must be visible, not buried in a disclosure)
  *
- * Purely presentational + controlled: every value comes in as a prop and every change is
- * lifted to the panel via a callback. No state, no I/O, no adapter here.
+ * Presentational + controlled: every VALUE comes in as a prop and every change is lifted
+ * to the panel via a callback. The only local state is the view_filter disclosure's
+ * open/closed flag (pure UI chrome). No I/O, no adapter here.
  */
 
+import { useState } from "react";
 import type { AccessPosture } from "../state/prefs";
 import type { AccessScope, FrameRequest, ViewFilter } from "../mcp/types";
 
@@ -148,6 +150,10 @@ export function GraphControls({
 }: GraphControlsProps) {
   const activeSet = new Set(activeTypes);
   const identified = accessMode === "identified";
+  // Open by default, user-toggleable, and — being controlled state (the SettingsPanel
+  // pattern) — provably immune to any future re-render re-applying the attribute
+  // (Copilot #18 review hardening; the uncontrolled form tested fine, this can't regress).
+  const [filterOpen, setFilterOpen] = useState(true);
   // Guard the <select> value: if the chosen seat is no longer in the permitted set (e.g. the
   // posture changed), fall back to "All permitted" ("") so the control never shows a phantom option.
   const scopeValue = permittedWorkspaces.includes(activeScope) ? activeScope : "";
@@ -214,7 +220,11 @@ export function GraphControls({
 
       {/* t263 item 2: the placement axis is the panel's highest-value settable feature —
           rendered OPEN by default, with the active selection echoed in the summary. */}
-      <details className="gc-filter" open>
+      <details
+        className="gc-filter"
+        open={filterOpen}
+        onToggle={(e) => setFilterOpen((e.target as HTMLDetailsElement).open)}
+      >
         <summary className="gc-filter-summary">
           view_filter <span className="gc-filter-state">{filterSummary}</span>
         </summary>
