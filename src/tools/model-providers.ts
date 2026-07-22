@@ -89,6 +89,17 @@ export async function saveLLMToken(token: string): Promise<void> {
   }
 }
 
+/** Remove the stored LLM bearer entirely (revoke/rotate path; best-effort). */
+export async function clearLLMToken(): Promise<void> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      await chrome.storage.local.remove(STORAGE_LLM_TOKEN_KEY);
+    }
+  } catch {
+    // best-effort
+  }
+}
+
 /**
  * The static registry. `ollama-local` is the DEFAULT and always available. `gemini` is a
  * disabled placeholder for the future kernel-proxy. `none-manual` keeps the Phase 4

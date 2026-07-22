@@ -44,6 +44,7 @@ import {
 import {
   DEFAULT_PROVIDER_ID,
   MODEL_PROVIDERS,
+  clearLLMToken,
   getProvider,
   isCloudProvider,
   isModelProvider,
@@ -121,14 +122,24 @@ export function ActionsPanel({
       cancelled = true;
     };
   }, []);
+  // Save is best-effort (storage errors are swallowed), so the SET flag is
+  // re-derived from an actual storage read-back rather than assumed — the
+  // badge never claims "set" when nothing persisted (Copilot #17 catch).
   const handleSaveLlmToken = useCallback(() => {
     const tok = llmTokenDraft.trim();
     if (!tok) return;
-    void saveLLMToken(tok).then(() => {
-      setLlmTokenSet(true);
-      setLlmTokenDraft("");
-    });
+    void saveLLMToken(tok)
+      .then(() => resolveLLMToken())
+      .then((stored) => {
+        setLlmTokenSet(stored !== "");
+        if (stored !== "") setLlmTokenDraft("");
+      });
   }, [llmTokenDraft]);
+  const handleClearLlmToken = useCallback(() => {
+    void clearLLMToken()
+      .then(() => resolveLLMToken())
+      .then((stored) => setLlmTokenSet(stored !== ""));
+  }, []);
   const [proposed, setProposed] = useState<{
     call: ToolCall;
     tool: ToolSpec | null;
@@ -478,6 +489,14 @@ export function ActionsPanel({
               disabled={!llmTokenDraft.trim()}
             >
               save
+            </button>
+            <button
+              className="mini-btn"
+              onClick={handleClearLlmToken}
+              disabled={!llmTokenSet}
+              title="Remove the stored bearer from chrome.storage (revoke/rotate)"
+            >
+              clear
             </button>
             <span className={`llm-token-state ${llmTokenSet ? "ok" : "missing"}`}>
               {llmTokenSet ? "set" : "required"}
