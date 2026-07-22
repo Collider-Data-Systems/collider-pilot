@@ -16,7 +16,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           for i in $(seq 1 60); do
-            n=$(gh api "repos/$REPO/pulls/$PR/reviews" --jq '[.[] | select(.user.login=="copilot-pull-request-reviewer")] | length')
+            n=$(gh api "repos/$REPO/pulls/$PR/reviews" --jq '[.[] | select(.user.login | startswith("copilot-pull-request-reviewer"))] | length')
             if [ "$n" -gt 0 ]; then
               echo "Copilot review present ($n review(s))"
               exit 0
