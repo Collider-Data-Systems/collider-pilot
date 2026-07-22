@@ -1448,6 +1448,134 @@ body {
 }
 
 /* ==========================================================================
+   t263 UX eval — posture strip, consolidated settings, urn-fix suggestion
+   ========================================================================== */
+
+/* Posture strip: the one-line provenance summary + audit drawer toggle. */
+.posture-strip {
+  padding: 6px 14px;
+}
+.posture-strip .prov-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.posture-strip .prov-summary {
+  flex: 1 1 auto;
+  margin-left: 2px;
+}
+/* Badges sit inline on the left of the strip (override the wall-era auto-margin). */
+.posture-strip .prov-toggle .prov-badge {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+.prov-audit-toggle {
+  flex-shrink: 0;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.prov-toggle:hover .prov-audit-toggle {
+  color: var(--text-primary);
+}
+/* The LIVE badge doubles as the stream indicator (pulse dot + RECONNECTING state). */
+.prov-badge.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.prov-badge.live .live-dot {
+  width: 6px;
+  height: 6px;
+}
+.prov-badge.live.reconnecting {
+  background: var(--warning);
+  color: #1a1400;
+}
+
+/* Consolidated settings block (identity · provider · bearer · layout). */
+.settings-panel {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.settings-summary {
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  list-style: none;
+}
+.settings-summary::-webkit-details-marker {
+  display: none;
+}
+.settings-summary::before {
+  content: "▸ ";
+  color: var(--text-muted);
+}
+.settings-panel[open] > .settings-summary::before {
+  content: "▾ ";
+}
+.settings-summary-state {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.settings-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.settings-section-title .gc-identity-urn,
+.settings-section-title .gc-identity-none {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* view_filter active-state echo in the (now open-by-default) summary. */
+.gc-filter-state {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* "Did you mean <selected node>?" recovery button under a rejected proposal. */
+.llm-suggest-btn {
+  margin-top: 8px;
+  align-self: flex-start;
+}
+
+/* ==========================================================================
    P9 WebTransport SPIKE — synthetic presence strip (under the graph).
    Rendered ONLY when the pilot.wt flag is on AND the datagram endpoint is
    reachable; hidden entirely otherwise. Clearly marked synthetic.

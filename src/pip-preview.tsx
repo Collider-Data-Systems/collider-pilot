@@ -1,8 +1,8 @@
 /**
  * Collider Pilot - Document PiP CONTENT preview harness (dev/test only)
  * =====================================================================
- * Renders the REAL PiP content view (`PipContent` — the same ProvenanceHeader +
- * FrameGraph + NodeInspector the Document PiP window shows) as a normal served page,
+ * Renders the REAL PiP content view (`PipContent` — the same lean PostureStrip +
+ * FrameGraph the Document PiP window shows) as a normal served page,
  * so it can be browser-tested WITHOUT a real PiP window (which requires a user gesture
  * and a loaded extension). Same pattern as `preview.html`: it feeds `PipContent` a
  * frame from the MOCK adapter and manages selection with local React state — precisely

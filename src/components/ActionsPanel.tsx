@@ -1,11 +1,12 @@
 /**
- * Collider Pilot - Actions section (Phase 4 + Phase 7 LLM)
- * =======================================================
+ * Collider Pilot - Actions section (Phase 4 + Phase 7 LLM, re-cut by the t263 UX eval)
+ * ====================================================================================
  * The side-panel section that mounts the apply capability. It:
  *   - projects the actor/workspace/purpose affordance pack (live tools/list or mock),
- *   - offers a REAL model selector (Phase 7; default ollama-local, on-box, keyless) + an
- *     "ask the model" box: the model PROPOSES one structured tool call, which is then GATED
- *     exactly like a hand-composed act,
+ *   - offers the "ask the model" box: the SELECTED provider (now configured in the
+ *     SettingsPanel — t263 item 4; this section only consumes providerId/modelName)
+ *     PROPOSES one structured tool call, which is then GATED exactly like a hand-composed
+ *     act,
  *   - exposes the two curated mutating acts, each behind the confirmation UI:
  *       1. copy_urn_to_clipboard — a harmless BROWSER act (executes on Confirm),
  *       2. pin_ki_to_workspace  — a REVIEW-ONLY HG rewrite preview (reveals on Confirm),
@@ -14,11 +15,14 @@
  * SAFETY: every mutating path — whether a button or a model proposal — passes through
  * `dispatchProposal`/`openAction` → `validateToolCall` → the confirmation modal → `resolve`.
  * There is no code path that reaches a mutate without a Confirm. The LLM only PROPOSES; a
- * malformed/hallucinated call is rejected by validateToolCall, never executed. The HG act
- * only ever builds/reveals a preview; it has no posting path. Cloud egress (Phase 7) is
- * gated on the A3 access resolution — an anon frame never sends a prompt to a cloud model;
- * the on-box Ollama endpoint is always allowed. Actions are PANEL-ONLY — the PiP mirror
- * never mounts this (it stays read/observe); a note states so.
+ * malformed/hallucinated call is rejected by validateToolCall, never executed. t263 item 6
+ * NARROWS that gate further: urn-typed args are now checked against the URN shape and the
+ * current frame's resolvable urns (Gemini's live `{urn:"t263"}` now rejects instead of
+ * executing), with a "did you mean <selected node>" recovery button that only ever re-enters
+ * the SAME gate. The HG act only ever builds/reveals a preview; it has no posting path.
+ * Cloud egress (Phase 7) is gated on the A3 access resolution — an anon frame never sends a
+ * prompt to a cloud model; the on-box Ollama endpoint is always allowed. Actions are
+ * PANEL-ONLY — the PiP mirror never mounts this (it stays read/observe); a note states so.
  *
  * Defensive + ErrorBoundary-wrapped: guarded fields, and the parent wraps this subtree.
  */
@@ -34,7 +38,13 @@ import {
   deriveAffordancePack,
   deriveFrameActor,
 } from "../tools/affordance";
-import { makeToolCall, validateToolCall } from "../tools/tool-call";
+import {
+  URN_PATTERN,
+  collectFrameUrns,
+  makeToolCall,
+  validateToolCall,
+  type ToolCallContext,
+} from "../tools/tool-call";
 import { runBrowserAct } from "../tools/browser-acts";
 import {
   buildPinPreview,
@@ -42,20 +52,9 @@ import {
   type HgProgramPreview,
 } from "../tools/hg-program-preview";
 import {
-  DEFAULT_PROVIDER_ID,
-  MODEL_PROVIDERS,
-  clearLLMToken,
   getProvider,
-  isCloudProvider,
   isModelProvider,
   isProviderAvailable,
-  providerDefaultModel,
-  resolveLLMToken,
-  resolveModelName,
-  resolveProviderId,
-  saveLLMToken,
-  saveModelName,
-  saveProviderId,
 } from "../tools/model-providers";
 import { evaluateEgress, proposeToolCall } from "../tools/llm-provider";
 import { ConfirmActionModal } from "./ConfirmActionModal";
@@ -67,6 +66,11 @@ export interface ActionsPanelProps {
   liveTools: RawMcpTool[] | null;
   /** Non-fatal note if tool discovery failed (drives the "using mock pack" hint). */
   affordanceError?: string | null;
+  /** Provider/model selection — configured in the SettingsPanel, consumed here. */
+  providerId: string;
+  modelName: string;
+  /** Whether the scope-split LLM bearer is stored (set in Settings; read at call time). */
+  llmTokenSet: boolean;
 }
 
 interface ActResult {
@@ -74,11 +78,21 @@ interface ActResult {
   message: string;
 }
 
+/** A urn suggestion for a rejected proposal ("did you mean …"). */
+interface UrnSuggestion {
+  field: string;
+  urn: string;
+  label: string;
+}
+
 export function ActionsPanel({
   frame,
   selectedUrn,
   liveTools,
   affordanceError,
+  providerId,
+  modelName,
+  llmTokenSet,
 }: ActionsPanelProps) {
   const workspace = frame?.provenance?.workspace ?? "";
   const purpose = frame?.provenance?.purpose ?? "";
@@ -92,10 +106,13 @@ export function ActionsPanel({
   const actions = useMemo(() => actionableTools(pack), [pack]);
   const catalog = useMemo(() => catalogTools(pack), [pack]);
 
-  const [providerId, setProviderId] = useState<string>(DEFAULT_PROVIDER_ID);
   const provider = getProvider(providerId);
-  const [modelName, setModelName] = useState<string>(() =>
-    providerDefaultModel(getProvider(DEFAULT_PROVIDER_ID)),
+
+  // t263 item 6: the frame-resolvable urn set — the context every validateToolCall in this
+  // section runs under (modal open, proposal dispatch, AND the pre-resolve re-validation).
+  const urnContext = useMemo<ToolCallContext>(
+    () => ({ knownUrns: collectFrameUrns(frame) }),
+    [frame],
   );
 
   const [pending, setPending] = useState<PendingAction | null>(null);
@@ -107,64 +124,23 @@ export function ActionsPanel({
   const [llmText, setLlmText] = useState<string>("");
   const [llmBusy, setLlmBusy] = useState(false);
   const [llmNotice, setLlmNotice] = useState<ActResult | null>(null);
-
-  // t263: scope-split LLM bearer for kernel-proxy providers. Only a SET/UNSET
-  // flag lives in component state — the token value itself stays in
-  // chrome.storage and is read at call time by llm-provider.
-  const [llmTokenDraft, setLlmTokenDraft] = useState<string>("");
-  const [llmTokenSet, setLlmTokenSet] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    void resolveLLMToken().then((tok) => {
-      if (!cancelled) setLlmTokenSet(tok !== "");
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  // Save is best-effort (storage errors are swallowed), so the SET flag is
-  // re-derived from an actual storage read-back rather than assumed — the
-  // badge never claims "set" when nothing persisted (Copilot #17 catch).
-  const handleSaveLlmToken = useCallback(() => {
-    const tok = llmTokenDraft.trim();
-    if (!tok) return;
-    void saveLLMToken(tok)
-      .then(() => resolveLLMToken())
-      .then((stored) => {
-        setLlmTokenSet(stored !== "");
-        if (stored !== "") setLlmTokenDraft("");
-      });
-  }, [llmTokenDraft]);
-  const handleClearLlmToken = useCallback(() => {
-    void clearLLMToken()
-      .then(() => resolveLLMToken())
-      .then((stored) => setLlmTokenSet(stored !== ""));
-  }, []);
   const [proposed, setProposed] = useState<{
     call: ToolCall;
     tool: ToolSpec | null;
     source: string;
     valid: boolean;
     errors: string[];
+    suggestion: UrnSuggestion | null;
   } | null>(null);
+
+  // A provider switch in Settings invalidates any stale proposal/notice here.
+  useEffect(() => {
+    setProposed(null);
+    setLlmNotice(null);
+  }, [providerId]);
 
   // The DERIVED access fiber for THIS frame (A3). Gates cloud egress.
   const access = frame?.provenance?.access ?? null;
-
-  // Restore the selected provider + model from chrome.storage (mirrors resolveAdapterMode).
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const id = await resolveProviderId();
-      const name = await resolveModelName(getProvider(id));
-      if (cancelled) return;
-      setProviderId(id);
-      setModelName(name);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const selectedNode = useMemo(
     () => (frame?.nodes ?? []).find((n) => n.urn === selectedUrn) ?? null,
@@ -172,14 +148,15 @@ export function ActionsPanel({
   );
 
   // Build a STRUCTURED ToolCall (typed object — never parsed from text), validate it
-  // against the tool's args_schema, and stage it for confirmation. Nothing acts here.
+  // against the tool's args_schema + the frame's urn context, and stage it for
+  // confirmation. Nothing acts here.
   const openAction = useCallback(
     (tool: ToolSpec, args: Record<string, unknown>, target: string) => {
       const call = makeToolCall(tool.name, args);
-      const validation = validateToolCall(call, tool);
+      const validation = validateToolCall(call, tool, urnContext);
       setPending({ tool, call, target, actor, workspace, purpose, validation });
     },
-    [actor, workspace, purpose],
+    [actor, workspace, purpose, urnContext],
   );
 
   const openClipboard = useCallback(() => {
@@ -206,8 +183,9 @@ export function ActionsPanel({
 
   const handleConfirm = useCallback(async () => {
     if (!pending) return;
-    // Re-validate at the moment of action (guard against a stale/edited intent).
-    const revalidation = validateToolCall(pending.call, pending.tool);
+    // Re-validate at the moment of action (guard against a stale/edited intent) — under
+    // the SAME urn context, so a frame refresh that dropped the target also blocks here.
+    const revalidation = validateToolCall(pending.call, pending.tool, urnContext);
     if (!revalidation.ok) {
       setPending({ ...pending, validation: revalidation });
       return;
@@ -238,7 +216,7 @@ export function ActionsPanel({
       setResolving(false);
       setPending(null);
     }
-  }, [pending, engineUrn, purpose]);
+  }, [pending, engineUrn, purpose, urnContext]);
 
   const downloadPreview = useCallback(() => {
     if (!preview) return;
@@ -257,23 +235,29 @@ export function ActionsPanel({
     }
   }, [preview]);
 
-  // Provider selection (persisted, mirrors adapter-factory). Switching resets the model to
-  // the new provider's default and clears any stale proposal.
-  const handleProviderChange = useCallback((id: string) => {
-    setProviderId(id);
-    void saveProviderId(id);
-    const p = getProvider(id);
-    const name = providerDefaultModel(p);
-    setModelName(name);
-    if (name) void saveModelName(name);
-    setProposed(null);
-    setLlmNotice(null);
-  }, []);
-
-  const handleModelChange = useCallback((name: string) => {
-    setModelName(name);
-    void saveModelName(name);
-  }, []);
+  /**
+   * t263 item 6 recovery path: when a proposal fails on a urn-typed field, suggest the urn
+   * the panel can actually vouch for — the frame workspace for *workspace* fields, the
+   * SELECTED node otherwise. The suggestion must itself pass the pattern + frame check, and
+   * accepting it re-enters dispatchProposal, i.e. the same gate — never a bypass.
+   */
+  const suggestUrnFix = useCallback(
+    (tool: ToolSpec, call: ToolCall, errors: string[]): UrnSuggestion | null => {
+      const fields = tool.args_schema?.fields ?? {};
+      for (const field of Object.keys(fields)) {
+        if (!fields[field]?.urn) continue;
+        if (!errors.some((e) => e.includes(`"${field}"`))) continue;
+        const candidate = field.includes("workspace") ? workspace : selectedUrn;
+        if (!candidate || candidate === call.args[field]) continue;
+        if (!URN_PATTERN.test(candidate)) continue;
+        if (fields[field]?.mustExistInFrame && !urnContext.knownUrns?.has(candidate)) continue;
+        const label = candidate.split(":").pop() || candidate;
+        return { field, urn: candidate, label };
+      }
+      return null;
+    },
+    [workspace, selectedUrn, urnContext],
+  );
 
   // THE GATE. A model-proposed structured call is validated (the security net) and then
   // routed: READ auto-runs; MUTATE goes into the EXISTING ConfirmActionModal. Nothing is
@@ -293,6 +277,7 @@ export function ActionsPanel({
           source,
           valid: false,
           errors: [`"${call.name}" is not in the actionable allowlist`],
+          suggestion: null,
         });
         setLlmNotice({
           ok: false,
@@ -300,22 +285,28 @@ export function ActionsPanel({
         });
         return;
       }
-      // The safety net (src/tools/tool-call.ts). Same validator the modal + resolver use.
-      const validation = validateToolCall(call, tool);
-      setProposed({
-        call,
-        tool,
-        source,
-        valid: validation.ok,
-        errors: validation.errors,
-      });
+      // The safety net (src/tools/tool-call.ts). Same validator the modal + resolver use —
+      // now with the urn context, so shape-valid-but-meaningless urns reject here too.
+      const validation = validateToolCall(call, tool, urnContext);
       if (!validation.ok) {
+        const suggestion = suggestUrnFix(tool, call, validation.errors);
+        setProposed({
+          call,
+          tool,
+          source,
+          valid: false,
+          errors: validation.errors,
+          suggestion,
+        });
         setLlmNotice({
           ok: false,
-          message: "Rejected by validateToolCall — the proposed call is malformed.",
+          message: suggestion
+            ? `Rejected by validateToolCall — bad urn arg. Did you mean the selected "${suggestion.label}"?`
+            : "Rejected by validateToolCall — the proposed call is malformed.",
         });
         return; // never execute an invalid/hallucinated call
       }
+      setProposed({ call, tool, source, valid: true, errors: [], suggestion: null });
       if (tool.kind === "read") {
         // General contract: read tools auto-run. The current actionable set is mutate-only,
         // so this branch is unreachable via the LLM (only actionable tools are exposed, and
@@ -337,8 +328,19 @@ export function ActionsPanel({
       });
       openAction(tool, call.args as Record<string, unknown>, target);
     },
-    [actions, openAction, selectedUrn],
+    [actions, openAction, selectedUrn, urnContext, suggestUrnFix],
   );
+
+  // Accept the "did you mean" fix: substitute ONLY the failing field and re-dispatch the
+  // corrected call through the full gate again.
+  const applySuggestion = useCallback(() => {
+    if (!proposed?.suggestion || !proposed.tool) return;
+    const { field, urn } = proposed.suggestion;
+    dispatchProposal(
+      { name: proposed.call.name, args: { ...proposed.call.args, [field]: urn } },
+      `${proposed.source}+fix`,
+    );
+  }, [proposed, dispatchProposal]);
 
   // Send the user's request to the selected model. The cloud-egress access gate runs FIRST;
   // an on-box provider (Ollama) is always allowed. The model only PROPOSES — dispatchProposal
@@ -355,7 +357,7 @@ export function ActionsPanel({
     if (!egress.allowed) {
       setLlmNotice({
         ok: false,
-        message: `${egress.reason}${egress.fallbackProviderId ? " — switch to Ollama (local) to proceed." : ""}`,
+        message: `${egress.reason}${egress.fallbackProviderId ? " — switch to Ollama (local) in Settings to proceed." : ""}`,
       });
       return;
     }
@@ -402,9 +404,7 @@ export function ActionsPanel({
   const canClipboard = !!selectedUrn;
   const canPin = !!selectedUrn && selectedNode?.type_id === "knowledge_item";
   const llmUsable = isModelProvider(provider) && isProviderAvailable(provider);
-  const egressPreview = isCloudProvider(provider)
-    ? evaluateEgress(provider, access)
-    : null;
+  const bearerMissing = provider.viaKernelProxy === true && !llmTokenSet;
 
   return (
     <section className="actions" aria-label="Actions">
@@ -433,85 +433,10 @@ export function ActionsPanel({
         </div>
       </div>
 
-      {/* Phase 7: the model provider is now REAL. Default ollama-local (on-box, keyless).
-          The model only PROPOSES; the existing gate decides. */}
-      <div className="actions-block">
-        <div className="actions-block-title">model provider</div>
-        <select
-          className="provider-select"
-          value={providerId}
-          onChange={(e) => handleProviderChange(e.target.value)}
-        >
-          {MODEL_PROVIDERS.map((p) => {
-            const avail = isProviderAvailable(p);
-            return (
-              <option key={p.id} value={p.id} disabled={!avail}>
-                {p.label}
-                {!avail ? " (pending kernel-proxy)" : ""}
-              </option>
-            );
-          })}
-        </select>
-        {provider.models && provider.models.length > 1 && (
-          <select
-            className="provider-select model-select"
-            value={modelName}
-            onChange={(e) => handleModelChange(e.target.value)}
-            title="Model id sent to the endpoint (persisted to chrome.storage.local['pilot.modelName'])"
-          >
-            {provider.models.map((m) => (
-              <option key={m} value={m}>
-                {m}
-                {m === provider.model ? " (default · structured tool_calls)" : " (fallback path)"}
-              </option>
-            ))}
-          </select>
-        )}
-        <div className="provider-note">{provider.note}</div>
-        {provider.viaKernelProxy && (
-          <div className="llm-token-row">
-            <input
-              type="password"
-              className="llm-token-input"
-              placeholder={
-                llmTokenSet
-                  ? "LLM bearer set — paste to replace"
-                  : "paste the scope-split LLM bearer (secrets/moos-llm-token)"
-              }
-              value={llmTokenDraft}
-              onChange={(e) => setLlmTokenDraft(e.target.value)}
-              autoComplete="off"
-              title="Stored as chrome.storage.local['pilot.llmToken']. Scope-split: this token reaches /llm/* only — it can never write to the HG. Never paste the fleet write token here."
-            />
-            <button
-              className="mini-btn"
-              onClick={handleSaveLlmToken}
-              disabled={!llmTokenDraft.trim()}
-            >
-              save
-            </button>
-            <button
-              className="mini-btn"
-              onClick={handleClearLlmToken}
-              disabled={!llmTokenSet}
-              title="Remove the stored bearer from chrome.storage (revoke/rotate)"
-            >
-              clear
-            </button>
-            <span className={`llm-token-state ${llmTokenSet ? "ok" : "missing"}`}>
-              {llmTokenSet ? "set" : "required"}
-            </span>
-          </div>
-        )}
-        {egressPreview && (
-          <div className={`provider-egress ${egressPreview.allowed ? "ok" : "blocked"}`}>
-            cloud egress: {egressPreview.allowed ? "permitted" : "BLOCKED"} — {egressPreview.reason}
-          </div>
-        )}
-      </div>
-
-      {/* Phase 7: the LLM request box. Type a request → the model proposes ONE structured
-          tool call → validateToolCall → read auto-runs / mutate hits the modal. Never applied. */}
+      {/* Phase 7: the LLM request box. The provider/model/bearer live in Settings (t263
+          item 4); this box only consumes them. Type a request → the model proposes ONE
+          structured tool call → validateToolCall → read auto-runs / mutate hits the modal.
+          Never applied. */}
       <div className="actions-block llm-block">
         <div className="actions-block-title">ask the model (proposes only)</div>
         <textarea
@@ -521,7 +446,7 @@ export function ActionsPanel({
           placeholder={
             llmUsable
               ? "e.g. copy the selected node's urn to my clipboard"
-              : "Select a callable model provider to enable the model"
+              : "Select a callable model provider in Settings to enable the model"
           }
           onChange={(e) => setLlmText(e.target.value)}
           disabled={!llmUsable || llmBusy}
@@ -545,6 +470,11 @@ export function ActionsPanel({
             {isModelProvider(provider) ? `${provider.id} · ${modelName}` : "manual"}
           </span>
         </div>
+        {bearerMissing && (
+          <div className="aff-warn">
+            this provider needs the scope-split LLM bearer — set it in Settings.
+          </div>
+        )}
         <div className="llm-hint">
           The model NEVER auto-applies. Reads auto-run; mutating acts go through the
           confirmation modal (HG rewrites stay review-only previews that never POST).
@@ -574,6 +504,15 @@ export function ActionsPanel({
                   <li key={i}>{e}</li>
                 ))}
               </ul>
+            )}
+            {proposed.suggestion && (
+              <button
+                className="gc-btn llm-suggest-btn"
+                onClick={applySuggestion}
+                title={`Re-propose with ${proposed.suggestion.field} = ${proposed.suggestion.urn} — goes through the same validation + confirm gate`}
+              >
+                Did you mean {proposed.suggestion.label}? Use it
+              </button>
             )}
           </div>
         )}

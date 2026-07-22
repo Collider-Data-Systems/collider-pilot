@@ -2,21 +2,22 @@
  * Collider Pilot - side panel (the seat)
  * ======================================
  * Read-only seat. Asks the service worker for a frame (live MCP by default, mock
- * fallback), renders the provenance header + Cytoscape inspector + textual node inspector
+ * fallback), renders the posture strip + Cytoscape inspector + textual node inspector
  * + gated Actions, and keeps selection/frame in chrome.storage.session so the panel
  * restores after a forced service-worker termination.
  *
- * PHASE 6 additions (all read-only, all in the panel):
- *   - graph layout picker (concentric default) + node search (select + center a hit)
- *   - view_filter controls (type toggles + optional t) that re-request the frame
- *   - LIVE frames: when the frame is a live read, subscribe to the kernel SSE
- *     (GET :8000/fold/stream) and DEBOUNCE a full adapter re-fetch on each `rewrite`,
- *     pulsing a LIVE indicator; reconnect with backoff and resync on reconnect. The MOCK
- *     path never opens a stream. The manual ⟳ stays as a force-refresh.
- *   - "Open full tab" opens the read-only mirror (pip.html) in a browser tab.
+ * t263 UX eval re-cut (all read-only, all in the panel):
+ *   - the provenance wall collapsed into the one-line PostureStrip (+ audit drawer);
+ *     the LIVE/READ-ONLY/ACCESS badges now render in exactly ONE place — the strip —
+ *     and the strip's LIVE badge doubles as the fold-stream pulse indicator.
+ *   - a consolidated SettingsPanel (identity pickers fed from the fold, provider, model,
+ *     LLM bearer, layout) replaces the controls scattered across toolbar + Actions.
+ *   - the view_filter placement axis (t · types · seat) is open by default in the
+ *     GraphControls — the panel's highest-value settable feature, made visible.
  *
- * SAFETY: still no model, no writes, no page access. EventSource is GET-only — it cannot
- * POST and has no apply path. Every mutating act stays behind the ActionsPanel modal.
+ * SAFETY: still no writes, no page access. EventSource is GET-only — it cannot POST and
+ * has no apply path. Every mutating act stays behind the ActionsPanel modal, and urn-typed
+ * args are now semantically validated against the frame before the modal even opens.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,7 +41,7 @@ import {
   type GraphLayoutName,
   type AccessPosture,
 } from "./state/prefs";
-import { ProvenanceHeader } from "./components/ProvenanceHeader";
+import { PostureStrip } from "./components/PostureStrip";
 import { FrameGraph } from "./components/FrameGraph";
 import {
   GraphControls,
@@ -49,8 +50,19 @@ import {
 } from "./components/GraphControls";
 import { NodeInspector } from "./components/NodeInspector";
 import { ActionsPanel } from "./components/ActionsPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { PresenceStrip } from "./components/PresenceStrip";
 import { useFoldStream } from "./state/use-fold-stream";
+import {
+  DEFAULT_PROVIDER_ID,
+  getProvider,
+  providerDefaultModel,
+  resolveLLMToken,
+  resolveModelName,
+  resolveProviderId,
+  saveModelName,
+  saveProviderId,
+} from "./tools/model-providers";
 import {
   isPopOutSupported,
   isPipOpen,
@@ -118,6 +130,16 @@ function SidePanel() {
   // Access posture (A3). DEFAULT anon (fail-closed). The toggle sends ONLY access.mode; the
   // identity is worker-resolved from chrome.storage.local and is unreachable from this panel.
   const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
+  // Whether a trusted identity is stored (reported by the SettingsPanel) — hint-only state.
+  const [identitySet, setIdentitySet] = useState(false);
+
+  // t263 item 4: provider/model/bearer selection lives HERE (set in SettingsPanel,
+  // consumed by ActionsPanel). Same storage keys as before — only the UI home moved.
+  const [providerId, setProviderId] = useState<string>(DEFAULT_PROVIDER_ID);
+  const [modelName, setModelName] = useState<string>(() =>
+    providerDefaultModel(getProvider(DEFAULT_PROVIDER_ID)),
+  );
+  const [llmTokenSet, setLlmTokenSet] = useState(false);
 
   // The currently-applied FrameRequest — a ref so the SSE re-fetch always uses the latest
   // applied filter without re-subscribing the stream.
@@ -174,17 +196,28 @@ function SidePanel() {
     }
   }, []);
 
-  // Mount: restore instantly from scratch, load the layout pref, then refresh.
+  // Mount: restore instantly from scratch, load the prefs (layout, posture, provider,
+  // model, bearer-set flag), then refresh.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [scratch, savedLayout, savedPosture] = await Promise.all([
+      const [scratch, savedLayout, savedPosture, savedProviderId] = await Promise.all([
         loadScratch(),
         loadLayoutPref(),
         loadAccessPosturePref(),
+        resolveProviderId(),
       ]);
-      if (!cancelled) setLayout(savedLayout);
-      if (!cancelled) setAccessMode(savedPosture);
+      const [savedModel, savedToken] = await Promise.all([
+        resolveModelName(getProvider(savedProviderId)),
+        resolveLLMToken(),
+      ]);
+      if (!cancelled) {
+        setLayout(savedLayout);
+        setAccessMode(savedPosture);
+        setProviderId(savedProviderId);
+        setModelName(savedModel);
+        setLlmTokenSet(savedToken !== "");
+      }
       if (
         !cancelled &&
         scratch.frame &&
@@ -248,6 +281,21 @@ function SidePanel() {
   const handleLayoutChange = useCallback((next: GraphLayoutName) => {
     setLayout(next);
     void saveLayoutPref(next);
+  }, []);
+
+  // Provider selection (persisted, mirrors adapter-factory). Switching resets the model to
+  // the new provider's default; ActionsPanel clears its stale proposal on providerId change.
+  const handleProviderChange = useCallback((id: string) => {
+    setProviderId(id);
+    void saveProviderId(id);
+    const name = providerDefaultModel(getProvider(id));
+    setModelName(name);
+    if (name) void saveModelName(name);
+  }, []);
+
+  const handleModelChange = useCallback((name: string) => {
+    setModelName(name);
+    void saveModelName(name);
   }, []);
 
   const toggleType = useCallback((type: string) => {
@@ -355,9 +403,6 @@ function SidePanel() {
     [frame],
   );
 
-  const liveLabel =
-    streamStatus === "reconnecting" ? "RECONNECTING" : "LIVE";
-
   return (
     <div className="pilot-container">
       <header className="pilot-header">
@@ -367,22 +412,8 @@ function SidePanel() {
             title={status}
           />
           <h1>Collider Pilot</h1>
-          <span className="header-sub">
-            read-only · {isLive ? "live" : "mock"} · gated acts
-          </span>
-          {isLive && streamStatus !== "off" && (
-            <span
-              className={`live-indicator ${streamStatus}`}
-              title={
-                streamStatus === "reconnecting"
-                  ? "Stream dropped — reconnecting with backoff"
-                  : "Subscribed to the kernel fold stream"
-              }
-            >
-              <span key={pulseKey} className="live-dot" />
-              {liveLabel}
-            </span>
-          )}
+          {/* t263 item 1 dedupe: the LIVE / READ-ONLY / ACCESS badges render ONLY on the
+              PostureStrip below — no second copy up here. */}
         </div>
         <div className="header-right">
           <button
@@ -421,7 +452,13 @@ function SidePanel() {
         </div>
       </header>
 
-      {frame && <ProvenanceHeader provenance={frame.provenance} />}
+      {frame && (
+        <PostureStrip
+          provenance={frame.provenance}
+          streamStatus={isLive ? streamStatus : "off"}
+          pulseKey={pulseKey}
+        />
+      )}
 
       <main className="pilot-body">
         {status === "loading" && !frame && (
@@ -437,9 +474,26 @@ function SidePanel() {
         )}
         {frame && (
           <>
+            <ErrorBoundary>
+              <SettingsPanel
+                frame={frame}
+                accessMode={accessMode}
+                onReloadFrame={() => void loadFrame()}
+                onIdentityChanged={setIdentitySet}
+                layout={layout}
+                onLayoutChange={handleLayoutChange}
+                provider={{
+                  providerId,
+                  onProviderChange: handleProviderChange,
+                  modelName,
+                  onModelChange: handleModelChange,
+                  llmTokenSet,
+                  onLlmTokenChanged: setLlmTokenSet,
+                  access: frame.provenance?.access ?? null,
+                }}
+              />
+            </ErrorBoundary>
             <GraphControls
-              layout={layout}
-              onLayoutChange={handleLayoutChange}
               search={search}
               onSearchChange={handleSearchChange}
               searchHint={searchHint}
@@ -455,7 +509,7 @@ function SidePanel() {
               onScopeChange={handleScopeChange}
               accessMode={accessMode}
               onAccessModeChange={handleAccessModeChange}
-              onReloadFrame={() => void loadFrame()}
+              identitySet={identitySet}
             />
             <FrameGraph
               frame={frame}
@@ -483,6 +537,9 @@ function SidePanel() {
                 selectedUrn={selectedUrn}
                 liveTools={liveTools}
                 affordanceError={affordanceError}
+                providerId={providerId}
+                modelName={modelName}
+                llmTokenSet={llmTokenSet}
               />
             </ErrorBoundary>
           </>

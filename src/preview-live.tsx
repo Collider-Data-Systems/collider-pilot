@@ -26,7 +26,7 @@ import type { AccessScope, FrameRequest, HgFrame } from "./mcp/types";
 import { selectFrame, DEFAULT_ENGINE_URL } from "./mcp/transform.js";
 import { readRequestedMode, ANON_USER_URN } from "./mcp/access.js";
 import { PILOT_ACCESS_KEY, type PilotAccessConfig } from "./state/access-identity";
-import { ProvenanceHeader } from "./components/ProvenanceHeader";
+import { PostureStrip } from "./components/PostureStrip";
 import { FrameGraph } from "./components/FrameGraph";
 import {
   GraphControls,
@@ -34,6 +34,7 @@ import {
   buildFrameRequest,
 } from "./components/GraphControls";
 import { NodeInspector } from "./components/NodeInspector";
+import { SettingsPanel } from "./components/SettingsPanel";
 import {
   DEFAULT_GRAPH_LAYOUT,
   DEFAULT_ACCESS_POSTURE,
@@ -190,6 +191,7 @@ function PreviewLive() {
   const [viewTypes, setViewTypes] = useState<string[]>(DEFAULT_VIEW_TYPES);
   const [viewT, setViewT] = useState("");
   const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
+  const [identitySet, setIdentitySet] = useState(false);
   // SEAT (scope) selection. "" = All permitted (seat-grounded default); non-empty = focus one seat.
   const [viewScope, setViewScope] = useState<string>("");
 
@@ -351,8 +353,6 @@ function PreviewLive() {
     [frame],
   );
 
-  const liveLabel = streamStatus === "reconnecting" ? "RECONNECTING" : "LIVE";
-
   return (
     <div className="pilot-container">
       <header className="pilot-header">
@@ -362,13 +362,7 @@ function PreviewLive() {
             title={status}
           />
           <h1>Collider Pilot</h1>
-          <span className="header-sub">read-only · live · preview</span>
-          {isLive && streamStatus !== "off" && (
-            <span className={`live-indicator ${streamStatus}`}>
-              <span key={pulseKey} className="live-dot" />
-              {liveLabel}
-            </span>
-          )}
+          <span className="header-sub">live harness</span>
         </div>
         <div className="header-right">
           <button
@@ -381,7 +375,13 @@ function PreviewLive() {
         </div>
       </header>
 
-      {frame && <ProvenanceHeader provenance={frame.provenance} />}
+      {frame && (
+        <PostureStrip
+          provenance={frame.provenance}
+          streamStatus={isLive ? streamStatus : "off"}
+          pulseKey={pulseKey}
+        />
+      )}
 
       <main className="pilot-body">
         {status === "loading" && !frame && (
@@ -401,9 +401,16 @@ function PreviewLive() {
         )}
         {frame && (
           <>
-            <GraphControls
+            <SettingsPanel
+              frame={frame}
+              accessMode={accessMode}
+              onReloadFrame={() => void loadFrame()}
+              onIdentityChanged={setIdentitySet}
               layout={layout}
               onLayoutChange={setLayout}
+              // no provider section here: this harness exercises the frame/identity loop only
+            />
+            <GraphControls
               search={search}
               onSearchChange={handleSearchChange}
               searchHint={searchHint}
@@ -419,7 +426,7 @@ function PreviewLive() {
               onScopeChange={handleScopeChange}
               accessMode={accessMode}
               onAccessModeChange={handleAccessModeChange}
-              onReloadFrame={() => void loadFrame()}
+              identitySet={identitySet}
             />
             <FrameGraph
               frame={frame}

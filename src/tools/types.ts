@@ -38,6 +38,19 @@ export interface ArgFieldSpec {
   type: ArgFieldType;
   required?: boolean;
   description?: string;
+  /**
+   * SEMANTIC tag (t263, item 6): this string arg is a mo:os URN. The validator then
+   * additionally checks the URN pattern — a live t263 eval caught Gemini proposing
+   * `{urn:"t263"}`, which passed the flat type check and executed. A urn-typed arg
+   * must look like `urn:<nid>:<...>`, never a bare word.
+   */
+  urn?: boolean;
+  /**
+   * For urn-tagged fields: the urn must additionally resolve in the CURRENT frame
+   * (node urns ∪ the provenance anchors ∪ permitted workspaces). Enforced only when
+   * the caller supplies a ToolCallContext — pure structural callers are unchanged.
+   */
+  mustExistInFrame?: boolean;
 }
 
 /** Flat args schema: field name -> shape. Deliberately simple (no nested JSON Schema). */

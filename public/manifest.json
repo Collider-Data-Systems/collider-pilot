@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Collider Pilot",
   "version": "0.1.0",
-  "description": "Read-only mo:os harness seat: projects a purpose-selected HG frame into a side panel. Phase 1 is mock-only (no model, no writes).",
+  "description": "Read-only mo:os seat: live HG frame, A3 access view-filter, LLM proposer (Ollama / Gemini via kernel-proxy), review-only previews.",
 
   "permissions": ["sidePanel", "storage", "activeTab", "clipboardWrite"],
 

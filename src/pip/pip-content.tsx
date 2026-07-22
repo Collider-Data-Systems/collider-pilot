@@ -1,12 +1,15 @@
 /**
- * Collider Pilot - Document PiP content view (Phase 3)
- * ====================================================
+ * Collider Pilot - Document PiP content view (Phase 3, leaned by the t263 UX eval)
+ * ================================================================================
  * The compact frame view rendered INSIDE the Document Picture-in-Picture window
  * (and, standalone, inside `pip-preview.html` for served-page testing). It is a
- * PURE presentational component: it holds no store, no adapter, no I/O. It reuses
- * the exact same three render surfaces as the side panel — ProvenanceHeader +
- * FrameGraph + NodeInspector — so the PiP mirror shows the SAME frame identity and
- * selection the panel holds (criterion 3, #158).
+ * PURE presentational component: it holds no store, no adapter, no I/O.
+ *
+ * t263 item 5 — LEAN MIRROR: the PiP is a glanceable observation surface, so it renders
+ * the GRAPH + the one-line POSTURE STRIP only. The duplicated provenance wall and the
+ * textual inspector are gone — the full audit drawer is still one click away on the strip,
+ * and inspection/actions live in the side panel (the PiP never mounts Actions; it stays
+ * read/observe). Selection still mirrors both ways through the shared scratch.
  *
  * DEFENSIVE RENDER (Phase 1-fix discipline, preserved): every frame field is
  * Array.isArray-guarded before it reaches a child, and this whole subtree is wrapped
@@ -14,11 +17,9 @@
  * pip-preview harness both wrap it). A partial/stale frame must never blank the mirror.
  */
 
-import { useMemo } from "react";
-import type { HgFrame, HgNode } from "../mcp/types";
-import { ProvenanceHeader } from "../components/ProvenanceHeader";
+import type { HgFrame } from "../mcp/types";
+import { PostureStrip } from "../components/PostureStrip";
 import { FrameGraph } from "../components/FrameGraph";
-import { NodeInspector } from "../components/NodeInspector";
 
 export interface PipContentProps {
   /** The frame to mirror (passed through the shared scratch, never re-fetched). */
@@ -40,14 +41,6 @@ export function PipContent({
   connected,
   variant = "pip",
 }: PipContentProps) {
-  // Defensive: normalize the frame's arrays before any lookup or child render.
-  const nodes = Array.isArray(frame?.nodes) ? (frame as HgFrame).nodes : [];
-
-  const selectedNode: HgNode | null = useMemo(
-    () => nodes.find((n) => n.urn === selectedUrn) ?? null,
-    [nodes, selectedUrn],
-  );
-
   const isConnected = connected ?? frame != null;
 
   return (
@@ -65,7 +58,7 @@ export function PipContent({
         </div>
       </header>
 
-      {frame && <ProvenanceHeader provenance={frame.provenance} />}
+      {frame && <PostureStrip provenance={frame.provenance} />}
 
       <main className="pilot-body">
         {!frame && (
@@ -74,18 +67,11 @@ export function PipContent({
           </div>
         )}
         {frame && (
-          <>
-            <FrameGraph
-              frame={frame}
-              selectedUrn={selectedUrn}
-              onSelect={onSelect}
-            />
-            <NodeInspector
-              frame={frame}
-              node={selectedNode}
-              onSelect={onSelect}
-            />
-          </>
+          <FrameGraph
+            frame={frame}
+            selectedUrn={selectedUrn}
+            onSelect={onSelect}
+          />
         )}
       </main>
     </div>

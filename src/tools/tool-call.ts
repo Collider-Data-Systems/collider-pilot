@@ -19,6 +19,48 @@ import type {
   ToolSpec,
   ValidationResult,
 } from "./types";
+import type { HgFrame } from "../mcp/types";
+
+/**
+ * SEMANTIC URN VALIDATION (t263, item 6)
+ * --------------------------------------
+ * Live t263 finding: Gemini proposed `{urn:"t263"}` for copy_urn_to_clipboard — a bare
+ * word, not a urn — and it passed the flat type check and executed. Args whose spec is
+ * tagged `urn: true` are now additionally checked against the URN shape, and (when the
+ * caller supplies a ToolCallContext and the spec says `mustExistInFrame`) against the
+ * set of urns the current frame actually resolves. Strictly NARROWING: nothing that
+ * failed before passes now, and callers without a context keep the exact old behavior.
+ */
+
+/** RFC-8141-ish shape: `urn:<nid>:<nss>` with a sane NID and a non-empty NSS. */
+export const URN_PATTERN = /^urn:[a-z0-9][a-z0-9-]{0,31}:\S+$/i;
+
+/** Frame-derived context for semantic checks. Optional everywhere (pure callers skip it). */
+export interface ToolCallContext {
+  knownUrns?: Set<string>;
+}
+
+/**
+ * The urns the current frame RESOLVES: every node urn, plus the provenance anchors
+ * (workspace / purpose / engine) and the permitted workspaces — those are legitimate
+ * targets (e.g. pin_ki_to_workspace's workspace_urn) even when not rendered as nodes.
+ */
+export function collectFrameUrns(frame: HgFrame | null | undefined): Set<string> {
+  const known = new Set<string>();
+  if (!frame) return known;
+  for (const n of Array.isArray(frame.nodes) ? frame.nodes : []) {
+    if (typeof n?.urn === "string") known.add(n.urn);
+  }
+  const prov = frame.provenance;
+  for (const anchor of [prov?.workspace, prov?.purpose, prov?.engine]) {
+    if (typeof anchor === "string" && anchor) known.add(anchor);
+  }
+  const permitted = prov?.access?.permitted_workspaces;
+  for (const u of Array.isArray(permitted) ? permitted : []) {
+    if (typeof u === "string") known.add(u);
+  }
+  return known;
+}
 
 /** Runtime kind of a value, in the vocabulary of ArgFieldType. */
 function kindOf(value: unknown): ArgFieldType | "null" | "undefined" {
@@ -39,11 +81,17 @@ function kindOf(value: unknown): ArgFieldType | "null" | "undefined" {
  *   2. `args` is a plain object,
  *   3. every `required` field is present and non-null,
  *   4. every provided field whose schema is known matches the declared type,
- *   5. no unknown extra fields slipped in (surfaced as an error, not silently accepted).
+ *   5. no unknown extra fields slipped in (surfaced as an error, not silently accepted),
+ *   6. every urn-tagged string field matches the URN shape, and — when a context with
+ *      knownUrns is supplied and the spec demands it — resolves in the current frame.
  *
  * @returns { ok, errors } — ok iff errors is empty.
  */
-export function validateToolCall(call: ToolCall, tool: ToolSpec): ValidationResult {
+export function validateToolCall(
+  call: ToolCall,
+  tool: ToolSpec,
+  context?: ToolCallContext,
+): ValidationResult {
   const errors: string[] = [];
 
   if (!call || typeof call !== "object") {
@@ -72,6 +120,19 @@ export function validateToolCall(call: ToolCall, tool: ToolSpec): ValidationResu
       const k = kindOf(value);
       if (k !== spec.type) {
         errors.push(`arg "${key}" must be ${spec.type}, got ${k}`);
+        continue;
+      }
+      // Semantic URN checks (t263, item 6) — only for well-typed string fields.
+      if (spec.urn && typeof value === "string") {
+        if (!URN_PATTERN.test(value)) {
+          errors.push(`arg "${key}" is not a urn (got "${value}") — expected urn:<nid>:<...>`);
+        } else if (
+          spec.mustExistInFrame &&
+          context?.knownUrns &&
+          !context.knownUrns.has(value)
+        ) {
+          errors.push(`arg "${key}" does not resolve in the current frame ("${value}")`);
+        }
       }
     }
   }
