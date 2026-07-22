@@ -49,8 +49,10 @@ import {
   isModelProvider,
   isProviderAvailable,
   providerDefaultModel,
+  resolveLLMToken,
   resolveModelName,
   resolveProviderId,
+  saveLLMToken,
   saveModelName,
   saveProviderId,
 } from "../tools/model-providers";
@@ -104,6 +106,29 @@ export function ActionsPanel({
   const [llmText, setLlmText] = useState<string>("");
   const [llmBusy, setLlmBusy] = useState(false);
   const [llmNotice, setLlmNotice] = useState<ActResult | null>(null);
+
+  // t263: scope-split LLM bearer for kernel-proxy providers. Only a SET/UNSET
+  // flag lives in component state — the token value itself stays in
+  // chrome.storage and is read at call time by llm-provider.
+  const [llmTokenDraft, setLlmTokenDraft] = useState<string>("");
+  const [llmTokenSet, setLlmTokenSet] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void resolveLLMToken().then((tok) => {
+      if (!cancelled) setLlmTokenSet(tok !== "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const handleSaveLlmToken = useCallback(() => {
+    const tok = llmTokenDraft.trim();
+    if (!tok) return;
+    void saveLLMToken(tok).then(() => {
+      setLlmTokenSet(true);
+      setLlmTokenDraft("");
+    });
+  }, [llmTokenDraft]);
   const [proposed, setProposed] = useState<{
     call: ToolCall;
     tool: ToolSpec | null;
@@ -432,6 +457,33 @@ export function ActionsPanel({
           </select>
         )}
         <div className="provider-note">{provider.note}</div>
+        {provider.viaKernelProxy && (
+          <div className="llm-token-row">
+            <input
+              type="password"
+              className="llm-token-input"
+              placeholder={
+                llmTokenSet
+                  ? "LLM bearer set — paste to replace"
+                  : "paste the scope-split LLM bearer (secrets/moos-llm-token)"
+              }
+              value={llmTokenDraft}
+              onChange={(e) => setLlmTokenDraft(e.target.value)}
+              autoComplete="off"
+              title="Stored as chrome.storage.local['pilot.llmToken']. Scope-split: this token reaches /llm/* only — it can never write to the HG. Never paste the fleet write token here."
+            />
+            <button
+              className="mini-btn"
+              onClick={handleSaveLlmToken}
+              disabled={!llmTokenDraft.trim()}
+            >
+              save
+            </button>
+            <span className={`llm-token-state ${llmTokenSet ? "ok" : "missing"}`}>
+              {llmTokenSet ? "set" : "required"}
+            </span>
+          </div>
+        )}
         {egressPreview && (
           <div className={`provider-egress ${egressPreview.allowed ? "ok" : "blocked"}`}>
             cloud egress: {egressPreview.allowed ? "permitted" : "BLOCKED"} — {egressPreview.reason}

@@ -21,7 +21,7 @@
 import type { ToolCall, ToolSpec } from "./types";
 import type { ModelProvider } from "./model-providers";
 import type { AccessResolution } from "../mcp/types";
-import { DEFAULT_PROVIDER_ID } from "./model-providers";
+import { DEFAULT_PROVIDER_ID, resolveLLMToken } from "./model-providers";
 import {
   buildChatBody,
   buildSystemPrompt,
@@ -76,6 +76,21 @@ export async function proposeToolCall(input: ProposeInput): Promise<ProposeResul
     return { ok: false, error: `provider ${provider.id} has no endpoint (manual mode?)` };
   }
   try {
+    // Kernel-proxy providers (t263): /llm/* is bearer-gated (moos-kernel #60/#63).
+    // Send the SCOPE-SPLIT llm token — never the fleet write token, which the
+    // pilot must not hold. Missing token = a clear error, not a silent 401.
+    let headers: Record<string, string> | undefined;
+    if (provider.viaKernelProxy) {
+      const llmToken = await resolveLLMToken();
+      if (!llmToken) {
+        return {
+          ok: false,
+          error:
+            "kernel-proxy provider needs the scope-split LLM bearer — paste it under the provider selector (stored as pilot.llmToken; it cannot write to the HG)",
+        };
+      }
+      headers = { Authorization: `Bearer ${llmToken}` };
+    }
     const systemText = buildSystemPrompt(context ?? {});
     const body = buildChatBody({ model, systemText, userText, tools });
     const json = await postChatCompletions({
@@ -83,6 +98,7 @@ export async function proposeToolCall(input: ProposeInput): Promise<ProposeResul
       body,
       fetchImpl,
       signal,
+      headers,
     });
     const parsed = parseCompletion(json);
     if (!parsed.ok) return { ok: false, error: parsed.error ?? "malformed LLM response" };

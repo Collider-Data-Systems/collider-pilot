@@ -57,6 +57,37 @@ export const DEFAULT_PROVIDER_ID = "ollama-local";
 /** Storage keys (mirror the adapter-factory `pilot.adapterMode` precedent). */
 const STORAGE_PROVIDER_KEY = "pilot.model";
 const STORAGE_MODEL_NAME_KEY = "pilot.modelName";
+const STORAGE_LLM_TOKEN_KEY = "pilot.llmToken";
+
+/**
+ * The scope-split LLM bearer (t263, moos-kernel #63): a SECOND kernel token accepted ONLY on
+ * the /llm/* egress routes. Holding it grants Gemini egress and nothing else — by design it
+ * can never open POST /rewrites or /programs, so storing it in chrome.storage.local carries
+ * the smallest possible blast radius. The fleet WRITE token must never be stored here.
+ */
+export async function resolveLLMToken(): Promise<string> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const got = await chrome.storage.local.get(STORAGE_LLM_TOKEN_KEY);
+      const tok = got?.[STORAGE_LLM_TOKEN_KEY];
+      if (typeof tok === "string" && tok.trim()) return tok.trim();
+    }
+  } catch {
+    // storage unavailable -> no token
+  }
+  return "";
+}
+
+/** Persist the scope-split LLM bearer (best-effort; a failure is non-fatal). */
+export async function saveLLMToken(token: string): Promise<void> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      await chrome.storage.local.set({ [STORAGE_LLM_TOKEN_KEY]: token.trim() });
+    }
+  } catch {
+    // best-effort
+  }
+}
 
 /**
  * The static registry. `ollama-local` is the DEFAULT and always available. `gemini` is a
@@ -82,11 +113,11 @@ export const MODEL_PROVIDERS: ModelProvider[] = [
     kind: "remote",
     endpoint: "http://localhost:8000/llm/gemini",
     model: "gemini-2.5-flash",
-    requiresKey: false, // the extension holds NO key — it lives in the kernel-proxy Secret Manager
+    requiresKey: false, // the extension holds NO Gemini key — it lives in the kernel-proxy Secret Manager
     viaKernelProxy: true,
     cloud: true,
-    enabled: false, // pending kernel-proxy — wired but never called in this build
-    note: "Cloud, via the FUTURE kernel-proxy (key server-side). PENDING — not yet available. Gated on the access posture: never sent when anon.",
+    enabled: true, // t263: kernel-proxy live (moos-kernel #58 + scope-split bearer #63)
+    note: "Cloud, via the kernel-proxy (Gemini key server-side). Needs the scope-split LLM bearer pasted below (secrets/moos-llm-token — it can NEVER write to the HG). Gated on the access posture: never sent when anon.",
   },
   {
     id: "none-manual",
