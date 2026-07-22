@@ -1,0 +1,28 @@
+name: copilot-gate
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+jobs:
+  copilot-review-present:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Wait for a completed Copilot review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          for i in $(seq 1 60); do
+            n=$(gh api "repos/$REPO/pulls/$PR/reviews" --jq '[.[] | select(.user.login=="copilot-pull-request-reviewer")] | length')
+            if [ "$n" -gt 0 ]; then
+              echo "Copilot review present ($n review(s))"
+              exit 0
+            fi
+            echo "waiting for Copilot review... ($i/60)"
+            sleep 10
+          done
+          echo "No Copilot review landed within 10 minutes"
+          exit 1
