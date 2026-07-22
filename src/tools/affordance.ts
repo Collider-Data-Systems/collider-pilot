@@ -50,7 +50,15 @@ export const CLIPBOARD_TOOL: ToolSpec = {
   channel: "browser",
   description: "Copy the selected node's urn to the system clipboard.",
   args_schema: {
-    fields: { urn: { type: "string", required: true, description: "the urn to copy" } },
+    fields: {
+      urn: {
+        type: "string",
+        required: true,
+        description: "the urn to copy",
+        urn: true,
+        mustExistInFrame: true,
+      },
+    },
   },
   expected_effect:
     "Writes the selected urn to the OS clipboard. No engine call, no HG write — a local browser act.",
@@ -71,8 +79,20 @@ export const PIN_PREVIEW_TOOL: ToolSpec = {
     "Propose pinning the selected knowledge_item into the workspace (WF19 pins-urn LINK).",
   args_schema: {
     fields: {
-      ki_urn: { type: "string", required: true, description: "knowledge_item to pin" },
-      workspace_urn: { type: "string", required: true, description: "session/workspace" },
+      ki_urn: {
+        type: "string",
+        required: true,
+        description: "knowledge_item to pin",
+        urn: true,
+        mustExistInFrame: true,
+      },
+      workspace_urn: {
+        type: "string",
+        required: true,
+        description: "session/workspace",
+        urn: true,
+        mustExistInFrame: true,
+      },
     },
   },
   expected_effect:

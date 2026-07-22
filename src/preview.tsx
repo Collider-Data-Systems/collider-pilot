@@ -1,8 +1,8 @@
 /**
  * Collider Pilot - standalone preview harness (dev/test only)
  * ===========================================================
- * Renders the REAL side-panel components (ProvenanceHeader + GraphControls + FrameGraph +
- * NodeInspector + ActionsPanel) against the REAL MockMcpAdapter, WITHOUT the MV3 extension
+ * Renders the REAL side-panel components (PostureStrip + SettingsPanel + GraphControls +
+ * FrameGraph + NodeInspector + ActionsPanel) against the REAL MockMcpAdapter, WITHOUT the MV3 extension
  * chrome. It reimplements only the worker-messaging wrapper — precisely the part that
  * cannot be exercised outside a loaded extension. Everything a served-page browser test
  * can verify (render, provenance collapse, layout picker, node search, Cytoscape relations
@@ -21,7 +21,7 @@ import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { HgFrame } from "./mcp/types";
 import { MockMcpAdapter } from "./mcp/mock-adapter";
-import { ProvenanceHeader } from "./components/ProvenanceHeader";
+import { PostureStrip } from "./components/PostureStrip";
 import { FrameGraph } from "./components/FrameGraph";
 import {
   GraphControls,
@@ -29,6 +29,12 @@ import {
 } from "./components/GraphControls";
 import { NodeInspector } from "./components/NodeInspector";
 import { ActionsPanel } from "./components/ActionsPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
+import {
+  DEFAULT_PROVIDER_ID,
+  getProvider,
+  providerDefaultModel,
+} from "./tools/model-providers";
 import {
   DEFAULT_GRAPH_LAYOUT,
   DEFAULT_ACCESS_POSTURE,
@@ -53,6 +59,21 @@ function Preview() {
   // Access posture is inert on the MOCK adapter (it ignores view_filter) — the toggle is
   // present only so this harness renders the same GraphControls as the shipped panel.
   const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
+  const [identitySet, setIdentitySet] = useState(false);
+
+  // Provider/model/bearer state mirrors the shipped panel (Settings sets, Actions consumes).
+  // Served without extension storage the save calls no-op — the harness still renders the
+  // exact same consolidated Settings surface.
+  const [providerId, setProviderId] = useState<string>(DEFAULT_PROVIDER_ID);
+  const [modelName, setModelName] = useState<string>(() =>
+    providerDefaultModel(getProvider(DEFAULT_PROVIDER_ID)),
+  );
+  const [llmTokenSet, setLlmTokenSet] = useState(false);
+
+  const handleProviderChange = useCallback((id: string) => {
+    setProviderId(id);
+    setModelName(providerDefaultModel(getProvider(id)));
+  }, []);
 
   const loadFrame = useCallback(async () => {
     const f = await adapter.getFrame();
@@ -117,7 +138,8 @@ function Preview() {
         <div className="header-left">
           <span className="status-dot connected" title="preview" />
           <h1>Collider Pilot</h1>
-          <span className="header-sub">read-only · mock · preview</span>
+          {/* t263 item 1 dedupe: MOCK/READ-ONLY render only on the PostureStrip. */}
+          <span className="header-sub">mock harness</span>
         </div>
         <div className="header-right">
           <button
@@ -130,15 +152,30 @@ function Preview() {
         </div>
       </header>
 
-      {frame && <ProvenanceHeader provenance={frame.provenance} />}
+      {frame && <PostureStrip provenance={frame.provenance} />}
 
       <main className="pilot-body">
         {!frame && <div className="pilot-state">Loading mock frame…</div>}
         {frame && (
           <>
-            <GraphControls
+            <SettingsPanel
+              frame={frame}
+              accessMode={accessMode}
+              onReloadFrame={() => void loadFrame()}
+              onIdentityChanged={setIdentitySet}
               layout={layout}
               onLayoutChange={setLayout}
+              provider={{
+                providerId,
+                onProviderChange: handleProviderChange,
+                modelName,
+                onModelChange: setModelName,
+                llmTokenSet,
+                onLlmTokenChanged: setLlmTokenSet,
+                access: frame.provenance?.access ?? null,
+              }}
+            />
+            <GraphControls
               search={search}
               onSearchChange={handleSearchChange}
               searchHint={searchHint}
@@ -157,7 +194,7 @@ function Preview() {
               onScopeChange={() => void loadFrame()}
               accessMode={accessMode}
               onAccessModeChange={setAccessMode}
-              onReloadFrame={() => void loadFrame()}
+              identitySet={identitySet}
             />
             <FrameGraph
               frame={frame}
@@ -179,6 +216,9 @@ function Preview() {
                 selectedUrn={selectedUrn}
                 liveTools={null}
                 affordanceError={null}
+                providerId={providerId}
+                modelName={modelName}
+                llmTokenSet={llmTokenSet}
               />
             </ErrorBoundary>
           </>

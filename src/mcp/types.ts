@@ -162,7 +162,7 @@ export interface FrameProvenance {
   mock: boolean;
   /**
    * The DERIVED access fiber for this frame (A3 hybrid-staged). Optional so pre-access
-   * frames stay valid. The ProvenanceHeader renders it as an access row + an honest tier
+   * frames stay valid. The PostureStrip's audit drawer renders it as an access row + an honest tier
    * badge (`ACCESS: PRESENTATION` vs `ACCESS: ENFORCED`) + a `workstation ∩ skipped`
    * sub-note when `intersection_applied === false`. Absent ⇒ the header omits the row.
    */
