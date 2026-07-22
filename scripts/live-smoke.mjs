@@ -102,6 +102,10 @@ function accessChecks(fold) {
       `sam's legit workspace ${legit.split(":").pop()} is still permitted (fixes don't over-hide)`,
     );
   }
+  // t264: the member-of glue (ontology 4.0.4) — sam's closure now reaches his groups.
+  for (const g of ["urn:moos:group:sam", "urn:moos:group:moos"]) {
+    assert(samRes.role_topology.includes(g), `member-of closure reaches ${g.split(":").pop()}`);
+  }
   assert(
     samRes.intersection_applied === false,
     "workstation ∩ SKIPPED at client tier (widened, not narrowed)",
@@ -166,7 +170,42 @@ function accessChecks(fold) {
     "a non-'identified' mode ⇒ anon (fail-closed)",
   );
 
-  console.log("\nPASS: access law verified (anon public-only · bring-in WF02→WF19 · fallback · strip).");
+  // (e) member-of transitivity (ontology 4.0.4): the workspace is reachable ONLY through
+  //     nested membership (user → team-a → org-b → governs → occupant), and the walk never
+  //     runs group→member (monotone widening, no reverse leak).
+  const memberFold = {
+    nodes: {
+      "urn:moos:user:demo2": node("urn:moos:user:demo2", "user"),
+      "urn:moos:group:team-a": node("urn:moos:group:team-a", "group"),
+      "urn:moos:group:org-b": node("urn:moos:group:org-b", "group"),
+      "urn:moos:agent:demo2.bot": node("urn:moos:agent:demo2.bot", "agent"),
+      "urn:moos:session:demo2.ws": node("urn:moos:session:demo2.ws", "session"),
+    },
+    relations: {
+      m1: rel("m1", "WF02", "urn:moos:user:demo2", "member-of", "urn:moos:group:team-a", "has-member"),
+      m2: rel("m2", "WF02", "urn:moos:group:team-a", "member-of", "urn:moos:group:org-b", "has-member"),
+      g1: rel("g1", "WF02", "urn:moos:group:org-b", "governs", "urn:moos:agent:demo2.bot", "governed-by"),
+      o1: rel("o1", "WF19", "urn:moos:session:demo2.ws", "has-occupant", "urn:moos:agent:demo2.bot", "is-occupant-of"),
+    },
+  };
+  const memberScope = { ...sam, user: "urn:moos:user:demo2", workstation: null };
+  const memberRes = resolveAccess(memberFold, memberScope);
+  line("member-of path", memberRes.workspace_path);
+  line("member-of permitted", JSON.stringify(memberRes.permitted_workspaces));
+  for (const hop of ["urn:moos:group:team-a", "urn:moos:group:org-b", "urn:moos:agent:demo2.bot"]) {
+    assert(memberRes.role_topology.includes(hop), `member-of closure hops through ${hop.split(":").pop()}`);
+  }
+  assert(
+    memberRes.permitted_workspaces.includes("urn:moos:session:demo2.ws"),
+    "workspace reachable ONLY via nested membership is permitted",
+  );
+  const reverseRes = resolveAccess(memberFold, { ...sam, user: "urn:moos:group:org-b", workstation: null });
+  assert(
+    !reverseRes.role_topology.includes("urn:moos:user:demo2"),
+    "member-of is NEVER followed group→member (no reverse leak)",
+  );
+
+  console.log("\nPASS: access law verified (anon public-only · bring-in WF02→WF19 · member-of transitivity · fallback · strip).");
 }
 
 /** Shorthand raw-node/relation builders for the synthetic over-exposure fixtures. */
