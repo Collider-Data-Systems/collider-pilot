@@ -38,28 +38,65 @@ export const URN_PATTERN = /^urn:[a-z0-9][a-z0-9-]{0,31}:\S+$/i;
 /** Frame-derived context for semantic checks. Optional everywhere (pure callers skip it). */
 export interface ToolCallContext {
   knownUrns?: Set<string>;
+  /** urn -> type_id for frame NODES (anchors absent) — drives ArgFieldSpec.nodeType. */
+  nodeTypes?: Record<string, string>;
 }
 
 /**
- * The urns the current frame RESOLVES: every node urn, plus the provenance anchors
- * (workspace / purpose / engine) and the permitted workspaces — those are legitimate
- * targets (e.g. pin_ki_to_workspace's workspace_urn) even when not rendered as nodes.
+ * The urns the current frame RESOLVES — everything the UI can legitimately show a user
+ * and a user can therefore legitimately target (t263 review major: the first cut only
+ * held node urns + 3 anchors, so copy acts on urns the panel itself DISPLAYS — relation
+ * urns, urn-shaped property values like `occupant`/`owner_urn`, access principals —
+ * were rejected, a regression vs the pre-semantic-gate behavior):
+ *   - every node urn and every relation urn,
+ *   - every urn-shaped property VALUE on a frame node (the inspector renders these),
+ *   - the provenance anchors (workspace / purpose / engine),
+ *   - the access fiber's principals + workspace sets (scope user/workstation,
+ *     role_topology, permitted_workspaces, public_workspaces).
  */
 export function collectFrameUrns(frame: HgFrame | null | undefined): Set<string> {
   const known = new Set<string>();
   if (!frame) return known;
+  const consider = (v: unknown) => {
+    if (typeof v === "string" && URN_PATTERN.test(v)) known.add(v);
+  };
   for (const n of Array.isArray(frame.nodes) ? frame.nodes : []) {
     if (typeof n?.urn === "string") known.add(n.urn);
+    const props = n?.properties ?? {};
+    for (const k of Object.keys(props)) consider(props[k]);
+  }
+  for (const r of Array.isArray(frame.relations) ? frame.relations : []) {
+    if (typeof r?.urn === "string") known.add(r.urn);
   }
   const prov = frame.provenance;
   for (const anchor of [prov?.workspace, prov?.purpose, prov?.engine]) {
     if (typeof anchor === "string" && anchor) known.add(anchor);
   }
-  const permitted = prov?.access?.permitted_workspaces;
-  for (const u of Array.isArray(permitted) ? permitted : []) {
-    if (typeof u === "string") known.add(u);
+  const access = prov?.access;
+  consider(access?.scope?.user);
+  consider(access?.scope?.workstation);
+  for (const list of [
+    access?.role_topology,
+    access?.permitted_workspaces,
+    access?.public_workspaces,
+  ]) {
+    for (const u of Array.isArray(list) ? list : []) consider(u);
   }
   return known;
+}
+
+/** urn -> type_id for the frame's NODES only (anchors are not nodes and stay absent). */
+export function collectFrameNodeTypes(
+  frame: HgFrame | null | undefined,
+): Record<string, string> {
+  const types: Record<string, string> = {};
+  if (!frame) return types;
+  for (const n of Array.isArray(frame.nodes) ? frame.nodes : []) {
+    if (typeof n?.urn === "string" && typeof n?.type_id === "string") {
+      types[n.urn] = n.type_id;
+    }
+  }
+  return types;
 }
 
 /** Runtime kind of a value, in the vocabulary of ArgFieldType. */
@@ -132,6 +169,16 @@ export function validateToolCall(
           !context.knownUrns.has(value)
         ) {
           errors.push(`arg "${key}" does not resolve in the current frame ("${value}")`);
+        } else if (spec.nodeType && context?.nodeTypes) {
+          // Copilot #18 catch: the urn resolves, but must resolve to a NODE of the
+          // declared type — a wrong-typed node (or a non-node anchor) is not a valid
+          // target for this arg.
+          const resolvedType = context.nodeTypes[value];
+          if (resolvedType !== spec.nodeType) {
+            errors.push(
+              `arg "${key}" must resolve to a ${spec.nodeType} node (got ${resolvedType ?? "a non-node urn"})`,
+            );
+          }
         }
       }
     }

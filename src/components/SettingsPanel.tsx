@@ -125,12 +125,18 @@ export function SettingsPanel({
   const [current, setCurrent] = useState<PilotAccessConfig | null>(null);
   const identitySet = isIdentitySet(current);
   const [open, setOpen] = useState(false);
+  // Whether the stored identity has actually been READ yet. The auto-expand below must
+  // wait for it: before the async chrome.storage read resolves, identitySet is a
+  // transient false, and gating on it alone auto-opened the drawer on EVERY panel open
+  // for legitimately-identified users (t263 review major).
+  const [identityLoaded, setIdentityLoaded] = useState(false);
 
   // Auto-expand when "Bring me in" is selected with no identity backing it — the exact
-  // stuck-at-anon state this block exists to fix. A manual collapse sticks.
+  // stuck-at-anon state this block exists to fix. Only once the stored identity has
+  // resolved (see above). A manual collapse sticks.
   useEffect(() => {
-    if (accessMode === "identified" && !identitySet) setOpen(true);
-  }, [accessMode, identitySet]);
+    if (identityLoaded && accessMode === "identified" && !identitySet) setOpen(true);
+  }, [identityLoaded, accessMode, identitySet]);
 
   const activeProvider = provider ? getProvider(provider.providerId) : null;
 
@@ -170,6 +176,7 @@ export function SettingsPanel({
             setCurrent(cfg);
             onIdentityChanged?.(isIdentitySet(cfg));
           }}
+          onLoaded={() => setIdentityLoaded(true)}
           onReloadFrame={onReloadFrame}
         />
         {provider && <ProviderSection {...provider} />}
@@ -205,12 +212,15 @@ function IdentitySection({
   accessMode,
   current,
   setCurrent,
+  onLoaded,
   onReloadFrame,
 }: {
   frame: HgFrame | null;
   accessMode: AccessPosture;
   current: PilotAccessConfig | null;
   setCurrent: (cfg: PilotAccessConfig | null) => void;
+  /** Fired once the stored identity has been read (gates the parent's auto-expand). */
+  onLoaded: () => void;
   onReloadFrame: () => void;
 }) {
   const candidates = useMemo(() => collectIdentityCandidates(frame), [frame]);
@@ -236,6 +246,7 @@ function IdentitySection({
         setWsText(cfg.workstation);
         setWsPick(candidates.workstations.includes(cfg.workstation) ? cfg.workstation : CUSTOM);
       }
+      onLoaded();
     });
     return () => {
       cancelled = true;
@@ -243,6 +254,21 @@ function IdentitySection({
     // Mount-only: candidates arriving later must not clobber in-progress edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Candidates are frame-reactive but the picks were classified against the candidates
+  // available at load time. If a picked urn later DROPS OUT of the candidate list (frame
+  // refresh, posture change), migrate it to the escape hatch instead of letting the
+  // <select> render blank while Save stays enabled on the stale value (t263 review catch).
+  useEffect(() => {
+    if (userPick !== "" && userPick !== CUSTOM && !candidates.users.includes(userPick)) {
+      setUserText(userPick);
+      setUserPick(CUSTOM);
+    }
+    if (wsPick !== "" && wsPick !== CUSTOM && !candidates.workstations.includes(wsPick)) {
+      setWsText(wsPick);
+      setWsPick(CUSTOM);
+    }
+  }, [candidates, userPick, wsPick]);
 
   const identitySet = isIdentitySet(current);
   const showHint = accessMode === "identified" && !identitySet;
@@ -303,6 +329,12 @@ function IdentitySection({
           <option value={CUSTOM}>custom urn…</option>
         </select>
       </label>
+      {candidates.users.length === 0 && (
+        <div className="gc-note">
+          no user candidates in this frame — the default view_filter slice omits
+          user/workstation nodes (enable those types and Apply), or use custom urn…
+        </div>
+      )}
       {userPick === CUSTOM && (
         <label className="gc-field">
           <span className="gc-label">user urn (raw)</span>

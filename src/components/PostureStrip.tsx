@@ -160,6 +160,10 @@ export function PostureStrip({
               <span title={glossaryTitle(access.computed_by)}>{access.computed_by}</span>
               <span className="prov-k">path</span>{" "}
               <span title={glossaryTitle(access.workspace_path)}>{access.workspace_path}</span>
+              <span className="prov-k">ws ∩</span>{" "}
+              <span title={glossaryTitle(access.workstation_intersection)}>
+                {access.workstation_intersection}
+              </span>
             </span>
           </div>
           {permittedCount > 0 && (

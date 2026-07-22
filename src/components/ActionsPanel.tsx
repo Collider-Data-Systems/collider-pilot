@@ -40,6 +40,7 @@ import {
 } from "../tools/affordance";
 import {
   URN_PATTERN,
+  collectFrameNodeTypes,
   collectFrameUrns,
   makeToolCall,
   validateToolCall,
@@ -53,6 +54,7 @@ import {
 } from "../tools/hg-program-preview";
 import {
   getProvider,
+  isCloudProvider,
   isModelProvider,
   isProviderAvailable,
 } from "../tools/model-providers";
@@ -83,6 +85,8 @@ interface UrnSuggestion {
   field: string;
   urn: string;
   label: string;
+  /** Where the candidate came from — drives honest wording in the notice/button. */
+  kind: "selection" | "workspace";
 }
 
 export function ActionsPanel({
@@ -108,10 +112,14 @@ export function ActionsPanel({
 
   const provider = getProvider(providerId);
 
-  // t263 item 6: the frame-resolvable urn set — the context every validateToolCall in this
-  // section runs under (modal open, proposal dispatch, AND the pre-resolve re-validation).
+  // t263 item 6: the frame-resolvable urn set + node types — the context every
+  // validateToolCall in this section runs under (modal open, proposal dispatch, AND the
+  // pre-resolve re-validation).
   const urnContext = useMemo<ToolCallContext>(
-    () => ({ knownUrns: collectFrameUrns(frame) }),
+    () => ({
+      knownUrns: collectFrameUrns(frame),
+      nodeTypes: collectFrameNodeTypes(frame),
+    }),
     [frame],
   );
 
@@ -245,14 +253,25 @@ export function ActionsPanel({
     (tool: ToolSpec, call: ToolCall, errors: string[]): UrnSuggestion | null => {
       const fields = tool.args_schema?.fields ?? {};
       for (const field of Object.keys(fields)) {
-        if (!fields[field]?.urn) continue;
-        if (!errors.some((e) => e.includes(`"${field}"`))) continue;
-        const candidate = field.includes("workspace") ? workspace : selectedUrn;
+        const spec = fields[field];
+        if (!spec?.urn) continue;
+        // Match the error's FIELD position, not a bare substring — a quoted got-value in
+        // another field's error (e.g. `(got "urn")`) must never select this field.
+        const failing = errors.some(
+          (e) =>
+            e.startsWith(`arg "${field}"`) || e.startsWith(`missing required arg "${field}"`),
+        );
+        if (!failing) continue;
+        const isWorkspaceField = field.includes("workspace");
+        const candidate = isWorkspaceField ? workspace : selectedUrn;
         if (!candidate || candidate === call.args[field]) continue;
         if (!URN_PATTERN.test(candidate)) continue;
-        if (fields[field]?.mustExistInFrame && !urnContext.knownUrns?.has(candidate)) continue;
+        if (spec.mustExistInFrame && !urnContext.knownUrns?.has(candidate)) continue;
+        // Copilot #18 catch: never suggest a candidate the validator would reject on
+        // node type (e.g. a selected derivation for pin's knowledge_item-only ki_urn).
+        if (spec.nodeType && urnContext.nodeTypes?.[candidate] !== spec.nodeType) continue;
         const label = candidate.split(":").pop() || candidate;
-        return { field, urn: candidate, label };
+        return { field, urn: candidate, label, kind: isWorkspaceField ? "workspace" : "selection" };
       }
       return null;
     },
@@ -301,7 +320,7 @@ export function ActionsPanel({
         setLlmNotice({
           ok: false,
           message: suggestion
-            ? `Rejected by validateToolCall — bad urn arg. Did you mean the selected "${suggestion.label}"?`
+            ? `Rejected by validateToolCall — bad urn arg. Did you mean the ${suggestion.kind === "workspace" ? "frame workspace" : "selected"} "${suggestion.label}"?`
             : "Rejected by validateToolCall — the proposed call is malformed.",
         });
         return; // never execute an invalid/hallucinated call
@@ -331,15 +350,19 @@ export function ActionsPanel({
     [actions, openAction, selectedUrn, urnContext, suggestUrnFix],
   );
 
-  // Accept the "did you mean" fix: substitute ONLY the failing field and re-dispatch the
-  // corrected call through the full gate again.
+  // Accept the "did you mean" fix: substitute the failing field, DROP any args outside
+  // the tool's schema (they would fail the unknown-arg check forever and dead-end the
+  // recovery), and re-dispatch the corrected call through the full gate again.
   const applySuggestion = useCallback(() => {
     if (!proposed?.suggestion || !proposed.tool) return;
     const { field, urn } = proposed.suggestion;
-    dispatchProposal(
-      { name: proposed.call.name, args: { ...proposed.call.args, [field]: urn } },
-      `${proposed.source}+fix`,
-    );
+    const fields = proposed.tool.args_schema?.fields ?? {};
+    const args: Record<string, unknown> = {};
+    for (const key of Object.keys(proposed.call.args)) {
+      if (Object.prototype.hasOwnProperty.call(fields, key)) args[key] = proposed.call.args[key];
+    }
+    args[field] = urn;
+    dispatchProposal({ name: proposed.call.name, args }, `${proposed.source}+fix`);
   }, [proposed, dispatchProposal]);
 
   // Send the user's request to the selected model. The cloud-egress access gate runs FIRST;
@@ -405,6 +428,10 @@ export function ActionsPanel({
   const canPin = !!selectedUrn && selectedNode?.type_id === "knowledge_item";
   const llmUsable = isModelProvider(provider) && isProviderAvailable(provider);
   const bearerMissing = provider.viaKernelProxy === true && !llmTokenSet;
+  // Pre-flight egress verdict, visible AT the propose surface (t263 review catch: the
+  // Settings move buried the always-visible banner in a collapsed disclosure — the user
+  // must see BLOCKED before typing, not after pressing Propose).
+  const egressPreview = isCloudProvider(provider) ? evaluateEgress(provider, access) : null;
 
   return (
     <section className="actions" aria-label="Actions">
@@ -475,6 +502,12 @@ export function ActionsPanel({
             this provider needs the scope-split LLM bearer — set it in Settings.
           </div>
         )}
+        {egressPreview && (
+          <div className={`provider-egress ${egressPreview.allowed ? "ok" : "blocked"}`}>
+            cloud egress: {egressPreview.allowed ? "permitted" : "BLOCKED"} —{" "}
+            {egressPreview.reason}
+          </div>
+        )}
         <div className="llm-hint">
           The model NEVER auto-applies. Reads auto-run; mutating acts go through the
           confirmation modal (HG rewrites stay review-only previews that never POST).
@@ -511,7 +544,9 @@ export function ActionsPanel({
                 onClick={applySuggestion}
                 title={`Re-propose with ${proposed.suggestion.field} = ${proposed.suggestion.urn} — goes through the same validation + confirm gate`}
               >
-                Did you mean {proposed.suggestion.label}? Use it
+                Did you mean the{" "}
+                {proposed.suggestion.kind === "workspace" ? "frame workspace" : "selected"}{" "}
+                {proposed.suggestion.label}? Use it
               </button>
             )}
           </div>

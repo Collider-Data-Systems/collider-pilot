@@ -47,14 +47,24 @@ function assert(cond, msg) {
   console.log(`  ok  ${msg}`);
 }
 
-/* ---- Sample actionable ToolSpecs (mirror src/tools/affordance.ts shapes) ---------------- */
+/* ---- Sample actionable ToolSpecs (mirror src/tools/affordance.ts shapes, INCLUDING the
+ *      t263 semantic urn tags — keep in sync so this gate can catch a regression of the
+ *      urn shape / exists-in-frame / node-type checks) ------------------------------------ */
 const CLIPBOARD_TOOL = {
   name: "copy_urn_to_clipboard",
   kind: "mutate",
   channel: "browser",
   description: "Copy the selected node's urn to the system clipboard.",
   args_schema: {
-    fields: { urn: { type: "string", required: true, description: "the urn to copy" } },
+    fields: {
+      urn: {
+        type: "string",
+        required: true,
+        description: "the urn to copy",
+        urn: true,
+        mustExistInFrame: true,
+      },
+    },
   },
   expected_effect: "Writes the selected urn to the OS clipboard. No engine call, no HG write.",
   source: "browser",
@@ -67,8 +77,21 @@ const PIN_PREVIEW_TOOL = {
   description: "Propose pinning the selected knowledge_item into the workspace.",
   args_schema: {
     fields: {
-      ki_urn: { type: "string", required: true, description: "knowledge_item to pin" },
-      workspace_urn: { type: "string", required: true, description: "session/workspace" },
+      ki_urn: {
+        type: "string",
+        required: true,
+        description: "knowledge_item to pin",
+        urn: true,
+        mustExistInFrame: true,
+        nodeType: "knowledge_item",
+      },
+      workspace_urn: {
+        type: "string",
+        required: true,
+        description: "session/workspace",
+        urn: true,
+        mustExistInFrame: true,
+      },
     },
   },
   expected_effect: "Builds a REVIEW-ONLY apply_program envelope. Never posted to the kernel.",
@@ -77,14 +100,34 @@ const PIN_PREVIEW_TOOL = {
 };
 const ACTIONABLE = [CLIPBOARD_TOOL, PIN_PREVIEW_TOOL];
 
-/** Mini validate — allowlist + required present (stands in for the real validateToolCall). */
-function miniValidate(call, tools) {
+/** Mirror of src/tools/tool-call.ts URN_PATTERN — keep in sync (asserted in section F). */
+const URN_PATTERN = /^urn:[a-z0-9][a-z0-9-]{0,31}:\S+$/i;
+
+/**
+ * Mini validate — allowlist + required + the t263 SEMANTIC urn checks (shape, optional
+ * exists-in-frame, optional node type). A stand-in mirror of the real validateToolCall
+ * (src/tools/tool-call.ts is TS and cannot be imported here without a build step); the
+ * real one is exercised end-to-end in the browser-pane flow test. The mirror exists so
+ * THIS headless gate goes red if the semantic checks regress.
+ */
+function miniValidate(call, tools, ctx) {
   const tool = tools.find((t) => t.name === call.name);
   if (!tool) return { ok: false, why: `"${call.name}" not in allowlist` };
   const fields = tool.args_schema.fields || {};
   for (const k of Object.keys(fields)) {
-    if (fields[k].required && (call.args[k] === undefined || call.args[k] === null)) {
+    const spec = fields[k];
+    const v = call.args[k];
+    if (spec.required && (v === undefined || v === null)) {
       return { ok: false, why: `missing required "${k}"` };
+    }
+    if (spec.urn && typeof v === "string") {
+      if (!URN_PATTERN.test(v)) return { ok: false, why: `"${k}" is not a urn (got "${v}")` };
+      if (spec.mustExistInFrame && ctx?.knownUrns && !ctx.knownUrns.has(v)) {
+        return { ok: false, why: `"${k}" does not resolve in the frame ("${v}")` };
+      }
+      if (spec.nodeType && ctx?.nodeTypes && ctx.nodeTypes[v] !== spec.nodeType) {
+        return { ok: false, why: `"${k}" must resolve to a ${spec.nodeType} node` };
+      }
     }
   }
   return { ok: true, tool };
@@ -230,6 +273,75 @@ assert(checkCloudEgress(geminiEnabled, idAccess).allowed, "cloud + identity-back
 assert(
   !checkCloudEgress(geminiDisabled, idAccess).allowed,
   "cloud + disabled (pending kernel-proxy) BLOCKED — gemini never called",
+);
+
+/* ======================================================================================== */
+/* F. semantic urn gate (t263) — the exact live-caught class must stay red                  */
+/* ======================================================================================== */
+console.log("\n=== F. semantic urn gate (t263 {urn:'t263'} class) ===");
+const FRAME_CTX = {
+  knownUrns: new Set([
+    "urn:moos:knowledge_item:sam.t260-steinberger-readback",
+    "urn:moos:session:sam.z440-cowork-workspace",
+    "urn:moos:derivation:zappa.t259-access-law",
+  ]),
+  nodeTypes: {
+    "urn:moos:knowledge_item:sam.t260-steinberger-readback": "knowledge_item",
+    "urn:moos:session:sam.z440-cowork-workspace": "session",
+    "urn:moos:derivation:zappa.t259-access-law": "derivation",
+  },
+};
+assert(
+  !miniValidate({ name: "copy_urn_to_clipboard", args: { urn: "t263" } }, ACTIONABLE, FRAME_CTX).ok,
+  "bare-word urn ('t263' — the live Gemini case) REJECTED on shape",
+);
+assert(
+  !miniValidate(
+    { name: "copy_urn_to_clipboard", args: { urn: "urn:moos:knowledge_item:ghost.not-here" } },
+    ACTIONABLE,
+    FRAME_CTX,
+  ).ok,
+  "shape-valid ghost urn REJECTED on frame resolution",
+);
+assert(
+  miniValidate(
+    { name: "copy_urn_to_clipboard", args: { urn: "urn:moos:knowledge_item:sam.t260-steinberger-readback" } },
+    ACTIONABLE,
+    FRAME_CTX,
+  ).ok,
+  "frame-resolved urn passes",
+);
+assert(
+  !miniValidate(
+    {
+      name: "pin_ki_to_workspace",
+      args: {
+        ki_urn: "urn:moos:derivation:zappa.t259-access-law",
+        workspace_urn: "urn:moos:session:sam.z440-cowork-workspace",
+      },
+    },
+    ACTIONABLE,
+    FRAME_CTX,
+  ).ok,
+  "pin with a wrong-typed (derivation) ki_urn REJECTED on node type",
+);
+assert(
+  miniValidate(
+    {
+      name: "pin_ki_to_workspace",
+      args: {
+        ki_urn: "urn:moos:knowledge_item:sam.t260-steinberger-readback",
+        workspace_urn: "urn:moos:session:sam.z440-cowork-workspace",
+      },
+    },
+    ACTIONABLE,
+    FRAME_CTX,
+  ).ok,
+  "pin with a real knowledge_item + frame workspace passes",
+);
+assert(
+  miniValidate({ name: "copy_urn_to_clipboard", args: { urn: "urn:moos:x" } }, ACTIONABLE).ok,
+  "no frame context => shape check only (structural callers unchanged)",
 );
 
 /* ======================================================================================== */

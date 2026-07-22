@@ -197,12 +197,6 @@ body {
 .prov-toggle[aria-expanded="true"] {
   margin-bottom: 8px;
 }
-.prov-caret {
-  color: var(--text-muted);
-  font-size: 9px;
-  width: 10px;
-  flex-shrink: 0;
-}
 .prov-summary {
   flex: 1 1 auto;
   font-family: var(--mono);
@@ -218,11 +212,6 @@ body {
 }
 .prov-toggle .prov-badge + .prov-badge {
   margin-left: 4px;
-}
-.prov-title {
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--text-primary);
 }
 .prov-badge {
   font-size: 9px;
@@ -968,25 +957,7 @@ body {
    Phase 6 — live-stream indicator, graph controls, disclosures
    ========================================================================== */
 
-/* LIVE indicator (pulses on each rewrite; amber while reconnecting). */
-.live-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--success);
-  color: var(--success);
-  background: rgba(34, 197, 94, 0.1);
-}
-.live-indicator.reconnecting {
-  border-color: var(--warning);
-  color: var(--warning);
-  background: rgba(234, 179, 8, 0.1);
-}
+/* Stream pulse dot — rendered inside the posture strip's LIVE badge. */
 .live-dot {
   width: 7px;
   height: 7px;
@@ -1185,12 +1156,7 @@ body {
   color: var(--accent-hover);
 }
 
-/* Identity control (A3) — set the trusted `pilot.access` identity from the UI. */
-.gc-identity {
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed var(--border-light);
-}
+/* Identity editor (A3) — now inside the SettingsPanel; hint also used by GraphControls. */
 .gc-identity-hint {
   margin-bottom: 6px;
   padding: 4px 7px;
@@ -1199,26 +1165,6 @@ body {
   background: rgba(234, 179, 8, 0.1);
   border: 1px solid rgba(234, 179, 8, 0.35);
   border-radius: var(--radius-sm);
-}
-.gc-identity-summary {
-  cursor: pointer;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  list-style: none;
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-secondary);
-}
-.gc-identity-summary::-webkit-details-marker {
-  display: none;
-}
-.gc-identity-summary::before {
-  content: "▸ ";
-  color: var(--text-muted);
-}
-.gc-identity-disclosure[open] > .gc-identity-summary::before {
-  content: "▾ ";
 }
 .gc-identity-urn {
   color: var(--accent-hover);
@@ -1231,20 +1177,11 @@ body {
   color: var(--text-muted);
   font-style: italic;
 }
-.gc-identity-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
-}
-.gc-identity-body .gc-field {
-  width: 100%;
-}
 .gc-identity-actions {
   display: flex;
   gap: 8px;
 }
-.gc-identity-body .gc-note code {
+.gc-note code {
   font-family: var(--mono);
 }
 

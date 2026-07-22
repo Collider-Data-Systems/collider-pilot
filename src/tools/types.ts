@@ -51,6 +51,14 @@ export interface ArgFieldSpec {
    * the caller supplies a ToolCallContext — pure structural callers are unchanged.
    */
   mustExistInFrame?: boolean;
+  /**
+   * For urn-tagged fields: the urn must resolve to a frame NODE of this type_id
+   * (Copilot #18 catch: pin_ki_to_workspace's ki_urn could pass validation — and be
+   * offered as a "did you mean" fix — with any node type). Enforced only when the
+   * caller supplies a ToolCallContext with nodeTypes; provenance anchors that are not
+   * nodes fail this check (a pin target must be an actual node).
+   */
+  nodeType?: string;
 }
 
 /** Flat args schema: field name -> shape. Deliberately simple (no nested JSON Schema). */

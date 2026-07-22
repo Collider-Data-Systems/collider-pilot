@@ -90,13 +90,18 @@ function PipWindowApp() {
     void saveSelectedUrn(urn);
   }, []);
 
+  // The same page serves the popup mirror AND the full-tab mirror; the side panel's
+  // "Full tab" button opens pip.html?surface=tab, which keeps the NodeInspector
+  // (t263 review catch — the lean-down targeted the PiP, not the full-tab surface).
+  const isTab = new URLSearchParams(window.location.search).get("surface") === "tab";
+
   return (
     <PipContent
       frame={frame}
       selectedUrn={selectedUrn}
       onSelect={handleSelect}
       connected={frame != null}
-      variant="pip"
+      variant={isTab ? "tab" : "pip"}
     />
   );
 }

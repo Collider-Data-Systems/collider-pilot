@@ -63,7 +63,7 @@ src/mcp/streamable-http-client.js  SHARED read-only MCP/REST transport (Phase 2)
 src/mcp/streamable-http-adapter.ts StreamableHttpMcpAdapter — live read (Phase 2)
 src/mcp/adapter-factory.ts         mode switch: 'mock' | 'live' (extension defaults live)
 src/state/scratch.ts               chrome.storage.session helpers (selection + frame cache; onChanged subscription — Phase 3 shared store)
-src/components/                    ProvenanceHeader · FrameGraph (Cytoscape) · NodeInspector · ActionsPanel + ConfirmActionModal (Phase 4)
+src/components/                    PostureStrip (strip + audit drawer) · SettingsPanel · GraphControls · FrameGraph (Cytoscape) · NodeInspector · ActionsPanel + ConfirmActionModal
 src/tools/types.ts                 controlled-tools contract: ToolKind/ToolChannel, ToolSpec, AffordancePack, ToolCall, PendingAction (Phase 4)
 src/tools/tool-call.ts             structured ToolCall validator (args_schema JSON-shape check; NO text parsing) (Phase 4)
 src/tools/affordance.ts            affordance-pack projection: tools/list classify + curated acts + mock fallback (Phase 4)
@@ -349,12 +349,14 @@ invariant stays airtight regardless of what the server advertises.
 
 ### The model-provider seam (criteria 5 + 6)
 
-`src/tools/model-providers.ts` is a provider-neutral registry modelling the shape of
-`model-providers.json` — a `ModelProvider {id, label, endpoint?, kind}` interface, selectable
-in the UI, defaulting to **`none-manual`** (no model). It is a SEAM only: **no model is
-invoked, no endpoint is called, no API key is requested or stored.** The **Local WebLLM**
-option is gated behind a WebGPU capability **stub** (`navigator.gpu` presence) — absent ⇒ the
-option is disabled; WebLLM is not bundled.
+`src/tools/model-providers.ts` is a provider-neutral registry. Since Phase 7 the seam is
+LIVE: it defaults to **`ollama-local`** (on-box, keyless, `:11434`), offers **`gemini`** via
+the kernel-proxy (`:8000/llm/gemini`, key server-side, gated on the scope-split LLM bearer
+`pilot.llmToken` + the A3 access posture — never called anon), and keeps **`none-manual`**
+(no model). Provider/model/bearer are configured in the **Settings** block (t263); the model
+only ever PROPOSES a structured tool call — `validateToolCall` (incl. the semantic urn
+checks) and the confirmation modal gate everything, exactly like a hand-composed act.
+(The Phase-4-era "Local WebLLM behind a WebGPU stub" option was never shipped and is gone.)
 
 ### Where it runs
 
@@ -372,8 +374,10 @@ mount it — it stays a read/observe surface; a note in the panel states so.
 4. Select a `knowledge_item` → **Preview: pin KI to workspace** → the modal shows the WF19
    intent → **Reveal review-only preview** → inspect (and optionally download) the
    `apply_program` envelope. Nothing is posted; `/healthz` `log_len` is unchanged.
-5. The model-provider selector defaults to **Manual**; **Local WebLLM** is disabled unless the
-   browser reports WebGPU. Choosing any provider changes nothing but UI state.
+5. Open **Settings** (top of the panel): the provider selector defaults to **Ollama
+   (local · keyless)**; **Gemini (via kernel-proxy)** requires the scope-split LLM bearer
+   (set/clear it there). With Ollama running, "ask the model" proposes a structured call
+   that lands in the same confirmation modal as the buttons — nothing auto-applies.
 
 ### Served-page testing (`preview.html`)
 
