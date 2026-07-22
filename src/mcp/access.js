@@ -13,10 +13,12 @@
  * `moos-kernel/internal/operad/access.go`. The two implementations stay definitionally
  * identical only while this spec drives both. The law, verbatim:
  *
- *   (1) group_topology = WF02 `governs` closure. BFS from `user_urn` over relations with
- *       rewrite_category==="WF02" && src_port==="governs" (src→tgt), following role→role
- *       `delegates-to` delegates; include `user_urn` itself. If `role` is pinned, seed the
- *       closure from that role instead of (in addition to) the user.
+ *   (1) group_topology = WF02 closure over `governs` ∪ `delegates-to` ∪ `member-of`. BFS from
+ *       `user_urn` over relations with rewrite_category==="WF02" (src→tgt), following
+ *       role→role `delegates-to` delegates and principal→group `member-of` (4.0.4:
+ *       user|agent|group → group, member→group direction ONLY — monotone widening; a member
+ *       inherits the group's grant-closure); include `user_urn` itself. If `role` is pinned,
+ *       seed the closure from that role instead of (in addition to) the user.
  *   (2) principals → workspaces = REVERSE WF19 `has-occupant`. Live-fold orientation is
  *       session --[WF19 has-occupant]--> agent (a workspace HAS an occupant), so the reverse
  *       walk is: collect the SRC (session/workspace) of every has-occupant relation whose
@@ -152,12 +154,14 @@ export function publicWorkspaces(fold) {
 }
 
 /**
- * (1) group_topology = WF02 `governs` transitive closure from a seed principal, following
- * role→role `delegates-to` delegates. Includes the seed. Same governs spine the kernel
- * folds for §M11/§M12 write-gating, generalized to the full reachable principal set.
+ * (1) group_topology = WF02 transitive closure over `governs` ∪ `delegates-to` ∪ `member-of`
+ * from a seed principal. Includes the seed. Same governs spine the kernel folds for
+ * §M11/§M12 write-gating, generalized to the full reachable principal set; `member-of`
+ * (ontology 4.0.4) is followed in the member→group direction ONLY, so membership widens
+ * monotonically (a member inherits the group's grant-closure, never the reverse).
  * @param {any} fold
  * @param {string} seedUrn - user_urn (or a pinned role urn)
- * @returns {string[]} reachable principals (agents/roles/user), incl. the seed
+ * @returns {string[]} reachable principals (agents/roles/groups/user), incl. the seed
  */
 export function governedPrincipals(fold, seedUrn) {
   const rels = foldRelations(fold);
@@ -172,7 +176,8 @@ export function governedPrincipals(fold, seedUrn) {
       if (!r) continue;
       const isGoverns = r.rewrite_category === "WF02" && r.src_port === "governs";
       const isDelegates = r.rewrite_category === "WF02" && r.src_port === "delegates-to";
-      if ((isGoverns || isDelegates) && r.src_urn === cur && r.tgt_urn && !seen.has(r.tgt_urn)) {
+      const isMemberOf = r.rewrite_category === "WF02" && r.src_port === "member-of";
+      if ((isGoverns || isDelegates || isMemberOf) && r.src_urn === cur && r.tgt_urn && !seen.has(r.tgt_urn)) {
         seen.add(r.tgt_urn);
         queue.push(r.tgt_urn);
       }
