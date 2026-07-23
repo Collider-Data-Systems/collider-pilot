@@ -1793,6 +1793,35 @@ body {
   margin-bottom: 2px;
 }
 
+/* STALE posture badge + the failed-refresh banner. */
+.prov-badge.stale {
+  background: var(--warning);
+  color: #1a1400;
+}
+.stale-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  background: rgba(234, 179, 8, 0.12);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.4);
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--warning);
+}
+.stale-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stale-banner .mini-btn {
+  margin-left: 0;
+  flex: 0 0 auto;
+}
+
 /* Log feed: the whole-engine honesty note above the entries. */
 .log-caveat {
   margin: 4px 0 2px;

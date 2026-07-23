@@ -371,6 +371,7 @@ function PreviewLive() {
   );
 
   const isLive = frame != null && frame.provenance?.mock === false;
+  const stale = status === "error" && frame != null;
   const reloadForStream = useCallback(() => void loadFrame(), [loadFrame]);
   const { status: streamStatus, pulseKey } = useFoldStream({
     active: isLive,
@@ -419,7 +420,19 @@ function PreviewLive() {
           provenance={frame.provenance}
           streamStatus={isLive ? streamStatus : "off"}
           pulseKey={pulseKey}
+          stale={stale}
         />
+      )}
+      {stale && (
+        <div className="stale-banner" role="status">
+          <span className="stale-banner-text">
+            refresh failed — showing the last good frame (seq {frame?.provenance?.log_seq}):{" "}
+            {error}
+          </span>
+          <button className="mini-btn" onClick={() => void loadFrame()}>
+            retry
+          </button>
+        </div>
       )}
       {!frame && (
         <section className="provenance posture-strip" aria-label="Frame posture (no frame)">
