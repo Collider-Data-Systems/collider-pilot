@@ -1,5 +1,27 @@
+import { execSync } from "node:child_process";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+
+/**
+ * BUILD STAMP. The loaded extension is a COPY of dist/, so "is the panel running the code
+ * I just changed?" is a real question — it cost us a stale-dist misdiagnosis in t263 and
+ * another guess in t264. The stamp is injected here and rendered in the posture strip's
+ * audit drawer, so the answer is legible from the panel itself (and from a screenshot).
+ * Best-effort: a missing git or a dirty tree still produces a usable stamp.
+ */
+function buildStamp(): string {
+  const git = (args: string) => {
+    try {
+      return execSync(`git ${args}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+      return "";
+    }
+  };
+  const sha = git("rev-parse --short HEAD") || "nogit";
+  const dirty = git("status --porcelain") ? "+dirty" : "";
+  const when = new Date().toISOString().slice(0, 16).replace("T", " ");
+  return `${sha}${dirty} · ${when}Z`;
+}
 
 // MV3 extension build.
 //
@@ -29,6 +51,9 @@ import react from "@vitejs/plugin-react";
 // The worker only imports worker-only modules (the mock adapter + type-only
 // interfaces), so Rollup inlines them into worker.js with no shared runtime chunk.
 export default defineConfig({
+  define: {
+    __PILOT_BUILD__: JSON.stringify(buildStamp()),
+  },
   // Relative base so the emitted sidepanel.html references ./assets/* — resolves
   // correctly under chrome-extension://<id>/ when loaded unpacked.
   base: "./",

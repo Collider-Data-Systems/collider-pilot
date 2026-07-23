@@ -211,6 +211,13 @@ export function PostureStrip({
             <Field label="workspace" value={provenance.workspace} />
             <Field label="purpose" value={provenance.purpose} />
             <Field label="folded_at" value={provenance.folded_at} />
+            {/* WHICH BUILD is running — the loaded extension is a copy of dist/, so this
+                answers "did my reload take?" without guesswork. */}
+            <Field
+              label="pilot build"
+              value={typeof __PILOT_BUILD__ === "string" ? __PILOT_BUILD__ : "dev"}
+              title="The build this panel is running (short git sha + build time). Reload the extension if it is older than your last build."
+            />
           </div>
           <div className="prov-filter">
             <span className="prov-label">view_filter</span>
