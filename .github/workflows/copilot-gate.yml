@@ -44,7 +44,10 @@ jobs:
           # it, resolve threads, then merge.
           echo "gate: a Copilot review must cover head $HEAD_SHA (== or ancestor)"
           for i in $(seq 1 60); do
-            mapfile -t shas < <(gh api "repos/$REPO/pulls/$PR/reviews" \
+            # --paginate: /reviews returns 30 per page, so on a PR with many
+            # pushes (each a Copilot re-review) the covering review can sit on a
+            # later page — without this the gate would false-timeout (#34 review).
+            mapfile -t shas < <(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" \
               --jq '.[] | select(.user.login | startswith("copilot-pull-request-reviewer")) | .commit_id' \
               | sort -u)
             if [ "${#shas[@]}" -eq 0 ]; then
