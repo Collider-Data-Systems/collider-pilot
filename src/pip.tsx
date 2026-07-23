@@ -25,6 +25,7 @@ import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { HgFrame } from "./mcp/types";
 import { PipContent } from "./pip/pip-content";
+import { applyMountGuard } from "./ui/mount-guard";
 import {
   loadScratch,
   saveSelectedUrn,
@@ -108,15 +109,13 @@ function PipWindowApp() {
 
 const container = document.getElementById("root");
 if (container) {
-  // Dev-bridge guard: the page may be WAR-navigated from localhost (top-level only).
-  // Refuse to render when EMBEDDED — an iframe on any origin gets nothing.
-  if (window.top !== window) {
-    container.textContent = "Collider Pilot does not render embedded.";
-  } else {
+  // Same guard as the side panel: web-accessible from localhost ⇒ never embedded, and
+  // never auto-connecting when a script opened the window.
+  const mount = () =>
     createRoot(container).render(
       <ErrorBoundary>
         <PipWindowApp />
       </ErrorBoundary>,
     );
-  }
+  if (applyMountGuard(container, mount)) mount();
 }

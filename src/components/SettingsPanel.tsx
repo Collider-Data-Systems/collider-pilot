@@ -393,12 +393,12 @@ function IdentitySection({
         </button>
         <button
           type="button"
-          className="gc-btn gc-btn-ghost"
+          className="gc-btn gc-btn-danger"
           onClick={() => void handleClear()}
           disabled={!current}
           title="Remove the stored identity — back to anon-only"
         >
-          Clear
+          Clear identity
         </button>
       </div>
       <div className="gc-note">

@@ -46,6 +46,9 @@ const TYPE_COLOR: Record<string, string> = {
 };
 const DEFAULT_COLOR = "#a0a0b0";
 
+/** How many type swatches the legend overlay shows before "+N more types". */
+const LEGEND_CAP = 8;
+
 // Semantic concentric ranking: identity/topology anchors read best toward the center,
 // content on the rim (higher = closer to center). A degree fallback keeps unknown
 // types sensible.
@@ -294,18 +297,28 @@ export function FrameGraph({
       {graphError && <div className="pilot-state error">{graphError}</div>}
       <div className="graph-canvas" ref={containerRef} />
       {/* t264: legend derived from the types ACTUALLY in the frame, never a stale
-          hardcoded list. Capped to keep the overlay readable on a narrow panel. */}
-      <div className="graph-legend" aria-hidden="true">
-        {[...new Set((Array.isArray(frame?.nodes) ? frame.nodes : []).map((n) => n.type_id))]
-          .sort()
-          .slice(0, 10)
-          .map((ty) => (
-            <span key={ty} className="legend-item">
-              <i style={{ background: TYPE_COLOR[ty] ?? DEFAULT_COLOR }} /> {ty}
-            </span>
-          ))}
-        <span className="legend-note">arrows are relations</span>
-      </div>
+          hardcoded list. Ranked by node count (an alphabetical cut hid the dominant
+          types under the wide lenses) and the overflow is stated, not silent. */}
+      {(() => {
+        const counts = new Map<string, number>();
+        for (const n of Array.isArray(frame?.nodes) ? frame.nodes : []) {
+          counts.set(n.type_id, (counts.get(n.type_id) ?? 0) + 1);
+        }
+        const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        const shown = ranked.slice(0, LEGEND_CAP);
+        const hidden = ranked.length - shown.length;
+        return (
+          <div className="graph-legend" aria-hidden="true">
+            {shown.map(([ty, count]) => (
+              <span key={ty} className="legend-item" title={`${ty} · ${count}`}>
+                <i style={{ background: TYPE_COLOR[ty] ?? DEFAULT_COLOR }} /> {ty}
+              </span>
+            ))}
+            {hidden > 0 && <span className="legend-note">+{hidden} more types</span>}
+            <span className="legend-note">arrows are relations</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }

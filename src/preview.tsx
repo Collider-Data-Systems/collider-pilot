@@ -215,6 +215,7 @@ function Preview() {
               identitySet={identitySet}
               showGraph={showGraph}
               onToggleGraphVisible={() => setShowGraph((v) => !v)}
+              dirty={false}
             />
             {showGraph && (
               <FrameGraph

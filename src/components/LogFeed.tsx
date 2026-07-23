@@ -26,7 +26,7 @@
  * "not in slice" affordance instead of a selectable link.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { HgFrame } from "../mcp/types";
 import { DEFAULT_ENGINE_URL } from "../mcp/transform.js";
 
@@ -88,47 +88,69 @@ export interface LogFeedProps {
   /** Only a live frame has a log behind it; the feed self-hides otherwise. */
   live: boolean;
   frame: HgFrame | null;
+  /**
+   * The panel's CHOSEN posture. The stream's lifetime keys on this, not (only) on the
+   * frame's provenance: "Stay anon" must close the stream immediately, even when the
+   * posture-flip frame reload fails and the old identified frame stays mounted
+   * (t264 review major — the gate was keyed to the stale frame).
+   */
+  accessMode: "anon" | "identified";
   onSelect: (urn: string | null) => void;
   /** Engine REST base (host-permitted; the SSE precedent). Default :8000. */
   engineUrl?: string;
 }
 
-export function LogFeed({ live, frame, onSelect, engineUrl = DEFAULT_ENGINE_URL }: LogFeedProps) {
+export function LogFeed({
+  live,
+  frame,
+  accessMode,
+  onSelect,
+  engineUrl = DEFAULT_ENGINE_URL,
+}: LogFeedProps) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [status, setStatus] = useState<"loading" | "ok" | "stream-down" | "error">("loading");
   const [kind, setKind] = useState<KindFilter>("all");
   const [open, setOpen] = useState(true);
-  const seenSeq = useRef<Set<number>>(new Set());
 
-  // Effective-anon check mirrors the PostureStrip's: only a trusted-storage identified
-  // scope renders the log. (Presentation-tier only — never read this as enforcement.)
+  // Effective-anon MIRRORS the PostureStrip predicate exactly, including the
+  // fail-CLOSED missing-fiber case (t264 review major: `!!access && (...)` inverted
+  // it): no access fiber ⇒ anon. The chosen posture composes on top — either signal
+  // reading anon closes the feed.
   const access = frame?.provenance?.access;
-  const effectiveAnon =
-    !!access &&
-    (access.scope?.identity_source !== "trusted-storage" ||
-      access.scope?.mode !== "identified");
+  const frameAnon =
+    !access ||
+    access.scope?.identity_source !== "trusted-storage" ||
+    access.scope?.mode !== "identified";
+  const effectiveAnon = accessMode !== "identified" || frameAnon;
 
+  // Pure, idempotent merge — no ref mutation inside the updater (t264 review major:
+  // a ref-marking updater loses entries when React replays it). Dedupe by log_seq via
+  // a Map; newest first; cap.
   const push = useCallback((incoming: LogEntry[]) => {
     setEntries((prev) => {
-      const merged = [...prev];
+      const bySeq = new Map(prev.map((e) => [e.log_seq, e]));
       for (const e of incoming) {
-        if (typeof e?.log_seq !== "number" || seenSeq.current.has(e.log_seq)) continue;
-        seenSeq.current.add(e.log_seq);
-        merged.push(e);
+        if (typeof e?.log_seq !== "number") continue;
+        bySeq.set(e.log_seq, e);
       }
-      merged.sort((a, b) => b.log_seq - a.log_seq); // newest first
-      const capped = merged.slice(0, LOG_FEED_CAP);
-      return capped;
+      return [...bySeq.values()].sort((a, b) => b.log_seq - a.log_seq).slice(0, LOG_FEED_CAP);
     });
   }, []);
 
-  // Tail fetch + SSE subscription, only while live AND identity-backed (the anon
-  // posture neither renders nor even requests the log). EventSource auto-reconnects;
-  // the tail is re-fetched on stream (re)open so a dropped window backfills itself.
+  // SSE subscription, only while live AND identity-backed (the anon posture neither
+  // renders nor even requests the log).
+  //
+  // The tail is fetched IMMEDIATELY, not from `onopen`: the kernel's handleLogStream
+  // writes no bytes until the first rewrite arrives, so Go buffers the response head
+  // and `onopen` does not fire on a quiet log — an onopen-only tail leaves the feed
+  // stuck on "loading" until someone happens to write. `onopen` still fires on a
+  // RECONNECT (the reconnect follows a completed prior response), so it re-fetches
+  // then to backfill the missed window — guarded so the initial connect, if it does
+  // fire, never double-fetches.
   useEffect(() => {
     if (!live || effectiveAnon) return;
     let cancelled = false;
-    seenSeq.current = new Set();
+    let opened = false;
     setEntries([]);
     setStatus("loading");
 
@@ -145,12 +167,13 @@ export function LogFeed({ live, frame, onSelect, engineUrl = DEFAULT_ENGINE_URL 
       }
     };
 
-    void fetchTail();
+    void fetchTail(); // the initial tail — never gated on a head-flush that may not come
     const es = new EventSource(`${engineUrl}/log/stream`);
     es.onopen = () => {
       if (cancelled) return;
       setStatus("ok");
-      void fetchTail(); // resync any window missed while disconnected
+      if (opened) void fetchTail(); // reconnect ⇒ backfill the missed window
+      opened = true;
     };
     es.onmessage = (ev) => {
       if (cancelled) return;
@@ -223,6 +246,13 @@ export function LogFeed({ live, frame, onSelect, engineUrl = DEFAULT_ENGINE_URL 
           ))}
         </span>
       </summary>
+      {/* Render-tier honesty (t264 review major, accepted limitation): the log is the
+          WHOLE engine history — the per-workspace access presentation that narrows the
+          graph does not narrow the log at this tier. Single-user seat today; per-slice
+          log filtering is the ruled server-side-enforcement lane (pre-second-user). */}
+      <div className="log-caveat">
+        whole-engine log — workspace-level access presentation does not narrow it (server-side slice filtering is the ruled follow-up)
+      </div>
       <ol className="log-entries" aria-label="Persisted rewrites, newest first">
         {shown.map((e) => {
           const urn = subjectUrn(e);
@@ -248,7 +278,7 @@ export function LogFeed({ live, frame, onSelect, engineUrl = DEFAULT_ENGINE_URL 
               ) : (
                 <span
                   className="log-subject"
-                  title={urn ? `${urn} — not in the current slice (widen the lens/focus to select it)` : undefined}
+                  title={urn ? `${urn} — not in the current slice` : undefined}
                 >
                   {subjectLabel(e)}
                 </span>

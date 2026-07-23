@@ -80,6 +80,7 @@ import {
   focusPip,
   openPipMirror,
 } from "./pip/pip-window";
+import { applyMountGuard } from "./ui/mount-guard";
 import "./sidepanel.css";
 
 type Status = "loading" | "ready" | "error";
@@ -155,6 +156,9 @@ function SidePanel() {
   // The currently-applied FrameRequest — a ref so the SSE re-fetch always uses the latest
   // applied filter without re-subscribing the stream.
   const frameRequestRef = useRef<FrameRequest | undefined>(undefined);
+  // The last COMMITTED spec — drives the Apply button's pending indicator when the
+  // staged drawer edits deviate from what the frame actually shows.
+  const [appliedSpec, setAppliedSpec] = useState<SliceSpec>(() => defaultSliceSpec());
 
   const loadFrame = useCallback(async (request?: FrameRequest) => {
     const req = request ?? frameRequestRef.current;
@@ -285,10 +289,12 @@ function SidePanel() {
       );
       const hit = matches[0];
       handleSelect(hit.urn);
-      setFocusUrn(hit.urn);
-      setFocusSignal((s) => s + 1);
+      if (showGraph) {
+        setFocusUrn(hit.urn);
+        setFocusSignal((s) => s + 1);
+      }
     },
-    [frame, handleSelect],
+    [frame, handleSelect, showGraph],
   );
 
   const handleLayoutChange = useCallback((next: GraphLayoutName) => {
@@ -297,11 +303,10 @@ function SidePanel() {
   }, []);
 
   const handleToggleGraphVisible = useCallback(() => {
-    setShowGraph((prev) => {
-      void saveInlineGraphPref(!prev);
-      return !prev;
-    });
-  }, []);
+    const next = !showGraph;
+    setShowGraph(next);
+    void saveInlineGraphPref(next);
+  }, [showGraph]);
 
   // Provider selection (persisted, mirrors adapter-factory). Switching resets the model to
   // the new provider's default; ActionsPanel clears its stale proposal on providerId change.
@@ -323,21 +328,22 @@ function SidePanel() {
     (nextSpec: SliceSpec, mode: AccessPosture, scopeUrn: string) => {
       const req = buildFrameRequest(nextSpec, mode, scopeUrn ? [scopeUrn] : []);
       frameRequestRef.current = req;
+      setAppliedSpec(nextSpec);
       void loadFrame(req);
     },
     [loadFrame],
   );
 
-  // Lens tap: one-tap slice change — applies immediately.
+  // Lens tap: one-tap slice change — applies immediately. Computed OUTSIDE the state
+  // updater (t264 review major: network I/O inside an updater double-fires under
+  // StrictMode replay).
   const handleLensChange = useCallback(
     (lensId: string) => {
-      setSpec((prev) => {
-        const next = specWithLens(prev, lensId);
-        commitSlice(next, accessMode, viewScope);
-        return next;
-      });
+      const next = specWithLens(spec, lensId);
+      setSpec(next);
+      commitSlice(next, accessMode, viewScope);
     },
-    [accessMode, viewScope, commitSlice],
+    [spec, accessMode, viewScope, commitSlice],
   );
 
   // Advanced edits: stage in the spec; Apply commits.
@@ -351,16 +357,14 @@ function SidePanel() {
     setSpec((prev) => ({ ...prev, t }));
   }, []);
 
-  // Hops: applies immediately (like lens/focus — a one-value axis).
+  // Hops: applies immediately (like lens/focus — a one-value axis). Pure updater.
   const handleHopsChange = useCallback(
     (hops: number) => {
-      setSpec((prev) => {
-        const next = { ...prev, hops };
-        commitSlice(next, accessMode, viewScope);
-        return next;
-      });
+      const next = { ...spec, hops };
+      setSpec(next);
+      commitSlice(next, accessMode, viewScope);
     },
-    [accessMode, viewScope, commitSlice],
+    [spec, accessMode, viewScope, commitSlice],
   );
 
   const applyFilter = useCallback(() => {
@@ -570,6 +574,7 @@ function SidePanel() {
               identitySet={identitySet}
               showGraph={showGraph}
               onToggleGraphVisible={handleToggleGraphVisible}
+              dirty={JSON.stringify({ t: spec.types, p: spec.ports, tt: spec.t }) !== JSON.stringify({ t: appliedSpec.types, p: appliedSpec.ports, tt: appliedSpec.t })}
             />
             {showGraph && (
               <FrameGraph
@@ -583,7 +588,7 @@ function SidePanel() {
             )}
             {/* t264: the engine jsonl, live. Self-hides on mock frames. */}
             <ErrorBoundary>
-              <LogFeed live={isLive} frame={frame} onSelect={handleSelect} />
+              <LogFeed live={isLive} frame={frame} accessMode={accessMode} onSelect={handleSelect} />
             </ErrorBoundary>
             {/* P9 WebTransport spike: synthetic presence strip. Self-hides when the
                 pilot.wt flag is off / WebTransport is unavailable / the connect fails.
@@ -636,11 +641,9 @@ function SidePanel() {
 
 const container = document.getElementById("root");
 if (container) {
-  // Dev-bridge guard: the page may be WAR-navigated from localhost (top-level only).
-  // Refuse to render when EMBEDDED — an iframe on any origin gets nothing.
-  if (window.top !== window) {
-    container.textContent = "Collider Pilot does not render embedded.";
-  } else {
+  // Dev-bridge guard: this page is web-accessible from localhost, so it refuses to
+  // render embedded and never auto-connects when a script opened the window.
+  const mount = () =>
     createRoot(container).render(<ErrorBoundary><SidePanel /></ErrorBoundary>);
-  }
+  if (applyMountGuard(container, mount)) mount();
 }

@@ -206,6 +206,9 @@ function PreviewLive() {
   const frameRequestRef = useRef<FrameRequest | undefined>(
     buildFrameRequest(defaultSliceSpec(), DEFAULT_ACCESS_POSTURE),
   );
+  // Mirrors the shipped panel so this harness exercises the SAME pending-Apply logic
+  // (a hardcoded dirty={false} made the indicator untestable here).
+  const [appliedSpec, setAppliedSpec] = useState<SliceSpec>(() => defaultSliceSpec());
 
   const loadFrame = useCallback(async (request?: FrameRequest) => {
     const req = request ?? frameRequestRef.current;
@@ -305,6 +308,7 @@ function PreviewLive() {
     (nextSpec: SliceSpec, mode: AccessPosture, scopeUrn: string) => {
       const req = buildFrameRequest(nextSpec, mode, scopeUrn ? [scopeUrn] : []);
       frameRequestRef.current = req;
+      setAppliedSpec(nextSpec);
       void loadFrame(req);
     },
     [loadFrame],
@@ -312,13 +316,11 @@ function PreviewLive() {
 
   const handleLensChange = useCallback(
     (lensId: string) => {
-      setSpec((prev) => {
-        const next = specWithLens(prev, lensId);
-        commitSlice(next, accessMode, viewScope);
-        return next;
-      });
+      const next = specWithLens(spec, lensId);
+      setSpec(next);
+      commitSlice(next, accessMode, viewScope);
     },
-    [accessMode, viewScope, commitSlice],
+    [spec, accessMode, viewScope, commitSlice],
   );
 
   const toggleType = useCallback((ty: string) => {
@@ -332,13 +334,11 @@ function PreviewLive() {
   }, []);
   const handleHopsChange = useCallback(
     (hops: number) => {
-      setSpec((prev) => {
-        const next = { ...prev, hops };
-        commitSlice(next, accessMode, viewScope);
-        return next;
-      });
+      const next = { ...spec, hops };
+      setSpec(next);
+      commitSlice(next, accessMode, viewScope);
     },
-    [accessMode, viewScope, commitSlice],
+    [spec, accessMode, viewScope, commitSlice],
   );
 
   const applyFilter = useCallback(() => {
@@ -481,6 +481,10 @@ function PreviewLive() {
               identitySet={identitySet}
               showGraph={showGraph}
               onToggleGraphVisible={() => setShowGraph((v) => !v)}
+              dirty={
+                JSON.stringify({ t: spec.types, p: spec.ports, tt: spec.t }) !==
+                JSON.stringify({ t: appliedSpec.types, p: appliedSpec.ports, tt: appliedSpec.t })
+              }
             />
             {showGraph && (
               <FrameGraph
@@ -493,7 +497,7 @@ function PreviewLive() {
               />
             )}
             <ErrorBoundary>
-              <LogFeed live={isLive} frame={frame} onSelect={handleSelect} />
+              <LogFeed live={isLive} frame={frame} accessMode={accessMode} onSelect={handleSelect} />
             </ErrorBoundary>
             <NodeInspector
               frame={frame}

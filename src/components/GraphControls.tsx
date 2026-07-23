@@ -65,7 +65,16 @@ export const LENSES: Lens[] = [
       "endpoint",
       "agent",
     ],
-    ports: ["opens-on", "has-occupant", "hosts", "routes-to", "spans", "realizes", "composes"],
+    ports: [
+      "opens-on",
+      "has-occupant",
+      "hosts",
+      "routes-to",
+      "spans",
+      "realizes",
+      "composes",
+      "participates",
+    ],
     title:
       "Machines, workspaces, channels and how they connect (session · kernel · workstation · router · channel · manifold + opens-on / has-occupant / hosts / routes-to / spans).",
   },
@@ -81,20 +90,12 @@ export const LENSES: Lens[] = [
       "session",
       "domain_tag",
     ],
-    ports: [
-      "provides-kb",
-      "classifies",
-      "pins-urn",
-      "cites",
-      "depends-on",
-      "causes",
-      "produces",
-      "composes",
-      "has-purpose",
-      "curates",
-    ],
+    // ALL ports (t264 review major): this is the DEFAULT lens, and main's default
+    // frame showed every relation between the retained nodes. Narrowing relations is
+    // the spine lenses' job; the content lens narrows TYPES only.
+    ports: [],
     title:
-      "Knowledge and work products: knowledge items, derivations, applied programs, grammar fragments (+ provides-kb / pins-urn / cites / causes …).",
+      "Knowledge and work products: knowledge items, derivations, applied programs, grammar fragments — with every relation between them.",
   },
   {
     id: "everything",
@@ -171,7 +172,16 @@ export const PORT_GROUPS: { label: string; ports: string[] }[] = [
   { label: "identity/authority", ports: ["owns", "member-of", "governs", "delegates-to"] },
   {
     label: "placement",
-    ports: ["opens-on", "has-occupant", "hosts", "routes-to", "spans", "realizes", "presents-as"],
+    ports: [
+      "opens-on",
+      "has-occupant",
+      "hosts",
+      "routes-to",
+      "spans",
+      "realizes",
+      "presents-as",
+      "participates",
+    ],
   },
   {
     label: "content/flow",
@@ -189,13 +199,10 @@ export const PORT_GROUPS: { label: string; ports: string[] }[] = [
       "curates",
       "scheduled-after",
       "focus",
+      "guards",
     ],
   },
 ];
-
-/** Legacy alias kept for the harnesses/tests: the classic default slice. */
-export const DEFAULT_VIEW_TYPES: string[] =
-  LENSES.find((l) => l.id === DEFAULT_LENS_ID)!.types;
 
 /**
  * The access posture the panel MAY contribute — ONLY `mode`. Identity_source is declared
@@ -407,6 +414,12 @@ export interface GraphControlsProps {
   /** Inline-graph visibility (t264: OFF by default; mirrors carry the picture). */
   showGraph: boolean;
   onToggleGraphVisible: () => void;
+  /**
+   * Staged advanced-drawer edits (types/ports/t) that have NOT been applied yet.
+   * Drives the Apply button's pending marker so a one-value axis change (lens / focus /
+   * hops / posture) never silently commits them without the user noticing.
+   */
+  dirty?: boolean;
 }
 
 export function GraphControls({
@@ -431,6 +444,7 @@ export function GraphControls({
   identitySet,
   showGraph,
   onToggleGraphVisible,
+  dirty = false,
 }: GraphControlsProps) {
   const identified = accessMode === "identified";
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -503,7 +517,7 @@ export function GraphControls({
 
       {identified && !identitySet && (
         <div className="gc-identity-hint" role="note">
-          no identity set — open Settings (below) to pick one, or you stay anon
+          no identity set — open Settings to pick one, or you stay anon
         </div>
       )}
 
@@ -605,10 +619,24 @@ export function GraphControls({
             title="Optional fold time bound (t_day). Leave blank for the latest fold."
           />
         </label>
-        <button type="button" className="gc-btn" onClick={onApplyFilter} title="Re-request the frame under the current slice">
-          Apply
+        <button
+          type="button"
+          className={`gc-btn${dirty ? " is-dirty" : ""}`}
+          onClick={onApplyFilter}
+          title={
+            dirty
+              ? "Staged type/port/t edits are not in the frame yet — Apply to re-request"
+              : "Re-request the frame under the current slice"
+          }
+        >
+          Apply{dirty ? " •" : ""}
         </button>
-        <button type="button" className="gc-btn gc-btn-ghost" onClick={onResetFilter} title="Back to the default content lens, no focus, latest t">
+        <button
+          type="button"
+          className="gc-btn gc-btn-ghost gc-reset"
+          onClick={onResetFilter}
+          title="Back to the default content lens, no focus, 1 hop, latest t"
+        >
           Reset
         </button>
       </div>

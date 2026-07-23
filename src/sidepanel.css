@@ -1698,6 +1698,74 @@ body {
   border-radius: 3px;
 }
 
+/* Log feed: the whole-engine honesty note above the entries. */
+.log-caveat {
+  margin: 4px 0 2px;
+  font-size: 9px;
+  font-style: italic;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+/* Apply button carries a pending marker while staged drawer edits are uncommitted. */
+.gc-btn.is-dirty {
+  background: var(--warning);
+  border-color: var(--warning);
+  color: #1a1400;
+}
+.gc-btn.is-dirty:hover {
+  background: #f5c518;
+}
+
+/* Destructive action (identity Clear) — must never be confusable with the harmless
+   view_filter Reset, which shares the ghost-button chrome. */
+.gc-btn-danger {
+  background: transparent;
+  color: var(--error);
+  border-color: var(--error);
+}
+.gc-btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--error);
+}
+.gc-btn-danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Extension-page mount guard (embedded refusal / script-opened connect gate). */
+.mount-guard {
+  margin: 24px auto;
+  max-width: 340px;
+  padding: 16px 18px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.mount-guard strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.mount-guard-btn {
+  margin-top: 10px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.mount-guard-btn:hover {
+  background: var(--accent-hover);
+}
+
 /* view_filter active-state echo in the (now open-by-default) summary. */
 .gc-filter-state {
   margin-left: 6px;
