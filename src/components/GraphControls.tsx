@@ -609,14 +609,20 @@ export function GraphControls({
           />
         </label>
         <label className="gc-field">
-          <span className="gc-label">t</span>
+          <span className="gc-label">t_day ≤</span>
           <input
             className="gc-input gc-t-input"
             type="number"
             value={spec.t}
             placeholder="(all)"
             onChange={(e) => onTChange(e.target.value)}
-            title="Optional fold time bound (t_day). Leave blank for the latest fold."
+            title={
+              "Drops nodes whose own `t_day` PROPERTY exceeds this value. It is NOT a fold-at-t " +
+              "time machine: nodes that carry no t_day are unaffected, and on a typical fold that " +
+              "is nearly all of them (7 of 288 carry one today), so a high bound can change " +
+              "nothing at all. A true time bound would replay the log to a sequence " +
+              "(GET /fold?to=<seq>) — not wired to this control. Blank = no bound."
+            }
           />
         </label>
         <button
