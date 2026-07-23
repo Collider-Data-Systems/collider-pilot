@@ -1733,6 +1733,105 @@ body {
   cursor: not-allowed;
 }
 
+/* ==========================================================================
+   In-extension integration self-test page (selftest.html)
+   ========================================================================== */
+.selftest {
+  padding: 18px 22px;
+  max-width: 1100px;
+}
+.selftest-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.selftest-head h1 {
+  font-size: 17px;
+  font-weight: 600;
+}
+.selftest-verdict {
+  display: inline-block;
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-bottom: 14px;
+}
+.selftest-verdict.pass {
+  background: rgba(34, 197, 94, 0.16);
+  color: var(--success);
+  border: 1px solid var(--success);
+}
+.selftest-verdict.fail {
+  background: rgba(239, 68, 68, 0.16);
+  color: var(--error);
+  border: 1px solid var(--error);
+}
+.selftest-verdict.busy {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  font-size: 20px;
+}
+.selftest-skipped {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.selftest-rows {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.selftest-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  font-size: 13px;
+}
+.selftest-row.ok .selftest-mark {
+  color: var(--success);
+}
+.selftest-row.bad {
+  background: rgba(239, 68, 68, 0.1);
+}
+.selftest-row.bad .selftest-mark {
+  color: var(--error);
+}
+.selftest-row.skip .selftest-mark {
+  color: var(--text-muted);
+}
+.selftest-mark {
+  flex: 0 0 46px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+.selftest-name {
+  flex: 0 0 340px;
+  color: var(--text-primary);
+}
+.selftest-detail {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.selftest-note {
+  margin-top: 16px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+  max-width: 720px;
+}
+
 /* Extension-page mount guard (embedded refusal / script-opened connect gate). */
 .mount-guard {
   margin: 24px auto;
