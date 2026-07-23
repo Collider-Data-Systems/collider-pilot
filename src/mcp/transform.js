@@ -261,7 +261,13 @@ export function resolveViewFilter(request, healthz) {
  *   2. scope: if any scope urn resolves, retain scope urns + their 1-hop relation
  *      neighbourhood; otherwise fall back to the whole type slice
  *   3. optional t bound: only when the caller PINNED t, drop nodes whose numeric `t_day`
- *      property exceeds t (a lightweight stand-in until the engine exposes fold-at-t)
+ *      property exceeds t (a lightweight stand-in until the engine exposes fold-at-t).
+ *      MEASURED CAVEAT (t264): on the live Z440 fold only 7 of 288 nodes carry a numeric
+ *      `t_day` at all, so this bound can only ever remove those - t=200 drops nothing,
+ *      t=1 drops 7. It is NOT a fold-at-t projection and must not be presented as one.
+ *      The kernel DOES expose a real one, `GET /fold?to=<log_seq>` (replay log[0..seq]),
+ *      but that axis is log SEQUENCE, not t_day, and the MCP read path this adapter uses
+ *      (`graph_state`) has no equivalent parameter - wiring it is a separate feature.
  *   4. retain only relations whose BOTH endpoints survive
  *
  * The ACCESS GATE (A3) is composed AFTER the type/scope/t selection: when `accessKeep` is
