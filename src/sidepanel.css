@@ -1766,6 +1766,12 @@ body {
   background: var(--accent-hover);
 }
 
+/* Secondary word in the view_filter disclosure summary ("· advanced"). */
+.gc-filter-sub {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
 /* view_filter active-state echo in the (now open-by-default) summary. */
 .gc-filter-state {
   margin-left: 6px;
