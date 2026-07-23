@@ -32,7 +32,7 @@ import { DEFAULT_ENGINE_URL } from "./mcp/transform.js";
 import { loadScratch, saveScratch, saveSelectedUrn, subscribeScratch } from "./state/scratch";
 import { runBrowserAct } from "./tools/browser-acts";
 import { loadInlineGraphPref, saveInlineGraphPref } from "./state/prefs";
-import { mountVerdict } from "./ui/mount-guard";
+import { applyMountGuard, mountVerdict } from "./ui/mount-guard";
 import "./sidepanel.css";
 
 interface Row {
@@ -91,9 +91,18 @@ async function runChecks(push: (r: Row) => void): Promise<void> {
       : "NOT in the extension realm — this is the served harness; extension-only checks are skipped below",
   }));
 
-  await check("mount guard = ok (top-level, no opener)", async () => {
+  await check("mount guard: not embedded", async () => {
+    // Only "embedded" is a failure. "opened-externally" is a legitimate MOUNTED state:
+    // the guard refused to auto-connect and the user clicked Connect, which is the guard
+    // WORKING — failing the check there would punish the correct path (Copilot #23).
     const v = mountVerdict();
-    return { ok: v === "ok", detail: `verdict ${v}` };
+    return {
+      ok: v !== "embedded",
+      detail:
+        v === "ok"
+          ? "verdict ok (top-level, no opener)"
+          : `verdict ${v} — mounted after an explicit Connect click, which is the guard working`,
+    };
   });
 
   // ---- the worker seam ----
@@ -405,5 +414,9 @@ function SelfTest() {
 
 const container = document.getElementById("root");
 if (container) {
-  createRoot(container).render(<SelfTest />);
+  // This page is web-accessible (WAR) like sidepanel.html and pip.html, so it takes the
+  // SAME guard: refuse outright when embedded, and require an explicit Connect click when
+  // a script opened the window (Copilot #23 — it previously only reported on the verdict).
+  const mount = () => createRoot(container).render(<SelfTest />);
+  if (applyMountGuard(container, mount)) mount();
 }

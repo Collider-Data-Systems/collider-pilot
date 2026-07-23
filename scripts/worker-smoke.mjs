@@ -84,10 +84,13 @@ function send(message) {
       resolvePromise(response);
     };
     const kept = listeners.message.map((fn) => fn(message, { id: "worker-smoke" }, sendResponse));
-    // A listener returning true keeps the channel open for the async reply (MV3 contract).
-    if (!kept.some((k) => k === true)) {
+    // A listener may answer SYNCHRONOUSLY (valid MV3) or return true to keep the channel
+    // open for an async reply. Only "neither answered nor kept open" is a real failure —
+    // keying solely on the return value would false-fail a future synchronous refactor
+    // (Copilot #23).
+    if (!answered && !kept.some((k) => k === true)) {
       clearTimeout(timer);
-      reject(new Error(`no listener kept the channel open (returned ${JSON.stringify(kept)})`));
+      reject(new Error(`message was neither answered nor kept open (returned ${JSON.stringify(kept)})`));
     }
   });
 }
@@ -247,7 +250,7 @@ let unhandled = false;
 try {
   await send({ type: "DEFINITELY_NOT_A_PILOT_MESSAGE" });
 } catch (err) {
-  unhandled = /no listener kept the channel open/.test(String(err.message));
+  unhandled = /neither answered nor kept open/.test(String(err.message));
 }
 assert(unhandled, "unknown message types are ignored, not answered");
 
