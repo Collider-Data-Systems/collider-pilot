@@ -701,7 +701,7 @@ function liveAxisChecks(fold, health) {
  */
 function parseLensTable() {
   const src = readFileSync(new URL("../src/components/GraphControls.tsx", import.meta.url), "utf8");
-  const block = src.match(/export const LENSES: Lens\[\] = \[([\s\S]*?)\n\];/);
+  const block = src.match(/export const LENSES: Lens\[\] = \[([\s\S]*?)\n\s*\];/);
   if (!block) throw new Error("live-smoke: could not locate the LENSES table in GraphControls.tsx");
   const list = [];
   const arrayOf = (body, key) => {
@@ -709,7 +709,7 @@ function parseLensTable() {
     if (!m) return [];
     return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
   };
-  for (const m of block[1].matchAll(/id:\s*"([^"]+)"([\s\S]*?)(?=\n {4}id:\s*"|$)/g)) {
+  for (const m of block[1].matchAll(/id:\s*"([^"]+)"([\s\S]*?)(?=\n\s*id:\s*"|$)/g)) {
     list.push({ id: m[1], types: arrayOf(m[2], "types"), ports: arrayOf(m[2], "ports") });
   }
   if (list.length === 0) throw new Error("live-smoke: parsed zero lenses from GraphControls.tsx");
