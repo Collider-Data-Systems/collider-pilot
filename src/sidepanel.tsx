@@ -2,22 +2,25 @@
  * Collider Pilot - side panel (the seat)
  * ======================================
  * Read-only seat. Asks the service worker for a frame (live MCP by default, mock
- * fallback), renders the posture strip + Cytoscape inspector + textual node inspector
- * + gated Actions, and keeps selection/frame in chrome.storage.session so the panel
- * restores after a forced service-worker termination.
+ * fallback), and projects the ONE function the seat exists for:
  *
- * t263 UX eval re-cut (all read-only, all in the panel):
- *   - the provenance wall collapsed into the one-line PostureStrip (+ audit drawer);
- *     the LIVE/READ-ONLY/ACCESS badges now render in exactly ONE place — the strip —
- *     and the strip's LIVE badge doubles as the fold-stream pulse indicator.
- *   - a consolidated SettingsPanel (identity pickers fed from the fold, provider, model,
- *     LLM bearer, layout) replaces the controls scattered across toolbar + Actions.
- *   - the view_filter placement axis (t · types · seat) is open by default in the
- *     GraphControls — the panel's highest-value settable feature, made visible.
+ *     slice : State × Agent → Context
+ *
+ * t264 re-cut — the panel is the CONTROL/INSPECT surface; the mirrors carry the picture:
+ *   - PostureStrip (one line + audit drawer)
+ *   - Slice controls: access posture · lens presets (identity/topology/content/
+ *     everything) · focus (spine node) + hops · find · t · advanced types/ports
+ *   - LIVE LOG FEED: the engine jsonl, newest first (GET /log tail + /log/stream SSE) —
+ *     watching envelopes land IS watching the truth change
+ *   - NodeInspector + gated Actions
+ *   - Settings (identity/provider/bearer/layout) at the bottom
+ *   - the inline graph is OFF by default (toggle in the controls): the PiP / pop-out /
+ *     full-tab mirrors render it, and selection syncs both ways through the shared
+ *     scratch, so panel-clicks (log feed, inspector, find) light up in the mirrors.
  *
  * SAFETY: still no writes, no page access. EventSource is GET-only — it cannot POST and
  * has no apply path. Every mutating act stays behind the ActionsPanel modal, and urn-typed
- * args are now semantically validated against the frame before the modal even opens.
+ * args are semantically validated against the frame before the modal even opens.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +41,8 @@ import {
   DEFAULT_ACCESS_POSTURE,
   loadAccessPosturePref,
   saveAccessPosturePref,
+  loadInlineGraphPref,
+  saveInlineGraphPref,
   type GraphLayoutName,
   type AccessPosture,
 } from "./state/prefs";
@@ -45,12 +50,18 @@ import { PostureStrip } from "./components/PostureStrip";
 import { FrameGraph } from "./components/FrameGraph";
 import {
   GraphControls,
-  DEFAULT_VIEW_TYPES,
   buildFrameRequest,
+  collectFocusOptions,
+  defaultSliceSpec,
+  specToggleType,
+  specTogglePort,
+  specWithLens,
+  type SliceSpec,
 } from "./components/GraphControls";
 import { NodeInspector } from "./components/NodeInspector";
 import { ActionsPanel } from "./components/ActionsPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { LogFeed } from "./components/LogFeed";
 import { PresenceStrip } from "./components/PresenceStrip";
 import { useFoldStream } from "./state/use-fold-stream";
 import {
@@ -69,6 +80,7 @@ import {
   focusPip,
   openPipMirror,
 } from "./pip/pip-window";
+import { applyMountGuard } from "./ui/mount-guard";
 import "./sidepanel.css";
 
 type Status = "loading" | "ready" | "error";
@@ -116,25 +128,25 @@ function SidePanel() {
   const [liveTools, setLiveTools] = useState<RawMcpTool[] | null>(null);
   const [affordanceError, setAffordanceError] = useState<string | null>(null);
 
-  // Phase 6 UI state (all local, read-only).
   const [layout, setLayout] = useState<GraphLayoutName>(DEFAULT_GRAPH_LAYOUT);
   const [search, setSearch] = useState("");
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [focusUrn, setFocusUrn] = useState<string | null>(null);
   const [focusSignal, setFocusSignal] = useState(0);
-  const [viewTypes, setViewTypes] = useState<string[]>(DEFAULT_VIEW_TYPES);
-  const [viewT, setViewT] = useState("");
-  // SEAT (scope) selection. "" = All permitted (the seat-grounded default; no literal urn pinned).
-  // A non-empty value focuses the view to that one permitted seat.
+  // t264: the whole WHAT/WHEN selection is one SliceSpec (lens + types + ports + t + hops).
+  const [spec, setSpec] = useState<SliceSpec>(() => defaultSliceSpec());
+  // FOCUS (scope). "" = All permitted (the seat-grounded default; no literal urn pinned).
   const [viewScope, setViewScope] = useState<string>("");
+  // t264: the inline graph is a pref, default OFF (mirrors carry the picture).
+  const [showGraph, setShowGraph] = useState(false);
   // Access posture (A3). DEFAULT anon (fail-closed). The toggle sends ONLY access.mode; the
   // identity is worker-resolved from chrome.storage.local and is unreachable from this panel.
   const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
   // Whether a trusted identity is stored (reported by the SettingsPanel) — hint-only state.
   const [identitySet, setIdentitySet] = useState(false);
 
-  // t263 item 4: provider/model/bearer selection lives HERE (set in SettingsPanel,
-  // consumed by ActionsPanel). Same storage keys as before — only the UI home moved.
+  // Provider/model/bearer selection lives HERE (set in SettingsPanel, consumed by
+  // ActionsPanel). Same storage keys as before — only the UI home moved (t263).
   const [providerId, setProviderId] = useState<string>(DEFAULT_PROVIDER_ID);
   const [modelName, setModelName] = useState<string>(() =>
     providerDefaultModel(getProvider(DEFAULT_PROVIDER_ID)),
@@ -144,6 +156,9 @@ function SidePanel() {
   // The currently-applied FrameRequest — a ref so the SSE re-fetch always uses the latest
   // applied filter without re-subscribing the stream.
   const frameRequestRef = useRef<FrameRequest | undefined>(undefined);
+  // The last COMMITTED spec — drives the Apply button's pending indicator when the
+  // staged drawer edits deviate from what the frame actually shows.
+  const [appliedSpec, setAppliedSpec] = useState<SliceSpec>(() => defaultSliceSpec());
 
   const loadFrame = useCallback(async (request?: FrameRequest) => {
     const req = request ?? frameRequestRef.current;
@@ -196,17 +211,18 @@ function SidePanel() {
     }
   }, []);
 
-  // Mount: restore instantly from scratch, load the prefs (layout, posture, provider,
-  // model, bearer-set flag), then refresh.
+  // Mount: restore instantly from scratch, load the prefs, then refresh.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [scratch, savedLayout, savedPosture, savedProviderId] = await Promise.all([
-        loadScratch(),
-        loadLayoutPref(),
-        loadAccessPosturePref(),
-        resolveProviderId(),
-      ]);
+      const [scratch, savedLayout, savedPosture, savedProviderId, savedInline] =
+        await Promise.all([
+          loadScratch(),
+          loadLayoutPref(),
+          loadAccessPosturePref(),
+          resolveProviderId(),
+          loadInlineGraphPref(),
+        ]);
       const [savedModel, savedToken] = await Promise.all([
         resolveModelName(getProvider(savedProviderId)),
         resolveLLMToken(),
@@ -217,6 +233,7 @@ function SidePanel() {
         setProviderId(savedProviderId);
         setModelName(savedModel);
         setLlmTokenSet(savedToken !== "");
+        setShowGraph(savedInline);
       }
       if (
         !cancelled &&
@@ -230,7 +247,7 @@ function SidePanel() {
       }
       // Seed the first read under the restored posture so an "identified" toggle survives a
       // reopen (default anon on a fresh profile). The worker still resolves the identity.
-      const initialReq = buildFrameRequest(DEFAULT_VIEW_TYPES, "", savedPosture);
+      const initialReq = buildFrameRequest(defaultSliceSpec(), savedPosture);
       frameRequestRef.current = initialReq;
       await loadFrame(initialReq);
       void loadTools();
@@ -272,16 +289,24 @@ function SidePanel() {
       );
       const hit = matches[0];
       handleSelect(hit.urn);
-      setFocusUrn(hit.urn);
-      setFocusSignal((s) => s + 1);
+      if (showGraph) {
+        setFocusUrn(hit.urn);
+        setFocusSignal((s) => s + 1);
+      }
     },
-    [frame, handleSelect],
+    [frame, handleSelect, showGraph],
   );
 
   const handleLayoutChange = useCallback((next: GraphLayoutName) => {
     setLayout(next);
     void saveLayoutPref(next);
   }, []);
+
+  const handleToggleGraphVisible = useCallback(() => {
+    const next = !showGraph;
+    setShowGraph(next);
+    void saveInlineGraphPref(next);
+  }, [showGraph]);
 
   // Provider selection (persisted, mirrors adapter-factory). Switching resets the model to
   // the new provider's default; ActionsPanel clears its stale proposal on providerId change.
@@ -298,39 +323,71 @@ function SidePanel() {
     void saveModelName(name);
   }, []);
 
-  const toggleType = useCallback((type: string) => {
-    setViewTypes((prev) =>
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type],
-    );
+  /** Commit a spec + scope: build the request, remember it, re-read the frame. */
+  const commitSlice = useCallback(
+    (nextSpec: SliceSpec, mode: AccessPosture, scopeUrn: string) => {
+      const req = buildFrameRequest(nextSpec, mode, scopeUrn ? [scopeUrn] : []);
+      frameRequestRef.current = req;
+      setAppliedSpec(nextSpec);
+      void loadFrame(req);
+    },
+    [loadFrame],
+  );
+
+  // Lens tap: one-tap slice change — applies immediately. Computed OUTSIDE the state
+  // updater (t264 review major: network I/O inside an updater double-fires under
+  // StrictMode replay).
+  const handleLensChange = useCallback(
+    (lensId: string) => {
+      const next = specWithLens(spec, lensId);
+      setSpec(next);
+      commitSlice(next, accessMode, viewScope);
+    },
+    [spec, accessMode, viewScope, commitSlice],
+  );
+
+  // Advanced edits: stage in the spec; Apply commits.
+  const toggleType = useCallback((ty: string) => {
+    setSpec((prev) => specToggleType(prev, ty));
+  }, []);
+  const togglePort = useCallback((p: string) => {
+    setSpec((prev) => specTogglePort(prev, p));
+  }, []);
+  const handleTChange = useCallback((t: string) => {
+    setSpec((prev) => ({ ...prev, t }));
   }, []);
 
+  // Hops: applies immediately (like lens/focus — a one-value axis). Pure updater.
+  const handleHopsChange = useCallback(
+    (hops: number) => {
+      const next = { ...spec, hops };
+      setSpec(next);
+      commitSlice(next, accessMode, viewScope);
+    },
+    [spec, accessMode, viewScope, commitSlice],
+  );
+
   const applyFilter = useCallback(() => {
-    const req = buildFrameRequest(viewTypes, viewT, accessMode, viewScope ? [viewScope] : []);
-    frameRequestRef.current = req;
-    void loadFrame(req);
-  }, [viewTypes, viewT, accessMode, viewScope, loadFrame]);
+    commitSlice(spec, accessMode, viewScope);
+  }, [spec, accessMode, viewScope, commitSlice]);
 
   const resetFilter = useCallback(() => {
-    setViewTypes(DEFAULT_VIEW_TYPES);
-    setViewT("");
-    setViewScope(""); // reset scope back to All permitted (it is part of the view_filter)
-    // Preserve the access posture across a view_filter reset (it is a separate control).
-    const req = buildFrameRequest(DEFAULT_VIEW_TYPES, "", accessMode);
-    frameRequestRef.current = req;
-    void loadFrame(req);
-  }, [accessMode, loadFrame]);
+    const next = defaultSliceSpec();
+    setSpec(next);
+    setViewScope(""); // reset focus back to All permitted (it is part of the view_filter)
+    // Preserve the access posture across a slice reset (it is a separate control).
+    commitSlice(next, accessMode, "");
+  }, [accessMode, commitSlice]);
 
-  // SEAT (scope) selector. Focus the view to one permitted seat (or All permitted when ""). The
-  // permitted set is unchanged — this only narrows what is RENDERED. Re-requests under the current
-  // posture (worker re-resolves the trusted identity); no literal urn is pinned as a default.
+  // FOCUS selector. Focus the slice on one spine node (or All permitted when ""). The
+  // permitted set is unchanged — this only narrows what is RENDERED. Re-requests under the
+  // current posture (worker re-resolves the trusted identity); no literal urn is pinned.
   const handleScopeChange = useCallback(
     (scopeUrn: string) => {
       setViewScope(scopeUrn);
-      const req = buildFrameRequest(viewTypes, viewT, accessMode, scopeUrn ? [scopeUrn] : []);
-      frameRequestRef.current = req;
-      void loadFrame(req);
+      commitSlice(spec, accessMode, scopeUrn);
     },
-    [viewTypes, viewT, accessMode, loadFrame],
+    [spec, accessMode, commitSlice],
   );
 
   // Access-posture toggle. Persists the UI pref (NOT the identity) and re-requests the frame
@@ -340,14 +397,12 @@ function SidePanel() {
     (mode: AccessPosture) => {
       setAccessMode(mode);
       void saveAccessPosturePref(mode);
-      // The permitted set changes with the posture, so a previously-chosen seat may no longer be
-      // permitted — reset scope to All permitted to avoid focusing on a now-invisible seat.
+      // The permitted set changes with the posture, so a previously-chosen focus may no longer
+      // be visible — reset focus to All permitted to avoid focusing on an invisible node.
       setViewScope("");
-      const req = buildFrameRequest(viewTypes, viewT, mode);
-      frameRequestRef.current = req;
-      void loadFrame(req);
+      commitSlice(spec, mode, "");
     },
-    [viewTypes, viewT, loadFrame],
+    [spec, commitSlice],
   );
 
   // Mirror the PiP window: adopt SELECTION changes from the shared scratch (frame is
@@ -397,11 +452,17 @@ function SidePanel() {
     [frame, selectedUrn],
   );
 
-  // The permitted seats for the SEAT selector — the derived access fiber's permitted_workspaces
-  // (empty until an access-scoped frame has been read). Read-only projection of provenance.
+  // The permitted seats — the derived access fiber's permitted_workspaces (empty until an
+  // access-scoped frame has been read). Read-only projection of provenance.
   const permittedWorkspaces = useMemo(
     () => frame?.provenance?.access?.permitted_workspaces ?? [],
     [frame],
+  );
+
+  // Focusable spine nodes from the current frame + the permitted workspaces.
+  const focusOptions = useMemo(
+    () => collectFocusOptions(frame, permittedWorkspaces),
+    [frame, permittedWorkspaces],
   );
 
   return (
@@ -413,8 +474,7 @@ function SidePanel() {
             title={status}
           />
           <h1>Collider Pilot</h1>
-          {/* t263 item 1 dedupe: the LIVE / READ-ONLY / ACCESS badges render ONLY on the
-              PostureStrip below — no second copy up here. */}
+          {/* The LIVE / READ-ONLY / ACCESS badges render ONLY on the PostureStrip below. */}
         </div>
         <div className="header-right">
           <button
@@ -423,7 +483,7 @@ function SidePanel() {
             disabled={!fullTabSupported}
             title={
               fullTabSupported
-                ? "Open the read-only mirror in a full browser tab"
+                ? "Open the read-only mirror (graph + inspector) in a full browser tab"
                 : "Full-tab is unavailable in this context"
             }
           >
@@ -460,9 +520,8 @@ function SidePanel() {
           pulseKey={pulseKey}
         />
       )}
-      {/* Pre-frame posture fallback (t263 review catch): the header dedupe removed the
-          unconditional "read-only" text, so loading/error states must still declare the
-          seat's posture somewhere until the full strip can render. */}
+      {/* Pre-frame posture fallback: loading/error states must still declare the seat's
+          posture somewhere until the full strip can render. */}
       {!frame && (
         <section className="provenance posture-strip" aria-label="Frame posture (no frame)">
           <div className="prov-top">
@@ -493,55 +552,47 @@ function SidePanel() {
         )}
         {frame && (
           <>
-            <ErrorBoundary>
-              <SettingsPanel
-                frame={frame}
-                accessMode={accessMode}
-                onReloadFrame={() => void loadFrame()}
-                onIdentityChanged={setIdentitySet}
-                layout={layout}
-                onLayoutChange={handleLayoutChange}
-                provider={{
-                  providerId,
-                  onProviderChange: handleProviderChange,
-                  modelName,
-                  onModelChange: handleModelChange,
-                  llmTokenSet,
-                  onLlmTokenChanged: setLlmTokenSet,
-                  access: frame.provenance?.access ?? null,
-                }}
-              />
-            </ErrorBoundary>
             <GraphControls
               search={search}
               onSearchChange={handleSearchChange}
               searchHint={searchHint}
-              activeTypes={viewTypes}
+              spec={spec}
+              onLensChange={handleLensChange}
               onToggleType={toggleType}
-              t={viewT}
-              onTChange={setViewT}
+              onTogglePort={togglePort}
+              onTChange={handleTChange}
+              onHopsChange={handleHopsChange}
               onApplyFilter={applyFilter}
               onResetFilter={resetFilter}
               filterHonored={isLive}
-              permittedWorkspaces={permittedWorkspaces}
+              focusOptions={focusOptions}
               activeScope={viewScope}
               onScopeChange={handleScopeChange}
+              selectedUrn={selectedUrn}
               accessMode={accessMode}
               onAccessModeChange={handleAccessModeChange}
               identitySet={identitySet}
+              showGraph={showGraph}
+              onToggleGraphVisible={handleToggleGraphVisible}
+              dirty={JSON.stringify({ t: spec.types, p: spec.ports, tt: spec.t }) !== JSON.stringify({ t: appliedSpec.types, p: appliedSpec.ports, tt: appliedSpec.t })}
             />
-            <FrameGraph
-              frame={frame}
-              selectedUrn={selectedUrn}
-              onSelect={handleSelect}
-              layout={layout}
-              focusUrn={focusUrn}
-              focusSignal={focusSignal}
-            />
+            {showGraph && (
+              <FrameGraph
+                frame={frame}
+                selectedUrn={selectedUrn}
+                onSelect={handleSelect}
+                layout={layout}
+                focusUrn={focusUrn}
+                focusSignal={focusSignal}
+              />
+            )}
+            {/* t264: the engine jsonl, live. Self-hides on mock frames. */}
+            <ErrorBoundary>
+              <LogFeed live={isLive} frame={frame} accessMode={accessMode} onSelect={handleSelect} />
+            </ErrorBoundary>
             {/* P9 WebTransport spike: synthetic presence strip. Self-hides when the
                 pilot.wt flag is off / WebTransport is unavailable / the connect fails.
-                READ-ONLY, feature-flagged OFF by default; the reliable paths above are
-                untouched. */}
+                READ-ONLY, feature-flagged OFF by default. */}
             <ErrorBoundary>
               <PresenceStrip />
             </ErrorBoundary>
@@ -561,6 +612,26 @@ function SidePanel() {
                 llmTokenSet={llmTokenSet}
               />
             </ErrorBoundary>
+            {/* Settings last: durable choices, rarely touched (identity/provider/layout). */}
+            <ErrorBoundary>
+              <SettingsPanel
+                frame={frame}
+                accessMode={accessMode}
+                onReloadFrame={() => void loadFrame()}
+                onIdentityChanged={setIdentitySet}
+                layout={layout}
+                onLayoutChange={handleLayoutChange}
+                provider={{
+                  providerId,
+                  onProviderChange: handleProviderChange,
+                  modelName,
+                  onModelChange: handleModelChange,
+                  llmTokenSet,
+                  onLlmTokenChanged: setLlmTokenSet,
+                  access: frame.provenance?.access ?? null,
+                }}
+              />
+            </ErrorBoundary>
           </>
         )}
       </main>
@@ -570,5 +641,9 @@ function SidePanel() {
 
 const container = document.getElementById("root");
 if (container) {
-  createRoot(container).render(<ErrorBoundary><SidePanel /></ErrorBoundary>);
+  // Dev-bridge guard: this page is web-accessible from localhost, so it refuses to
+  // render embedded and never auto-connects when a script opened the window.
+  const mount = () =>
+    createRoot(container).render(<ErrorBoundary><SidePanel /></ErrorBoundary>);
+  if (applyMountGuard(container, mount)) mount();
 }

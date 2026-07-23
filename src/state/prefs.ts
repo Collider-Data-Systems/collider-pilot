@@ -59,6 +59,40 @@ export async function saveLayoutPref(layout: GraphLayoutName): Promise<void> {
 }
 
 /**
+ * INLINE-GRAPH toggle (t264) — whether the side panel renders the graph itself.
+ * DEFAULT false: the PiP / pop-out / full-tab mirrors carry the picture and selection
+ * syncs through the shared scratch; the panel stays the control/inspect surface.
+ */
+export const DEFAULT_INLINE_GRAPH = false;
+
+const INLINE_GRAPH_KEY = "pilot.inlineGraph";
+
+/** Read the persisted inline-graph choice, or the default (hidden). Never throws. */
+export async function loadInlineGraphPref(): Promise<boolean> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const got = await chrome.storage.local.get(INLINE_GRAPH_KEY);
+      const stored = got?.[INLINE_GRAPH_KEY];
+      if (typeof stored === "boolean") return stored;
+    }
+  } catch {
+    // storage unavailable — fall back to the default
+  }
+  return DEFAULT_INLINE_GRAPH;
+}
+
+/** Persist the inline-graph choice (best-effort; a failure is non-fatal). */
+export async function saveInlineGraphPref(show: boolean): Promise<void> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      await chrome.storage.local.set({ [INLINE_GRAPH_KEY]: show });
+    }
+  } catch {
+    // best-effort — ignore
+  }
+}
+
+/**
  * ACCESS POSTURE toggle (A3) — a UI PREFERENCE, never the identity.
  * =================================================================
  * Persists ONLY which posture the toggle is in: "anon" (default) or "identified". This is

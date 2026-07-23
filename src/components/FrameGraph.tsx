@@ -19,19 +19,49 @@ import type { HgFrame } from "../mcp/types";
 import type { GraphLayoutName } from "../state/prefs";
 import { DEFAULT_GRAPH_LAYOUT } from "../state/prefs";
 
+// t264: the slice can now render EVERY fold type (lenses/advanced) — color the spine
+// and content families distinctly; anything unlisted gets the neutral default.
 const TYPE_COLOR: Record<string, string> = {
+  // content
   knowledge_item: "#6366f1",
   derivation: "#22c55e",
   purpose: "#eab308",
   session: "#38bdf8",
+  program: "#a855f7",
+  grammar_fragment: "#8b5cf6",
+  domain_tag: "#64748b",
+  // principals (A1)
+  user: "#f97316",
+  group: "#fb923c",
+  agent: "#f43f5e",
+  role: "#fda4af",
+  manifold: "#facc15",
+  // places
+  kernel: "#14b8a6",
+  workstation: "#0ea5e9",
+  router: "#2dd4bf",
+  channel: "#84cc16",
+  twin_link: "#5eead4",
+  endpoint: "#67e8f9",
 };
 const DEFAULT_COLOR = "#a0a0b0";
 
-// Semantic concentric ranking: purposes/sessions read best toward the center, KIs on
-// the rim (higher = closer to center). A degree fallback keeps unknown types sensible.
+/** How many type swatches the legend overlay shows before "+N more types". */
+const LEGEND_CAP = 8;
+
+// Semantic concentric ranking: identity/topology anchors read best toward the center,
+// content on the rim (higher = closer to center). A degree fallback keeps unknown
+// types sensible.
 const TYPE_RANK: Record<string, number> = {
+  manifold: 7,
+  group: 6,
+  user: 6,
   purpose: 4,
   session: 3,
+  kernel: 3,
+  workstation: 3,
+  channel: 2,
+  agent: 2,
   derivation: 2,
   knowledge_item: 1,
 };
@@ -266,21 +296,29 @@ export function FrameGraph({
     <div className="graph-wrap">
       {graphError && <div className="pilot-state error">{graphError}</div>}
       <div className="graph-canvas" ref={containerRef} />
-      <div className="graph-legend" aria-hidden="true">
-        <span className="legend-item">
-          <i style={{ background: TYPE_COLOR.knowledge_item }} /> knowledge_item
-        </span>
-        <span className="legend-item">
-          <i style={{ background: TYPE_COLOR.derivation }} /> derivation
-        </span>
-        <span className="legend-item">
-          <i style={{ background: TYPE_COLOR.purpose }} /> purpose
-        </span>
-        <span className="legend-item">
-          <i style={{ background: TYPE_COLOR.session }} /> session
-        </span>
-        <span className="legend-note">arrows are relations</span>
-      </div>
+      {/* t264: legend derived from the types ACTUALLY in the frame, never a stale
+          hardcoded list. Ranked by node count (an alphabetical cut hid the dominant
+          types under the wide lenses) and the overflow is stated, not silent. */}
+      {(() => {
+        const counts = new Map<string, number>();
+        for (const n of Array.isArray(frame?.nodes) ? frame.nodes : []) {
+          counts.set(n.type_id, (counts.get(n.type_id) ?? 0) + 1);
+        }
+        const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        const shown = ranked.slice(0, LEGEND_CAP);
+        const hidden = ranked.length - shown.length;
+        return (
+          <div className="graph-legend" aria-hidden="true">
+            {shown.map(([ty, count]) => (
+              <span key={ty} className="legend-item" title={`${ty} · ${count}`}>
+                <i style={{ background: TYPE_COLOR[ty] ?? DEFAULT_COLOR }} /> {ty}
+              </span>
+            ))}
+            {hidden > 0 && <span className="legend-note">+{hidden} more types</span>}
+            <span className="legend-note">arrows are relations</span>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -135,8 +135,19 @@ export interface ViewFilter {
   purpose: string; // purpose urn the frame is colored by
   scope_urns: string[]; // scope pins the selection was bounded to
   t: number; // selection time (t_day / log index)
-  types: string[]; // node type_ids retained by the filter
-  access?: AccessScope; // NEW placement axis; fully backward-compatible (optional)
+  /** Node type_ids retained. `["*"]` = ALL types (t264 lens sentinel; [] falls back to the default slice). */
+  types: string[];
+  access?: AccessScope; // placement axis; fully backward-compatible (optional)
+  /**
+   * t264 slice controls: relation PORT names retained (e.g. "member-of", "routes-to").
+   * Empty/absent = all ports. A relation renders iff both endpoints survive AND its
+   * label is in this set. Scope expansion follows only these relations.
+   */
+  ports?: string[];
+  /** Scope neighborhood depth (BFS hops from scope_urns along retained relations). Default 1. */
+  scope_hops?: number;
+  /** The lens preset name that produced types/ports — provenance echo only, never law. */
+  lens?: string;
 }
 
 /**

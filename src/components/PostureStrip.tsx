@@ -219,7 +219,18 @@ export function PostureStrip({
                 <span className="prov-k">t</span> {vf.t ?? "—"}
               </div>
               <div>
-                <span className="prov-k">types</span> {vfTypes.join(", ")}
+                <span className="prov-k">lens</span> {vf.lens ?? "—"}
+              </div>
+              <div>
+                <span className="prov-k">types</span>{" "}
+                {vfTypes.length === 0 ? "all" : vfTypes.join(", ")}
+              </div>
+              <div>
+                <span className="prov-k">ports</span>{" "}
+                {Array.isArray(vf.ports) && vf.ports.length > 0 ? vf.ports.join(", ") : "all"}
+              </div>
+              <div>
+                <span className="prov-k">hops</span> {vf.scope_hops ?? 1}
               </div>
               <div>
                 <span className="prov-k">scope</span>
