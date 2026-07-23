@@ -158,6 +158,14 @@ function SidePanel() {
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The last read FAILED and has not yet been replaced by a good one. Deliberately NOT
+   * derived from `status`: a retry sets status back to "loading", which would clear the
+   * STALE posture and re-assert LIVE while the refresh is still in flight and the OLD
+   * frame is still on screen — claiming currency at exactly the moment we do not have it
+   * (Copilot #26). It clears only when a frame actually lands.
+   */
+  const [readFailed, setReadFailed] = useState(false);
   const [popOutSupported] = useState(() => isPopOutSupported());
   const [fullTabSupported] = useState(() => isFullTabSupported());
   const [pipOpen, setPipOpen] = useState(false);
@@ -212,6 +220,7 @@ function SidePanel() {
         };
         setFrame(safeFrame);
         setStatus("ready");
+        setReadFailed(false); // a good frame landed — the posture is current again
         setSelectedUrn((prev) => {
           const stillThere =
             prev && safeFrame.nodes.some((n) => n.urn === prev) ? prev : null;
@@ -221,13 +230,16 @@ function SidePanel() {
       } else if (res.type === "ERROR") {
         setStatus("error");
         setError(res.error);
+        setReadFailed(true);
       } else {
         setStatus("error");
         setError("unexpected response to GET_FRAME");
+        setReadFailed(true);
       }
     } catch (err) {
       setStatus("error");
       setError(String(err));
+      setReadFailed(true);
     }
   }, []);
 
@@ -456,6 +468,9 @@ function SidePanel() {
   // a boolean, so it stays stable across frame refreshes (true stays true): the hook opens
   // the stream once when live-ness turns on and closes it when it turns off / on unmount.
   const isLive = frame != null && frame.provenance?.mock === false;
+  // The last read failed but we still hold a frame — keep rendering it, stop calling it
+  // live, and keep saying so across the retry until a good frame actually replaces it.
+  const stale = readFailed && frame != null;
   const reloadForStream = useCallback(() => void loadFrame(), [loadFrame]);
   const { status: streamStatus, pulseKey } = useFoldStream({
     active: isLive,
@@ -556,7 +571,24 @@ function SidePanel() {
           provenance={frame.provenance}
           streamStatus={isLive ? streamStatus : "off"}
           pulseKey={pulseKey}
+          stale={stale}
         />
+      )}
+      {/* A failed refresh WITH a frame already loaded used to be invisible: the frame was
+          kept (right call) but the strip went on asserting LIVE and a seq that might be
+          behind the engine, and the only signal was the 8px status dot turning red. For a
+          surface whose job is "what is true now", that is the failure mode that matters
+          most, so it now says so and offers the retry. */}
+      {stale && (
+        <div className="stale-banner" role="status">
+          <span className="stale-banner-text">
+            refresh failed — showing the last good frame (seq {frame?.provenance?.log_seq}):{" "}
+            {error}
+          </span>
+          <button className="mini-btn" onClick={() => void loadFrame()}>
+            retry
+          </button>
+        </div>
       )}
       {/* Pre-frame posture fallback: loading/error states must still declare the seat's
           posture somewhere until the full strip can render. */}

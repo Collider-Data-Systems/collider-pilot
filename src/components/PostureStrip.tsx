@@ -48,6 +48,7 @@ export function PostureStrip({
   streamStatus = "off",
   pulseKey = 0,
   defaultOpen = false,
+  stale = false,
 }: {
   provenance: FrameProvenance;
   /** Live fold-stream status; "off" when this surface holds no stream (PiP, previews). */
@@ -55,6 +56,12 @@ export function PostureStrip({
   pulseKey?: number;
   /** Start with the audit drawer open (default false — the strip is the point). */
   defaultOpen?: boolean;
+  /**
+   * The last read FAILED and this frame is the previous good one. The badge must stop
+   * saying LIVE: the strip's whole job is to state what is true now, and a frame kept
+   * after a failed refresh is not current — its seq/T-day may be behind the engine.
+   */
+  stale?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   // Defensive: any of these may be absent on a live/partial frame. A missing
@@ -68,6 +75,13 @@ export function PostureStrip({
   const liveBadge = provenance.mock ? (
     <span className="prov-badge mock" title="Fixture data — not a live engine read.">
       MOCK
+    </span>
+  ) : stale ? (
+    <span
+      className="prov-badge stale"
+      title="The last read FAILED — this is the previous good frame. Its seq and T-day may be behind the engine; do not read it as current."
+    >
+      STALE
     </span>
   ) : (
     <span
