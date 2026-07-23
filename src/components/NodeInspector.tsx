@@ -5,6 +5,7 @@
  * Also lists the node's incident **relations** (never "edges") for orientation.
  */
 
+import { useState } from "react";
 import type { HgFrame, HgNode, HgProperties } from "../mcp/types";
 
 function PropertyRows({ properties }: { properties: HgProperties }) {
@@ -30,11 +31,34 @@ export function NodeInspector({
   frame,
   node,
   onSelect,
+  collapsible = false,
 }: {
   frame: HgFrame;
   node: HgNode | null;
   onSelect: (urn: string | null) => void;
+  /**
+   * t264: in the side panel the detail view is collapsible, because a mirror (PiP /
+   * pop-out / full tab) usually shows the same node — collapsing reclaims the panel's
+   * scarce height without losing anything. The mirrors pass false: there the inspector
+   * IS the detail surface.
+   */
+  collapsible?: boolean;
 }) {
+  const [open, setOpen] = useState(true);
+
+  if (collapsible && !open) {
+    return (
+      <aside className="inspector inspector-collapsed" aria-label="Node inspector (collapsed)">
+        <button type="button" className="insp-toggle" onClick={() => setOpen(true)}>
+          ▸ inspect
+          <span className="insp-toggle-node">
+            {node ? `${node.type_id} · ${node.label}` : "no selection"}
+          </span>
+        </button>
+      </aside>
+    );
+  }
+
   if (!node) {
     return (
       <aside className="inspector" aria-label="Node inspector">
@@ -57,6 +81,16 @@ export function NodeInspector({
   return (
     <aside className="inspector" aria-label="Node inspector">
       <div className="insp-head">
+        {collapsible && (
+          <button
+            type="button"
+            className="insp-toggle insp-toggle-open"
+            onClick={() => setOpen(false)}
+            title="Collapse the inspector (the mirrors keep showing the node)"
+          >
+            ▾ inspect
+          </button>
+        )}
         <span className="insp-type">{node.type_id}</span>
         <span className="insp-name">{node.label}</span>
       </div>

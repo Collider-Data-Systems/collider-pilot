@@ -503,6 +503,7 @@ function PreviewLive() {
               frame={frame}
               node={selectedNode}
               onSelect={handleSelect}
+              collapsible
             />
           </>
         )}

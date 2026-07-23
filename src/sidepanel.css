@@ -1698,6 +1698,83 @@ body {
   border-radius: 3px;
 }
 
+/* Condensed affordance pack: one line, details on demand. */
+.aff-details > .aff-summary {
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.aff-details[open] > .aff-summary {
+  margin-bottom: 6px;
+}
+.aff-summary::-webkit-details-marker {
+  display: none;
+}
+.aff-summary::before {
+  content: "▸ ";
+  color: var(--text-muted);
+}
+.aff-details[open] > .aff-summary::before {
+  content: "▾ ";
+}
+.aff-actor {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Collapsible node inspector (side panel only — the mirrors keep it open). */
+.inspector-collapsed {
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 6px 14px;
+  overflow: visible;
+}
+.insp-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.insp-toggle:hover {
+  color: var(--text-primary);
+}
+.insp-toggle-node {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.insp-toggle-open {
+  flex: 0 0 auto;
+  width: auto;
+  margin-bottom: 2px;
+}
+
 /* Log feed: the whole-engine honesty note above the entries. */
 .log-caveat {
   margin: 4px 0 2px;

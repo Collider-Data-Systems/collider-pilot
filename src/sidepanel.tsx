@@ -600,6 +600,7 @@ function SidePanel() {
               frame={frame}
               node={selectedNode}
               onSelect={handleSelect}
+              collapsible
             />
             <ErrorBoundary>
               <ActionsPanel
