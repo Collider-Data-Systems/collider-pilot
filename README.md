@@ -48,6 +48,17 @@ npm run typecheck # optional: tsc --noEmit
 Then, in Chrome/Edge: `chrome://extensions` → Developer mode → **Load unpacked** →
 select `dist/`. Click the toolbar action to open the side panel.
 
+### Testing
+
+Four gates plus an in-extension self-test; see **[TESTING.md](TESTING.md)** for what each one
+covers, the two dev-harness traps that have cost real time, and the honest limits that are
+deliberately not hidden.
+
+```bash
+npm run typecheck && npm run build
+npm run smoke:worker && npm run smoke:live && npm run smoke:llm
+```
+
 ### Z440 surface rooms (tab-group titles)
 
 The Z440 launcher opens each generated surface window with this extension's own
