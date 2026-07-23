@@ -8,14 +8,17 @@
  * of this panel, so the obvious query has to reach the obvious node.
  *
  * Ranking, best first:
- *   0. exact urn-tail match           `…:program:sam.mvp-delivery`  for "sam.mvp-delivery"
- *   1. urn tail STARTS WITH the query `…:program:sam.mvp-delivery`  for "mvp-delivery" *
+ *   0. urn tail EQUALS the query      `…:program:sam.mvp-delivery`  for "sam.mvp-delivery" *
+ *   1. urn tail STARTS WITH the query `…:program:sam.t159-ignition` for "sam.t159" *
  *   2. urn contains the query
  *   3. label starts with the query
  *   4. label contains the query
  *
- * (*) tail-prefix is checked after stripping a leading owner segment (`sam.`), because the
- * fold's urn tails are conventionally `<owner>.<slug>` and users type the slug.
+ * (*) ranks 0 and 1 are each tried twice: once against the raw tail, once after stripping a
+ * leading owner segment (`sam.`), because the fold's urn tails are conventionally
+ * `<owner>.<slug>` and users type the slug. So "mvp-delivery" is an owner-stripped EQUALS
+ * and ranks 0 — not a prefix match. That distinction is the whole point: a rank-0 exact hit
+ * cannot be outranked by some longer urn that merely starts with the same slug.
  *
  * Ties keep fold order, so the ranking only ever promotes a better match — it never
  * reorders equals. Pure functions, no DOM, no I/O; the panel and both harnesses share them.

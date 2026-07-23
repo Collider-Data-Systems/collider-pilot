@@ -265,7 +265,7 @@ export function resolveViewFilter(request, healthz) {
  *      MEASURED CAVEAT (t264): on the live Z440 fold only 7 of 288 nodes carry a numeric
  *      `t_day` at all, so this bound can only ever remove those - t=200 drops nothing,
  *      t=1 drops 7. It is NOT a fold-at-t projection and must not be presented as one.
- *      The kernel DOES expose a real one, `GET /fold?to=<log_seq>` (replay log[0..seq]),
+ *      The kernel DOES expose a real one, `GET /fold?to=<log_seq>` (replay log[0..log_seq]),
  *      but that axis is log SEQUENCE, not t_day, and the MCP read path this adapter uses
  *      (`graph_state`) has no equivalent parameter - wiring it is a separate feature.
  *   4. retain only relations whose BOTH endpoints survive
