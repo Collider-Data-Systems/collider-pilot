@@ -123,9 +123,17 @@ function announceSurfaceRoom(): void {
       .then((res: PilotResponse) => {
         if (res?.type === "SURFACE_ROOM_OK") {
           console.log(`[pilot] surface room "${res.title}" (${res.grouped} tab(s) grouped)`);
+        } else if (res?.type === "SURFACE_ROOM_SKIPPED") {
+          console.log(`[pilot] surface room not applicable: ${res.reason}`);
         } else if (res?.type === "ERROR") {
-          console.log(`[pilot] surface room skipped: ${res.error}`);
+          console.log(`[pilot] surface room failed: ${res.error}`);
         }
+      })
+      // The try/catch below cannot see an async rejection (a torn-down worker, a closed
+      // channel), and an unhandled rejection would surface as console noise on a
+      // fire-and-forget nicety (Copilot #24).
+      .catch((err: unknown) => {
+        console.log("[pilot] surface-room handshake did not complete:", err);
       });
   } catch (err) {
     console.log("[pilot] surface-room handshake unavailable:", err);

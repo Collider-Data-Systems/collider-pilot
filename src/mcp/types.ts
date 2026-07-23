@@ -246,4 +246,10 @@ export type PilotResponse =
   | { type: "FRAME"; frame: HgFrame }
   | { type: "TOOLS"; tools: RawMcpTool[] }
   | { type: "SURFACE_ROOM_OK"; groupId: number; grouped: number; title: string }
+  /**
+   * The handshake had nothing to do — e.g. the sender is the docked side panel, which is
+   * not a tab and so has no window to group. A distinct response, NOT `ERROR`: a caller
+   * must be able to tell a benign skip from a real failure (Copilot #24).
+   */
+  | { type: "SURFACE_ROOM_SKIPPED"; reason: string }
   | { type: "ERROR"; error: string };

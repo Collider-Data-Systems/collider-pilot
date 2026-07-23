@@ -44,7 +44,7 @@ function assert(cond, msg) {
 const storage = new Map();
 const listeners = { message: [], installed: [], clicked: [] };
 /** Tab-strip state for the SURFACE_ROOM checks. */
-const tabState = { tabs: [], groups: new Map(), nextGroupId: 100 };
+const tabState = { tabs: [], groups: new Map(), nextGroupId: 100, getCalls: 0 };
 
 globalThis.chrome = {
   runtime: {
@@ -74,6 +74,7 @@ globalThis.chrome = {
   tabGroups: {
     TAB_GROUP_ID_NONE: -1,
     async get(id) {
+      tabState.getCalls = (tabState.getCalls ?? 0) + 1;
       const g = tabState.groups.get(id);
       if (!g) throw new Error("no such group");
       return g;
@@ -356,8 +357,34 @@ const forgedKey = await surface("mo:os surface cache - pwned", 7);
 assert(forgedKey?.type === "ERROR", `a non-conforming key is refused (${forgedKey?.error})`);
 const noWindow = await surface("z440-primary", null);
 assert(
-  noWindow?.type === "ERROR" && /no window/.test(noWindow.error),
-  "a sender with no tab (the docked side panel) is a clean no-op, not a guess",
+  noWindow?.type === "SURFACE_ROOM_SKIPPED" && /not a tab/.test(noWindow.reason),
+  "a sender with no tab (the docked side panel) answers SKIPPED, not ERROR",
+);
+// Case-sensitive by contract: the documented form is lowercase, and accepting a variant
+// would give one room two colours.
+const upper = await surface("Z440-Primary", 7);
+assert(upper?.type === "ERROR", `an upper-case key is refused (${upper?.error})`);
+
+// One tabGroups.get per DISTINCT group, not per tab: put three tabs in one foreign group
+// and assert the lookup count.
+resetTabs();
+tabState.tabs = [
+  { id: 20, windowId: 9, groupId: 77, pinned: false },
+  { id: 21, windowId: 9, groupId: 77, pinned: false },
+  { id: 22, windowId: 9, groupId: 77, pinned: false },
+  { id: 23, windowId: 9, groupId: NONE, pinned: false },
+];
+tabState.groups = new Map([[77, { id: 77, title: "someone-elses", color: "red", windowId: 9 }]]);
+tabState.getCalls = 0;
+const okDedupe = await surface("z440-lola", 9);
+assert(okDedupe?.type === "SURFACE_ROOM_OK", "handshake works alongside a foreign group");
+assert(
+  tabState.getCalls === 1,
+  `tabGroups.get was called once per distinct group, not per tab (${tabState.getCalls} call(s) for 3 tabs)`,
+);
+assert(
+  tabState.tabs.filter((t) => t.groupId === 77).length === 3,
+  "the foreign group kept all three of its tabs",
 );
 
 console.log(`\nPASS: ${PASS} assertions against the SHIPPED worker (dist/worker.js).`);

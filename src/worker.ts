@@ -78,7 +78,10 @@ async function withTrustedAccess(
  * can be forged by a web page. Only `tabGroups` is required (for the group title/color);
  * `tabs.query`/`tabs.group` themselves need no permission.
  */
-const SURFACE_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/i;
+// Case-SENSITIVE on purpose: the documented form is lowercase, every launcher key is
+// lowercase, and an /i flag would both contradict the docs and hash `Z440-Primary` to a
+// different colour than `z440-primary` (Copilot #24).
+const SURFACE_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 const GROUP_COLORS: chrome.tabGroups.ColorEnum[] = [
   "blue",
@@ -114,19 +117,26 @@ async function nameSurfaceRoom(
   const tabs = await chrome.tabs.query({ windowId });
   const NONE = chrome.tabGroups.TAB_GROUP_ID_NONE;
 
-  // An existing mo:os group in this window is the one we extend.
+  // An existing mo:os group in this window is the one we extend. Ask about each DISTINCT
+  // group once — a window with twelve tabs in one group needs one lookup, not twelve
+  // (Copilot #24).
   let target: number = NONE;
-  for (const t of tabs) {
-    if (typeof t.groupId === "number" && t.groupId !== NONE) {
-      try {
-        const g = await chrome.tabGroups.get(t.groupId);
-        if (g.title === title) {
-          target = t.groupId;
-          break;
-        }
-      } catch {
-        // a group that vanished mid-read is not an error worth failing the handshake for
+  const distinctGroups = [
+    ...new Set(
+      tabs
+        .map((t) => t.groupId)
+        .filter((id): id is number => typeof id === "number" && id !== NONE),
+    ),
+  ];
+  for (const id of distinctGroups) {
+    try {
+      const g = await chrome.tabGroups.get(id);
+      if (g.title === title) {
+        target = id;
+        break;
       }
+    } catch {
+      // a group that vanished mid-read is not worth failing the handshake for
     }
   }
 
@@ -223,9 +233,13 @@ chrome.runtime.onMessage.addListener(
         return true;
       }
       if (typeof windowId !== "number") {
-        // The docked side panel is not a tab and has no window to group — not an error,
-        // just nothing to do (only the launcher's TAB copy carries ?surface=).
-        sendResponse({ type: "ERROR", error: "sender has no window (not a tab)" });
+        // The docked side panel is not a tab and so has no window to group. That is a
+        // benign skip, and it answers on its OWN channel so a caller can tell it from a
+        // real failure (Copilot #24) — only the launcher's TAB copy carries ?surface=.
+        sendResponse({
+          type: "SURFACE_ROOM_SKIPPED",
+          reason: "sender is not a tab (no window to group)",
+        });
         return true;
       }
       nameSurfaceRoom(windowId, key)
