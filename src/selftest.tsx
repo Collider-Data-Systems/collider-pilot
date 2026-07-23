@@ -29,7 +29,8 @@ import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { FrameRequest, HgFrame, PilotResponse } from "./mcp/types";
 import { DEFAULT_ENGINE_URL } from "./mcp/transform.js";
-import { loadScratch, saveScratch } from "./state/scratch";
+import { loadScratch, saveScratch, saveSelectedUrn, subscribeScratch } from "./state/scratch";
+import { runBrowserAct } from "./tools/browser-acts";
 import { loadInlineGraphPref, saveInlineGraphPref } from "./state/prefs";
 import { mountVerdict } from "./ui/mount-guard";
 import "./sidepanel.css";
@@ -252,6 +253,48 @@ async function runChecks(push: (r: Row) => void): Promise<void> {
     const mid = await loadScratch();
     await saveScratch({ selectedUrn: before.selectedUrn, frame: before.frame ?? null });
     return { ok: mid.selectedUrn === probe, detail: `wrote+read ${mid.selectedUrn === probe ? "ok" : "MISMATCH"}, restored` };
+  });
+
+  await extCheck("scratch MIRROR: a write reaches the other realm's subscriber", async () => {
+    const before = await loadScratch();
+    const probe = `urn:moos:selftest:mirror-${Date.now()}`;
+    const seen: (string | null)[] = [];
+    const unsub = subscribeScratch((v) => seen.push(v.selectedUrn));
+    await saveScratch({ selectedUrn: probe, frame: before.frame ?? null });
+    await new Promise((r) => setTimeout(r, 250)); // storage.onChanged is async
+    unsub();
+    await saveScratch({ selectedUrn: before.selectedUrn, frame: before.frame ?? null });
+    return {
+      ok: seen.includes(probe),
+      detail: seen.includes(probe)
+        ? `subscriber saw the write (${seen.length} event(s)) — this is the panel ⇄ PiP channel`
+        : `subscriber never fired (${seen.length} event(s)) — the PiP mirror would not follow`,
+    };
+  });
+
+  await extCheck("scratch: a mirror-side selection write PRESERVES the frame", async () => {
+    const before = await loadScratch();
+    if (!before.frame) return { ok: true, skipped: true, detail: "no frame in scratch yet — open the panel first" };
+    const nodeCount = before.frame.nodes.length;
+    const probe = `urn:moos:selftest:sel-${Date.now()}`;
+    await saveSelectedUrn(probe); // the PiP → panel direction
+    const mid = await loadScratch();
+    await saveScratch({ selectedUrn: before.selectedUrn, frame: before.frame });
+    return {
+      ok: mid.selectedUrn === probe && mid.frame?.nodes.length === nodeCount,
+      detail: `selection ${mid.selectedUrn === probe ? "written" : "LOST"} · frame ${mid.frame?.nodes.length === nodeCount ? `preserved (${nodeCount} nodes)` : "CLOBBERED"}`,
+    };
+  });
+
+  await check("browser act refuses an unknown name and a missing arg", async () => {
+    // Deliberately NOT exercising the clipboard write: it needs a user gesture and would
+    // overwrite the user's clipboard. These are the refusal paths, which need neither.
+    const unknown = await runBrowserAct({ name: "definitely_not_an_act", args: {} });
+    const missing = await runBrowserAct({ name: "copy_urn_to_clipboard", args: {} });
+    return {
+      ok: !unknown.ok && !missing.ok,
+      detail: `unknown → "${unknown.message}" · missing arg → "${missing.message}"`,
+    };
   });
 
   await extCheck("chrome.storage.local pref round-trip", async () => {
