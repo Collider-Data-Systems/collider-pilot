@@ -1653,8 +1653,11 @@ body {
   font-size: 9px;
 }
 .log-subject {
+  /* The subject IS the entry — what changed. It gets priority over the actor and the
+     clock: measured at a 360px side panel it was being squeezed to 62px ("sam.stein…")
+     while the actor, almost always the same engine, held 74px. */
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-secondary);
@@ -1690,12 +1693,104 @@ body {
   font-style: italic;
   font-size: 10px;
 }
+/* At true side-panel widths the actor is the first thing to go: it is nearly always the
+   same engine, and provenance lives on the strip + audit drawer, so the subject — what
+   actually changed — keeps the room instead.
+   VIEWPORT query on purpose: every surface that renders this feed IS its own viewport (the
+   docked side panel, the pop-out window), so the panel's width and the viewport width are
+   the same number there. It therefore does NOT fire in `preview-live.html`, which frames
+   the app in a 380px `#panel` div inside a full-size window — a known harness artifact, not
+   a user-visible state. Test it by sizing the VIEWPORT, not the frame. A container query
+   was tried and rejected: it matched at every width, and adding flex-wrap as a fallback
+   turned each dense log entry into a 3-line block. */
+@media (max-width: 430px) {
+  .log-actor {
+    display: none;
+  }
+}
 .log-feed::-webkit-scrollbar {
   width: 6px;
 }
 .log-feed::-webkit-scrollbar-thumb {
   background: var(--border-light);
   border-radius: 3px;
+}
+
+/* Condensed affordance pack: one line, details on demand. */
+.aff-details > .aff-summary {
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.aff-details[open] > .aff-summary {
+  margin-bottom: 6px;
+}
+.aff-summary::-webkit-details-marker {
+  display: none;
+}
+.aff-summary::before {
+  content: "▸ ";
+  color: var(--text-muted);
+}
+.aff-details[open] > .aff-summary::before {
+  content: "▾ ";
+}
+.aff-actor {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Collapsible node inspector (side panel only — the mirrors keep it open). */
+.inspector-collapsed {
+  flex: 0 0 auto;
+  min-height: 0;
+  padding: 6px 14px;
+  overflow: visible;
+}
+.insp-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.insp-toggle:hover {
+  color: var(--text-primary);
+}
+.insp-toggle-node {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.insp-toggle-open {
+  flex: 0 0 auto;
+  width: auto;
+  margin-bottom: 2px;
 }
 
 /* Log feed: the whole-engine honesty note above the entries. */
@@ -1733,6 +1828,105 @@ body {
   cursor: not-allowed;
 }
 
+/* ==========================================================================
+   In-extension integration self-test page (selftest.html)
+   ========================================================================== */
+.selftest {
+  padding: 18px 22px;
+  max-width: 1100px;
+}
+.selftest-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.selftest-head h1 {
+  font-size: 17px;
+  font-weight: 600;
+}
+.selftest-verdict {
+  display: inline-block;
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  font-family: var(--mono);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-bottom: 14px;
+}
+.selftest-verdict.pass {
+  background: rgba(34, 197, 94, 0.16);
+  color: var(--success);
+  border: 1px solid var(--success);
+}
+.selftest-verdict.fail {
+  background: rgba(239, 68, 68, 0.16);
+  color: var(--error);
+  border: 1px solid var(--error);
+}
+.selftest-verdict.busy {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  font-size: 20px;
+}
+.selftest-skipped {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.selftest-rows {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.selftest-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  font-size: 13px;
+}
+.selftest-row.ok .selftest-mark {
+  color: var(--success);
+}
+.selftest-row.bad {
+  background: rgba(239, 68, 68, 0.1);
+}
+.selftest-row.bad .selftest-mark {
+  color: var(--error);
+}
+.selftest-row.skip .selftest-mark {
+  color: var(--text-muted);
+}
+.selftest-mark {
+  flex: 0 0 46px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+.selftest-name {
+  flex: 0 0 340px;
+  color: var(--text-primary);
+}
+.selftest-detail {
+  flex: 1 1 auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.selftest-note {
+  margin-top: 16px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+  max-width: 720px;
+}
+
 /* Extension-page mount guard (embedded refusal / script-opened connect gate). */
 .mount-guard {
   margin: 24px auto;
@@ -1764,6 +1958,12 @@ body {
 }
 .mount-guard-btn:hover {
   background: var(--accent-hover);
+}
+
+/* Secondary word in the view_filter disclosure summary ("· advanced"). */
+.gc-filter-sub {
+  color: var(--text-muted);
+  font-weight: 400;
 }
 
 /* view_filter active-state echo in the (now open-by-default) summary. */

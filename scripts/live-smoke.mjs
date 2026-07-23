@@ -514,6 +514,10 @@ async function main() {
   }
   console.log("\nPASS: live read produced a non-zero frame.");
 
+  // t264 axes over the LIVE fold read through the REAL MCP transport (not a fixture):
+  // this is the coverage the extension's own self-test provides in the browser realm.
+  liveAxisChecks(fold, health);
+
   // Access law over the SAME live fold (+ a synthetic fallback fixture).
   accessChecks(fold);
 
@@ -522,6 +526,88 @@ async function main() {
 
   // t264 slice axes: ports filter · N-hop scope · the ["*"] all-types sentinel.
   sliceAxisChecks();
+}
+
+/**
+ * t264 axes against the LIVE fold, through the same selectFrame the adapter uses. The
+ * synthetic chain below proves the LAW; this proves the law holds on the real graph — the
+ * default slice is a superset of the legacy one, ports actually narrow live relations,
+ * hops actually widen a live focus, and the ["*"] sentinel reaches the whole fold.
+ * @param {any} fold
+ * @param {any} health
+ */
+function liveAxisChecks(fold, health) {
+  console.log("\n=== t264 axes on the LIVE fold (real MCP read) ===");
+  const sel = (view_filter) =>
+    selectFrame(fold, { healthz: health, request: view_filter ? { view_filter } : undefined });
+
+  // (a) legacy default vs the t264 content lens: the new default must LOSE nothing.
+  const legacy = sel(undefined);
+  const content = sel({
+    types: ["knowledge_item", "derivation", "program", "grammar_fragment", "purpose", "session", "domain_tag"],
+    lens: "content",
+  });
+  const legacyNodes = new Set(legacy.nodes.map((n) => n.urn));
+  const contentNodes = new Set(content.nodes.map((n) => n.urn));
+  const lostNodes = [...legacyNodes].filter((u) => !contentNodes.has(u));
+  const legacyRels = new Set(legacy.relations.map((r) => r.urn));
+  const lostRels = [...legacyRels].filter((u) => !new Set(content.relations.map((r) => r.urn)).has(u));
+  console.log(`  legacy default ${legacy.nodes.length}n/${legacy.relations.length}r -> content lens ${content.nodes.length}n/${content.relations.length}r`);
+  assert(lostNodes.length === 0, `content lens loses no legacy node (lost ${lostNodes.length})`);
+  assert(lostRels.length === 0, `content lens loses no legacy relation (lost ${lostRels.length})`);
+
+  // (b) ["*"] reaches the whole permitted fold.
+  const all = sel({ types: ["*"] });
+  const allTypes = new Set(all.nodes.map((n) => n.type_id));
+  assert(
+    all.nodes.length > content.nodes.length && allTypes.size > 7,
+    `['*'] widens to the whole fold (${all.nodes.length} nodes, ${allTypes.size} types)`,
+  );
+
+  // (c) ports narrows LIVE relations, and every survivor carries the asked-for label.
+  const liveLabels = [...new Set(all.relations.map((r) => r.label))];
+  const probe = liveLabels.includes("member-of") ? "member-of" : liveLabels[0];
+  const narrowed = sel({ types: ["*"], ports: [probe] });
+  assert(
+    narrowed.relations.length > 0 && narrowed.relations.every((r) => r.label === probe),
+    `ports ['${probe}'] narrows live relations (${narrowed.relations.length} kept, all '${probe}')`,
+  );
+  assert(
+    narrowed.relations.length < all.relations.length,
+    `ports actually narrows (${narrowed.relations.length} < ${all.relations.length})`,
+  );
+
+  // (d) every port the drawer offers must be REACHABLE, i.e. the vocabulary closes over
+  // the live label set. This is the check that caught `guards` / `participates` missing.
+  const VOCAB = new Set([
+    "owns", "member-of", "governs", "delegates-to",
+    "opens-on", "has-occupant", "hosts", "routes-to", "spans", "realizes", "presents-as", "participates",
+    "provides-kb", "classifies", "pins-urn", "cites", "depends-on", "composes", "produces",
+    "causes", "triggers", "has-purpose", "curates", "scheduled-after", "focus", "guards",
+  ]);
+  const unreachable = liveLabels.filter((l) => !VOCAB.has(l));
+  assert(
+    unreachable.length === 0,
+    `every live relation label is in the port vocabulary (unreachable: ${JSON.stringify(unreachable)})`,
+  );
+
+  // (e) hops widen a LIVE focus monotonically.
+  const manifold = all.nodes.find((n) => n.type_id === "manifold");
+  if (manifold) {
+    const counts = [1, 2, 3].map(
+      (h) => sel({ types: ["*"], scope_urns: [manifold.urn], scope_hops: h }).nodes.length,
+    );
+    assert(
+      counts[0] > 0 && counts[1] >= counts[0] && counts[2] >= counts[1],
+      `hops widen the live focus monotonically on ${manifold.urn.split(":").pop()}: ${counts.join(" -> ")}`,
+    );
+  } else {
+    console.log("  (no manifold node in this fold — hops-on-live-focus skipped)");
+  }
+
+  // (f) the lens name reaches provenance verbatim (the audit drawer reads it).
+  const echoed = sel({ types: ["*"], lens: "everything" });
+  assert(echoed.provenance.view_filter.lens === "everything", "provenance echoes the lens verbatim");
 }
 
 /**

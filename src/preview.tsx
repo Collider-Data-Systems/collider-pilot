@@ -231,6 +231,7 @@ function Preview() {
               frame={frame}
               node={selectedNode}
               onSelect={setSelectedUrn}
+              collapsible
             />
             <ErrorBoundary>
               {/* liveTools=null ⇒ the served-page harness projects the labelled MOCK pack. */}

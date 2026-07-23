@@ -651,8 +651,12 @@ export function GraphControls({
         open={advancedOpen}
         onToggle={(e) => setAdvancedOpen((e.target as HTMLDetailsElement).open)}
       >
-        <summary className="gc-filter-summary">
-          advanced <span className="gc-filter-state">{stateEcho}</span>
+        <summary
+          className="gc-filter-summary"
+          title="The raw view_filter axes. Every control in this block — posture, lens, focus, hops, t — composes the view_filter this frame was read under; the audit drawer echoes it verbatim."
+        >
+          view_filter <span className="gc-filter-sub">· advanced</span>{" "}
+          <span className="gc-filter-state">{stateEcho}</span>
         </summary>
         <div className="gc-filter-body">
           <div className="gc-adv-note">

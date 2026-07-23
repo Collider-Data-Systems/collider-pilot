@@ -19,7 +19,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["sidepanel.html", "pip.html"],
+      "resources": ["sidepanel.html", "pip.html", "selftest.html"],
       "matches": ["http://localhost/*"]
     }
   ],

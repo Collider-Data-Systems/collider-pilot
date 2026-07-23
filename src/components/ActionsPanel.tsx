@@ -436,29 +436,38 @@ export function ActionsPanel({
   return (
     <section className="actions" aria-label="Actions">
       <div className="actions-head">
-        <span className="actions-title">Actions</span>
+        <span
+          className="actions-title"
+          title="Actions run in the side panel only — the PiP / pop-out / full-tab mirrors stay read-only / observe."
+        >
+          Actions
+        </span>
         <span className={`actions-src ${pack.source}`}>{pack.source.toUpperCase()}</span>
       </div>
 
-      <div className="actions-note pip-note">
-        Actions run in the side panel only — the PiP mirror stays read-only / observe.
-      </div>
-
-      {/* Affordance pack: actor / workspace / purpose projection (criterion 1). */}
-      <div className="actions-block">
-        <div className="actions-block-title">affordance pack</div>
+      {/* Affordance pack (criterion 1). t264 noise cut: ONE line — the actor, which is the
+          only field not already on the posture strip. workspace/purpose live on the strip
+          and in its audit drawer, so they moved into this disclosure instead of occupying
+          three permanent urn rows. */}
+      <details className="actions-block aff-details">
+        <summary className="actions-block-title aff-summary">
+          affordance pack
+          <span className="aff-actor" title={actor}>
+            {actor.split(":").pop()}
+          </span>
+        </summary>
         <div className="aff-meta">
           <div><span className="aff-k">actor</span> <code>{actor}</code></div>
           <div><span className="aff-k">workspace</span> <code>{workspace}</code></div>
           <div><span className="aff-k">purpose</span> <code>{purpose}</code></div>
           <div className="aff-label">{pack.label}</div>
-          {affordanceError && (
-            <div className="aff-warn">
-              tools/list unavailable ({affordanceError}) — using the mock pack.
-            </div>
-          )}
         </div>
-      </div>
+      </details>
+      {affordanceError && (
+        <div className="aff-warn">
+          tools/list unavailable ({affordanceError}) — using the mock pack.
+        </div>
+      )}
 
       {/* Phase 7: the LLM request box. The provider/model/bearer live in Settings (t263
           item 4); this box only consumes them. Type a request → the model proposes ONE
