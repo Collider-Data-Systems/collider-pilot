@@ -104,6 +104,42 @@ async function requestTools(): Promise<PilotResponse> {
   } as PilotRequest)) as PilotResponse;
 }
 
+/**
+ * SURFACE ROOM handshake (see the worker's nameSurfaceRoom). The Z440 launcher opens this
+ * page as `sidepanel.html?surface=<key>` inside each generated surface window; we hand the
+ * key to the worker, which titles that window's tab group. Fire-and-forget: a failure is
+ * logged and changes nothing about the seat.
+ *
+ * The key travels launcher → our own URL → worker, so no tab title is ever read and the
+ * `tabs` permission is not needed. Absent `?surface=` (the docked panel, the pop-out, the
+ * full tab) this is a no-op.
+ */
+function announceSurfaceRoom(): void {
+  try {
+    const key = new URLSearchParams(window.location.search).get("surface");
+    if (!key) return;
+    void chrome.runtime
+      .sendMessage({ type: "SURFACE_ROOM", surfaceKey: key } as PilotRequest)
+      .then((res: PilotResponse) => {
+        if (res?.type === "SURFACE_ROOM_OK") {
+          console.log(`[pilot] surface room "${res.title}" (${res.grouped} tab(s) grouped)`);
+        } else if (res?.type === "SURFACE_ROOM_SKIPPED") {
+          console.log(`[pilot] surface room not applicable: ${res.reason}`);
+        } else if (res?.type === "ERROR") {
+          console.log(`[pilot] surface room failed: ${res.error}`);
+        }
+      })
+      // The try/catch below cannot see an async rejection (a torn-down worker, a closed
+      // channel), and an unhandled rejection would surface as console noise on a
+      // fire-and-forget nicety (Copilot #24).
+      .catch((err: unknown) => {
+        console.log("[pilot] surface-room handshake did not complete:", err);
+      });
+  } catch (err) {
+    console.log("[pilot] surface-room handshake unavailable:", err);
+  }
+}
+
 /** Feature-detect the full-tab route (chrome.tabs.create needs no extra permission). */
 function isFullTabSupported(): boolean {
   try {
@@ -251,6 +287,8 @@ function SidePanel() {
       frameRequestRef.current = initialReq;
       await loadFrame(initialReq);
       void loadTools();
+      // If the launcher opened us with ?surface=<key>, title that window's tab group.
+      announceSurfaceRoom();
     })();
     return () => {
       cancelled = true;

@@ -229,8 +229,27 @@ export interface ToolDiscoveryAdapter {
 /** Worker <-> side-panel message envelope (typed, discriminated, request-scoped). */
 export type PilotRequest =
   | { type: "GET_FRAME"; request?: FrameRequest }
-  | { type: "LIST_TOOLS" };
+  | { type: "LIST_TOOLS" }
+  /**
+   * SURFACE ROOM handshake. A generated Z440 surface window opens this extension's own
+   * `sidepanel.html?surface=<key>` as one of its tabs; that page reports the key here and
+   * the worker titles the window's tab group `mo:os - <key>`.
+   *
+   * The key arrives from the LAUNCHER, through the extension page's own URL — it is never
+   * read off a tab title, so no page can forge it and the `tabs` permission (which Chrome
+   * shows the user as "Read your browsing history") is not needed. The worker takes the
+   * window from `sender.tab.windowId`, which is populated for extension pages without any
+   * permission at all.
+   */
+  | { type: "SURFACE_ROOM"; surfaceKey: string };
 export type PilotResponse =
   | { type: "FRAME"; frame: HgFrame }
   | { type: "TOOLS"; tools: RawMcpTool[] }
+  | { type: "SURFACE_ROOM_OK"; groupId: number; grouped: number; title: string }
+  /**
+   * The handshake had nothing to do — e.g. the sender is the docked side panel, which is
+   * not a tab and so has no window to group. A distinct response, NOT `ERROR`: a caller
+   * must be able to tell a benign skip from a real failure (Copilot #24).
+   */
+  | { type: "SURFACE_ROOM_SKIPPED"; reason: string }
   | { type: "ERROR"; error: string };
