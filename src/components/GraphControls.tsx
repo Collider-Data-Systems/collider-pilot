@@ -49,7 +49,7 @@ export const LENSES: Lens[] = [
     types: ["user", "group", "agent", "role", "manifold"],
     ports: ["member-of", "governs", "delegates-to", "owns", "spans", "presents-as"],
     title:
-      "The A1 identity poset: who is who, who belongs to what, who governs whom (user · group · agent · role · manifold + member-of / governs / delegates-to / owns / spans).",
+      "The A1 identity poset: who is who, who belongs to what, who governs whom (user · group · agent · role · manifold + member-of / governs / owns / spans / presents-as). What those relations point AT comes along even when its type is not listed here — so `owns` brings the owned workstation and channel in with it.",
   },
   {
     id: "topology",
@@ -76,7 +76,7 @@ export const LENSES: Lens[] = [
       "participates",
     ],
     title:
-      "Machines, workspaces, channels and how they connect (session · kernel · workstation · router · channel · manifold + opens-on / has-occupant / hosts / routes-to / spans).",
+      "Machines, workspaces, channels and how they connect (session · kernel · workstation · router · channel · manifold + opens-on / has-occupant / hosts / routes-to / spans / composes). What those relations point AT comes along even when its type is not listed here — so `routes-to` brings the shard rules the router routes through.",
   },
   {
     id: "content",

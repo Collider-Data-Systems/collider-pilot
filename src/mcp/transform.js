@@ -296,6 +296,29 @@ export function applyViewFilter(nodes, relations, viewFilter, tPinned, accessKee
     ? relations
     : relations.filter((r) => portSet.has(r.label));
 
+  // t264 relation closure: when a PORT filter is active, a retained relation carries its
+  // counterparty node into the frame even if that node's type is not in the type list.
+  //
+  // Without this, a lens silently cannot render ports it explicitly declares, because a
+  // relation survived only when BOTH endpoint types were retained. Measured on the live
+  // Z440 fold (294n/223r): the topology lens rendered `routes-to` 0 of 43 times — the whole
+  // routing fabric is `router -> shard_rule -> kernel` and `shard_rule` is not a topology
+  // type — plus `composes` 0/9 and `participates` 0/1; the identity lens rendered `owns`
+  // 0 of 17 and `presents-as` 0 of 5. The lens tooltips name those ports to the user.
+  //
+  // Scoped deliberately to the port-filtered case: with `ports: []` (the content and
+  // everything lenses) every relation is visible, so a closure would pull in every node
+  // any relation touches and dissolve the type slice. Those two lenses are byte-identical
+  // in behavior. The access gate and the t bound still compose AFTER this, below — a
+  // counterparty is offered to the gate, never smuggled past it.
+  const closureUrns = new Set();
+  if (!allPorts) {
+    for (const r of visibleRelations) {
+      closureUrns.add(r.source_urn);
+      closureUrns.add(r.target_urn);
+    }
+  }
+
   const scope = viewFilter.scope_urns.filter((u) => nodeByUrn.has(u));
 
   /** @type {Set<string>} */
@@ -322,7 +345,7 @@ export function applyViewFilter(nodes, relations, viewFilter, tPinned, accessKee
   }
 
   const keptNodes = nodes.filter((n) => {
-    if (!allTypes && !typeSet.has(n.type_id)) return false;
+    if (!allTypes && !typeSet.has(n.type_id) && !closureUrns.has(n.urn)) return false;
     if (!inScope.has(n.urn)) return false;
     if (accessKeep && !accessKeep.has(n.urn)) return false; // access gate (composed last)
     if (tPinned) {

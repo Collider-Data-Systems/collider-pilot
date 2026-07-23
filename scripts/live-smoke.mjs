@@ -24,6 +24,8 @@
  * Exit code 0 iff a live frame with a NON-ZERO node count was read; 1 otherwise.
  */
 
+import { readFileSync } from "node:fs";
+
 import { createStreamableHttpClient } from "../src/mcp/streamable-http-client.js";
 import {
   selectFrame,
@@ -660,6 +662,58 @@ function liveAxisChecks(fold, health) {
   // (f) the lens name reaches provenance verbatim (the audit drawer reads it).
   const echoed = sel({ types: ["*"], lens: "everything" });
   assert(echoed.provenance.view_filter.lens === "everything", "provenance echoes the lens verbatim");
+
+  // (g) NO LENS MAY DECLARE A PORT IT CANNOT RENDER.
+  //
+  // A relation survives only when both endpoints survive, so a lens whose type list omits
+  // an intermediate node type silently drops a port its own tooltip advertises. Measured
+  // before the relation closure landed: the topology lens rendered `routes-to` 0 of 43
+  // times (the fabric is `router -> shard_rule -> kernel`; `shard_rule` is not a topology
+  // type), `composes` 0/9, `participates` 0/1; the identity lens rendered `owns` 0 of 17
+  // and `presents-as` 0 of 5. Nothing failed — the frame just quietly lacked them.
+  //
+  // The lens table is PARSED FROM GraphControls.tsx rather than mirrored here. A hand copy
+  // is what drifted in `rank()` (see #31) and a guard that copies what it guards proves
+  // nothing once the source moves. Ports with zero live relations are skipped, not failed:
+  // `delegates-to` and `realizes` are ontology-valid and simply unused in this fold.
+  for (const lens of parseLensTable()) {
+    const slice = sel({ types: lens.types, ports: lens.ports, lens: lens.id });
+    const rendered = new Set(slice.relations.map((r) => r.label));
+    const dead = lens.ports.filter(
+      (p) => liveLabels.includes(p) && !rendered.has(p),
+    );
+    assert(
+      dead.length === 0,
+      `lens '${lens.id}' renders every port it declares and the fold has ` +
+        `(${lens.ports.filter((p) => liveLabels.includes(p)).length} live-declared, ` +
+        `${slice.nodes.length}n/${slice.relations.length}r${dead.length ? `, DEAD: ${dead.join(", ")}` : ""})`,
+    );
+  }
+}
+
+/**
+ * Read the lens presets out of `src/components/GraphControls.tsx`.
+ *
+ * That file is TypeScript, so it cannot be imported into this plain-.mjs harness (same
+ * constraint as `src/ui/node-search.ts`). Parsing the source is still strictly better than
+ * restating the table: if a lens gains a port or loses a type, check (g) sees the change
+ * on the next run instead of testing a stale duplicate that agrees only with itself.
+ */
+function parseLensTable() {
+  const src = readFileSync(new URL("../src/components/GraphControls.tsx", import.meta.url), "utf8");
+  const block = src.match(/export const LENSES: Lens\[\] = \[([\s\S]*?)\n\];/);
+  if (!block) throw new Error("live-smoke: could not locate the LENSES table in GraphControls.tsx");
+  const list = [];
+  const arrayOf = (body, key) => {
+    const m = body.match(new RegExp(`${key}:\\s*\\[([\\s\\S]*?)\\]`));
+    if (!m) return [];
+    return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
+  };
+  for (const m of block[1].matchAll(/id:\s*"([^"]+)"([\s\S]*?)(?=\n {4}id:\s*"|$)/g)) {
+    list.push({ id: m[1], types: arrayOf(m[2], "types"), ports: arrayOf(m[2], "ports") });
+  }
+  if (list.length === 0) throw new Error("live-smoke: parsed zero lenses from GraphControls.tsx");
+  return list;
 }
 
 /**
