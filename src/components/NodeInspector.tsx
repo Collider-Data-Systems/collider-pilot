@@ -106,8 +106,17 @@ export function NodeInspector({
       </div>
 
       <div className="insp-section">
-        <div className="insp-section-title">
-          relations ({incident.length})
+        <div
+          className="insp-section-title"
+          title={
+            "Incident relations PRESENT IN THIS SLICE. A relation renders only when both of " +
+            "its endpoints survive the view_filter, so narrowing types or ports can hide some: " +
+            "e.g. the manifold has 9 spans in the fold but shows 7 under the topology lens, " +
+            "because the purpose and group it spans are not among that lens's types. Widen the " +
+            "lens (or use `everything`) to see the node's full incidence."
+          }
+        >
+          relations in slice ({incident.length})
         </div>
         {incident.length === 0 ? (
           <div className="insp-empty">no incident relations</div>
