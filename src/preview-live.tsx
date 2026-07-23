@@ -189,6 +189,14 @@ function PreviewLive() {
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The last read FAILED and has not yet been replaced by a good one. Deliberately NOT
+   * derived from `status`: a retry sets status back to "loading", which would clear the
+   * STALE posture and re-assert LIVE while the refresh is still in flight and the OLD
+   * frame is still on screen — claiming currency at exactly the moment we do not have it
+   * (Copilot #26). It clears only when a frame actually lands.
+   */
+  const [readFailed, setReadFailed] = useState(false);
 
   const [layout, setLayout] = useState<GraphLayoutName>(DEFAULT_GRAPH_LAYOUT);
   const [search, setSearch] = useState("");
@@ -226,9 +234,11 @@ function PreviewLive() {
         prev && safe.nodes.some((n) => n.urn === prev) ? prev : null,
       );
       setStatus("ready");
+      setReadFailed(false); // a good frame landed — the posture is current again
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : String(err));
+      setReadFailed(true);
     }
   }, []);
 
@@ -371,7 +381,7 @@ function PreviewLive() {
   );
 
   const isLive = frame != null && frame.provenance?.mock === false;
-  const stale = status === "error" && frame != null;
+  const stale = readFailed && frame != null;
   const reloadForStream = useCallback(() => void loadFrame(), [loadFrame]);
   const { status: streamStatus, pulseKey } = useFoldStream({
     active: isLive,
