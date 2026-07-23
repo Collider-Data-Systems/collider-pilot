@@ -1653,8 +1653,11 @@ body {
   font-size: 9px;
 }
 .log-subject {
+  /* The subject IS the entry — what changed. It gets priority over the actor and the
+     clock: measured at a 360px side panel it was being squeezed to 62px ("sam.stein…")
+     while the actor, almost always the same engine, held 74px. */
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-secondary);
@@ -1689,6 +1692,21 @@ body {
   color: var(--text-muted);
   font-style: italic;
   font-size: 10px;
+}
+/* At true side-panel widths the actor is the first thing to go: it is nearly always the
+   same engine, and provenance lives on the strip + audit drawer, so the subject — what
+   actually changed — keeps the room instead.
+   VIEWPORT query on purpose: every surface that renders this feed IS its own viewport (the
+   docked side panel, the pop-out window), so the panel's width and the viewport width are
+   the same number there. It therefore does NOT fire in `preview-live.html`, which frames
+   the app in a 380px `#panel` div inside a full-size window — a known harness artifact, not
+   a user-visible state. Test it by sizing the VIEWPORT, not the frame. A container query
+   was tried and rejected: it matched at every width, and adding flex-wrap as a fallback
+   turned each dense log entry into a 3-line block. */
+@media (max-width: 430px) {
+  .log-actor {
+    display: none;
+  }
 }
 .log-feed::-webkit-scrollbar {
   width: 6px;
