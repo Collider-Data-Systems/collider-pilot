@@ -514,6 +514,9 @@ async function main() {
   }
   console.log("\nPASS: live read produced a non-zero frame.");
 
+  // t264 search ranking on the LIVE fold: the obvious query must reach the obvious node.
+  searchRankingChecks(fold, health);
+
   // t264 axes over the LIVE fold read through the REAL MCP transport (not a fixture):
   // this is the coverage the extension's own self-test provides in the browser realm.
   liveAxisChecks(fold, health);
@@ -526,6 +529,55 @@ async function main() {
 
   // t264 slice axes: ports filter · N-hop scope · the ["*"] all-types sentinel.
   sliceAxisChecks();
+}
+
+/**
+ * t264 search ranking, on the LIVE fold. Taking the first fold-order match made searching
+ * an APPLIED PROGRAM's name select a governance_proposal that merely mentioned it — and
+ * inspecting applied programs is a first-class use of this panel. Mirrors the ranking in
+ * src/ui/node-search.ts (TS, so not importable here) and asserts the outcome that matters.
+ * @param {any} fold
+ * @param {any} health
+ */
+function searchRankingChecks(fold, health) {
+  console.log("\n=== t264 search ranking (live fold) ===");
+  const frame = selectFrame(fold, { healthz: health, request: { view_filter: { types: ["*"] } } });
+  const tail = (u) => u.split(":").pop();
+  const stripOwner = (t) => (t.indexOf(".") > 0 ? t.slice(t.indexOf(".") + 1) : t);
+  const rank = (n, q) => {
+    const urn = n.urn.toLowerCase(), t = tail(urn), l = (n.label || "").toLowerCase();
+    if (t === q || stripOwner(t) === q) return 0;
+    if (t.startsWith(q) || stripOwner(t).startsWith(q)) return 1;
+    if (urn.includes(q)) return 2;
+    if (l.startsWith(q)) return 3;
+    if (l.includes(q)) return 4;
+    return Infinity;
+  };
+  const best = (q) => frame.nodes
+    .map((n, i) => ({ n, r: rank(n, q), i }))
+    .filter((x) => x.r !== Infinity)
+    .sort((a, b) => a.r - b.r || a.i - b.i)[0];
+
+  // A program searched by its slug must select the PROGRAM.
+  const prog = frame.nodes.find((n) => n.type_id === "program");
+  if (prog) {
+    const slug = stripOwner(tail(prog.urn));
+    const hit = best(slug);
+    assert(
+      hit && hit.n.urn === prog.urn,
+      `program slug "${slug}" selects the program itself (got ${hit && hit.n.type_id} ${hit && tail(hit.n.urn)})`,
+    );
+  } else {
+    console.log("  (no program node in this fold - program ranking skipped)");
+  }
+
+  // An exact urn tail always wins, whatever else mentions it.
+  const sample = frame.nodes[Math.floor(frame.nodes.length / 2)];
+  const exact = best(tail(sample.urn).toLowerCase());
+  assert(exact && exact.n.urn === sample.urn, `exact urn tail wins for ${tail(sample.urn)}`);
+
+  // A miss is a miss.
+  assert(best("zzz-not-a-node-anywhere") === undefined, "a non-matching query ranks nothing");
 }
 
 /**

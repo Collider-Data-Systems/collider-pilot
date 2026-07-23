@@ -34,6 +34,7 @@ import {
   type SliceSpec,
 } from "./components/GraphControls";
 import { NodeInspector } from "./components/NodeInspector";
+import { searchNodes } from "./ui/node-search";
 import { ActionsPanel } from "./components/ActionsPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import {
@@ -102,19 +103,12 @@ function Preview() {
         return;
       }
       const nodes = Array.isArray(frame.nodes) ? frame.nodes : [];
-      const matches = nodes.filter(
-        (n) =>
-          n.urn.toLowerCase().includes(q) ||
-          (n.label ?? "").toLowerCase().includes(q),
-      );
-      if (matches.length === 0) {
-        setSearchHint("no match");
-        return;
-      }
-      setSearchHint(
-        matches.length === 1 ? "1 match" : `${matches.length} matches — first shown`,
-      );
-      const hit = matches[0];
+      // RANKED (t264): taking matches[0] in fold order made searching an applied program's
+      // name land on a governance_proposal that merely mentioned it. searchNodes prefers an
+      // exact/prefix urn-tail match and the hint names the selected node's TYPE.
+      const { hit, hint } = searchNodes(nodes, q);
+      setSearchHint(hint);
+      if (!hit) return;
       setSelectedUrn(hit.urn);
       setFocusUrn(hit.urn);
       setFocusSignal((s) => s + 1);
