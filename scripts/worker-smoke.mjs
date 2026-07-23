@@ -43,6 +43,8 @@ function assert(cond, msg) {
 
 const storage = new Map();
 const listeners = { message: [], installed: [], clicked: [] };
+/** Tab-strip state for the SURFACE_ROOM checks. */
+const tabState = { tabs: [], groups: new Map(), nextGroupId: 100 };
 
 globalThis.chrome = {
   runtime: {
@@ -50,6 +52,39 @@ globalThis.chrome = {
     onInstalled: { addListener: (fn) => listeners.installed.push(fn) },
   },
   action: { onClicked: { addListener: (fn) => listeners.clicked.push(fn) } },
+  // Tab-strip stub for the SURFACE_ROOM handshake. NOTE what is NOT here: no tab.title is
+  // ever read, because the worker never reads one — that is the whole point of the
+  // handshake (reading titles would require the browser-wide "tabs" permission).
+  tabs: {
+    async query({ windowId }) {
+      return tabState.tabs.filter((t) => t.windowId === windowId);
+    },
+    async group({ tabIds, groupId, createProperties }) {
+      const gid = groupId ?? ++tabState.nextGroupId;
+      if (!tabState.groups.has(gid)) {
+        tabState.groups.set(gid, { id: gid, title: "", color: "grey", windowId: createProperties?.windowId });
+      }
+      for (const id of tabIds) {
+        const t = tabState.tabs.find((x) => x.id === id);
+        if (t) t.groupId = gid;
+      }
+      return gid;
+    },
+  },
+  tabGroups: {
+    TAB_GROUP_ID_NONE: -1,
+    async get(id) {
+      const g = tabState.groups.get(id);
+      if (!g) throw new Error("no such group");
+      return g;
+    },
+    async update(id, props) {
+      const g = tabState.groups.get(id);
+      if (!g) throw new Error("no such group");
+      Object.assign(g, props);
+      return g;
+    },
+  },
   sidePanel: {
     setPanelBehavior: async () => undefined,
     open: async () => undefined,
@@ -253,6 +288,77 @@ try {
   unhandled = /neither answered nor kept open/.test(String(err.message));
 }
 assert(unhandled, "unknown message types are ignored, not answered");
+
+console.log("\n=== H. SURFACE ROOM handshake (no `tabs` permission, no title marker) ===");
+const NONE = -1;
+const resetTabs = () => {
+  tabState.tabs = [
+    { id: 1, windowId: 7, groupId: NONE, pinned: true }, // pinned: must be left alone
+    { id: 2, windowId: 7, groupId: NONE, pinned: false }, // the launcher's sidepanel tab
+    { id: 3, windowId: 7, groupId: NONE, pinned: false },
+    { id: 4, windowId: 7, groupId: 55, pinned: false }, // the USER's own group
+    { id: 9, windowId: 8, groupId: NONE, pinned: false }, // a different window entirely
+  ];
+  tabState.groups = new Map([[55, { id: 55, title: "scratch", color: "blue", windowId: 7 }]]);
+  tabState.nextGroupId = 100;
+};
+resetTabs();
+
+/** Drive SURFACE_ROOM with a chosen sender window (null = no tab, i.e. the docked panel). */
+const surface = (surfaceKey, windowId) =>
+  new Promise((res, rej) => {
+    const sender = windowId == null ? { id: "x" } : { id: "x", tab: { windowId } };
+    const kept = listeners.message.map((fn) =>
+      fn({ type: "SURFACE_ROOM", surfaceKey }, sender, (r) => res(r)),
+    );
+    if (!kept.some((k) => k === true)) rej(new Error("SURFACE_ROOM was not handled"));
+  });
+
+const ok1 = await surface("z440-primary", 7);
+assert(
+  ok1?.type === "SURFACE_ROOM_OK",
+  `handshake answered OK (${ok1?.type}${ok1?.error ? ": " + ok1.error : ""})`,
+);
+assert(ok1.title === "mo:os - z440-primary", `group titled "${ok1.title}"`);
+assert(
+  tabState.tabs.find((t) => t.id === 4).groupId === 55,
+  "the USER's own tab group was NOT swept into the mo:os group",
+);
+assert(tabState.groups.get(55).title === "scratch", "the user's group kept its title");
+assert(tabState.tabs.find((t) => t.id === 1).groupId === NONE, "the PINNED tab was left ungrouped");
+assert(
+  tabState.tabs.find((t) => t.id === 9).groupId === NONE,
+  "a tab in ANOTHER window was untouched (the sender's window only)",
+);
+
+// Idempotence: a second handshake must not create a second group.
+const beforeNext = tabState.nextGroupId;
+const ok2 = await surface("z440-primary", 7);
+assert(
+  ok2.groupId === ok1.groupId && tabState.nextGroupId === beforeNext,
+  "re-running is idempotent (same group, none created)",
+);
+
+// Colour is stable per key across restarts, and keys differ from each other.
+const c1 = tabState.groups.get(ok1.groupId).color;
+resetTabs();
+const ok3 = await surface("z440-primary", 7);
+assert(tabState.groups.get(ok3.groupId).color === c1, `colour is stable per key (${c1})`);
+resetTabs();
+const ok4 = await surface("z440-menno", 7);
+assert(
+  tabState.groups.get(ok4.groupId).title === "mo:os - z440-menno",
+  "a different key gets its own title",
+);
+
+// The two attacks the tab-title marker was open to.
+const forgedKey = await surface("mo:os surface cache - pwned", 7);
+assert(forgedKey?.type === "ERROR", `a non-conforming key is refused (${forgedKey?.error})`);
+const noWindow = await surface("z440-primary", null);
+assert(
+  noWindow?.type === "ERROR" && /no window/.test(noWindow.error),
+  "a sender with no tab (the docked side panel) is a clean no-op, not a guess",
+);
 
 console.log(`\nPASS: ${PASS} assertions against the SHIPPED worker (dist/worker.js).`);
 process.exit(0);

@@ -48,6 +48,29 @@ npm run typecheck # optional: tsc --noEmit
 Then, in Chrome/Edge: `chrome://extensions` → Developer mode → **Load unpacked** →
 select `dist/`. Click the toolbar action to open the side panel.
 
+### Z440 surface rooms (tab-group titles)
+
+The Z440 launcher opens each generated surface window with this extension's own
+`sidepanel.html?surface=<surface-key>` as one of its tabs. That page hands the key to the
+MV3 worker, which titles the window's tab group `mo:os - <surface-key>` in a colour derived
+from the key (stable across restarts).
+
+Why a handshake rather than a tab-title marker: reading `tab.title` would require the
+browser-wide **`tabs`** permission, which grants url/title/favIconUrl for every tab in every
+window and appears to the user as *"Read your browsing history"* — a very large grant for a
+window label, on a seat whose design is minimal privilege. A page can also set its own
+title, so a title marker is attacker-controlled: any site could make the extension regroup
+and rename whatever window it is in. Here the key travels launcher → the extension's own URL
+→ worker, and the window comes from `sender.tab.windowId`. Neither is forgeable by a web
+page and neither needs a permission; only **`tabGroups`** is required, for the title and
+colour. `tabs.query` / `tabs.group` themselves need no permission.
+
+What it will not do: it never sweeps a tab that is pinned or already in one of your own tab
+groups (`tabs.group` MOVES tabs, so absorbing everything would empty and destroy your
+group), it only ever touches the sender's window, it is idempotent, and it refuses a key that
+does not match `[a-z0-9][a-z0-9-]{0,63}`. With no `?surface=` in the URL — the docked panel,
+the pop-out, the full-tab mirror — it does nothing at all.
+
 ### Layout
 
 ```
