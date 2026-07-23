@@ -1,14 +1,16 @@
 # Testing the pilot
 
-Four gates, all runnable from a clean checkout with the Z440 primary kernel up. Run them in
-this order; each is fast and each catches a distinct class.
+Four gates — `typecheck` and the three `smoke:*` scripts — all runnable from a clean checkout
+with the Z440 primary kernel up. `build` appears in the sequence below but is a prerequisite,
+not a gate: it produces the `dist/` that `smoke:worker` reads. Run them in this order; each is
+fast and each catches a distinct class.
 
 ```bash
-npm run typecheck        # tsc --noEmit
-npm run build            # -> dist/ (also the load-unpacked target)
-npm run smoke:worker     # the SHIPPED dist/worker.js, driven headlessly
-npm run smoke:live       # live MCP read + the access law + the slice axes
-npm run smoke:llm        # the LLM seam (+ a live Ollama round-trip if reachable)
+npm run typecheck        # GATE  tsc --noEmit
+npm run build            #       prerequisite -> dist/ (also the load-unpacked target)
+npm run smoke:worker     # GATE  the SHIPPED dist/worker.js, driven headlessly
+npm run smoke:live       # GATE  live MCP read + the access law + the slice axes
+npm run smoke:llm        # GATE  the LLM seam (+ a live Ollama round-trip if reachable)
 ```
 
 `smoke:worker` needs `npm run build` first — it loads `dist/worker.js`, not source.
@@ -71,7 +73,7 @@ class by sizing the viewport, not the frame.
 ## What no automated check can reach
 
 - whether a real click's clipboard write lands on the OS clipboard (the blocked path is
-  proven graceful: `{ok:false, "clipboard write was blocked by the browser"}`)
+  proven graceful: `{ ok: false, message: "clipboard write was blocked by the browser" }`)
 - the Document-PiP open path, which requires a user gesture
 - scratch mirroring between two *real* windows (the channel logic is asserted; the two-window
   case is not)

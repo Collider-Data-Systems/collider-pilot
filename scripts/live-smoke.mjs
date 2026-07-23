@@ -544,7 +544,13 @@ function searchRankingChecks(fold, health) {
   const frame = selectFrame(fold, { healthz: health, request: { view_filter: { types: ["*"] } } });
   const tail = (u) => u.split(":").pop();
   const stripOwner = (t) => (t.indexOf(".") > 0 ? t.slice(t.indexOf(".") + 1) : t);
-  const rank = (n, q) => {
+  // Normalize exactly as matchRank does. This mirror is hand-copied (the TS is not
+  // importable here), so the normalization has to be copied too: without the trim/lowercase
+  // an uppercase slug never matches the lowercased urn, and without the empty-query guard
+  // `startsWith("")` ranks EVERY node 1 where matchRank ranks none.
+  const rank = (n, query) => {
+    const q = String(query ?? "").trim().toLowerCase();
+    if (!q) return Infinity;
     const urn = n.urn.toLowerCase(), t = tail(urn), l = (n.label || "").toLowerCase();
     if (t === q || stripOwner(t) === q) return 0;
     if (t.startsWith(q) || stripOwner(t).startsWith(q)) return 1;
@@ -578,6 +584,23 @@ function searchRankingChecks(fold, health) {
 
   // A miss is a miss.
   assert(best("zzz-not-a-node-anywhere") === undefined, "a non-matching query ranks nothing");
+
+  // The mirror has to normalize like matchRank, or it silently stops guarding the thing it
+  // claims to guard. Measured against the pre-fix rank(): the EMPTY query reached
+  // `startsWith("")` and ranked every node 1 (matchRank returns Infinity), and an UPPERCASE
+  // slug matched nothing at all against the lowercased urn — a false negative that would
+  // have failed the program-slug assert had any urn carried a capital. The whitespace case
+  // already behaved, so that line is a lock, not a catch.
+  assert(best("") === undefined, "an empty query ranks nothing");
+  assert(best("   ") === undefined, "a whitespace-only query ranks nothing");
+  if (prog) {
+    const slug = stripOwner(tail(prog.urn));
+    const noisy = best(`  ${slug.toUpperCase()}  `);
+    assert(
+      noisy && noisy.n.urn === prog.urn,
+      `an uppercase, space-padded slug selects the same program ("${slug.toUpperCase()}")`,
+    );
+  }
 }
 
 /**

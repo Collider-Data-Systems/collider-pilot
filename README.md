@@ -50,9 +50,10 @@ select `dist/`. Click the toolbar action to open the side panel.
 
 ### Testing
 
-Four gates plus an in-extension self-test; see **[TESTING.md](TESTING.md)** for what each one
-covers, the two dev-harness traps that have cost real time, and the honest limits that are
-deliberately not hidden.
+Four gates — `typecheck` plus the three `smoke:*` scripts — and an in-extension self-test.
+`build` is in the sequence below as a prerequisite (`smoke:worker` reads `dist/`), not as a
+gate. See **[TESTING.md](TESTING.md)** for what each one covers, the two dev-harness traps
+that have cost real time, and the honest limits that are deliberately not hidden.
 
 ```bash
 npm run typecheck && npm run build
