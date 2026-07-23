@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Read-only mo:os seat: live HG frame, A3 access view-filter, LLM proposer (Ollama / Gemini via kernel-proxy), review-only previews.",
 
-  "permissions": ["sidePanel", "storage", "activeTab", "clipboardWrite"],
+  "permissions": ["sidePanel", "storage", "activeTab", "clipboardWrite", "tabs", "tabGroups"],
 
   "host_permissions": [
     "http://localhost:8080/*",

@@ -85,6 +85,97 @@ function getAdapter(): Promise<McpAdapter> {
   return adapterPromise;
 }
 
+const SURFACE_CACHE_TITLE = /^mo:os surface cache - ([a-z0-9-]+)$/i;
+const GROUP_COLORS: chrome.tabGroups.ColorEnum[] = [
+  "blue",
+  "cyan",
+  "green",
+  "orange",
+  "pink",
+  "purple",
+  "red",
+  "yellow",
+  "grey",
+];
+const tabGroupTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+function getSurfaceKey(tab: chrome.tabs.Tab): string | null {
+  const match = tab.title?.match(SURFACE_CACHE_TITLE);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function getSurfaceGroupColor(surfaceKey: string): chrome.tabGroups.ColorEnum {
+  let hash = 0;
+  for (const character of surfaceKey) {
+    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  }
+  return GROUP_COLORS[hash % GROUP_COLORS.length];
+}
+
+async function reconcileSurfaceTabGroup(windowId: number): Promise<void> {
+  const tabs = await chrome.tabs.query({ windowId });
+  const marker = tabs
+    .map((tab) => ({ tab, surfaceKey: getSurfaceKey(tab) }))
+    .find(({ surfaceKey }) => surfaceKey !== null);
+  if (!marker?.surfaceKey) return;
+
+  const tabIds = tabs.flatMap((tab) => (typeof tab.id === "number" ? [tab.id] : []));
+  if (tabIds.length === 0) return;
+
+  const markerGroupId = marker.tab.groupId;
+  const allTabsAlreadyGrouped =
+    typeof markerGroupId === "number" &&
+    markerGroupId >= 0 &&
+    tabs.every((tab) => tab.groupId === markerGroupId);
+
+  const groupId = allTabsAlreadyGrouped
+    ? markerGroupId
+    : typeof markerGroupId === "number" && markerGroupId >= 0
+      ? await chrome.tabs.group({ tabIds, groupId: markerGroupId })
+      : await chrome.tabs.group({ tabIds, createProperties: { windowId } });
+
+  await chrome.tabGroups.update(groupId, {
+    title: `mo:os - ${marker.surfaceKey}`,
+    color: getSurfaceGroupColor(marker.surfaceKey),
+  });
+  console.log(`[pilot] tab group reconciled: ${marker.surfaceKey} (window ${windowId})`);
+}
+
+function scheduleSurfaceTabGroup(windowId: number): void {
+  if (windowId < 0) return;
+  const existing = tabGroupTimers.get(windowId);
+  if (existing) clearTimeout(existing);
+  tabGroupTimers.set(
+    windowId,
+    setTimeout(() => {
+      tabGroupTimers.delete(windowId);
+      void reconcileSurfaceTabGroup(windowId).catch((err: unknown) =>
+        console.error("[pilot] tab group reconciliation failed:", err),
+      );
+    }, 750),
+  );
+}
+
+async function reconcileOpenSurfaceTabGroups(): Promise<void> {
+  const tabs = await chrome.tabs.query({});
+  const windowIds = new Set(
+    tabs.filter((tab) => getSurfaceKey(tab) !== null).map((tab) => tab.windowId),
+  );
+  for (const windowId of windowIds) scheduleSurfaceTabGroup(windowId);
+}
+
+chrome.tabs.onCreated.addListener((tab) => scheduleSurfaceTabGroup(tab.windowId));
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (changeInfo.title !== undefined && getSurfaceKey(tab) !== null) {
+    scheduleSurfaceTabGroup(tab.windowId);
+  }
+});
+chrome.runtime.onStartup.addListener(() => {
+  void reconcileOpenSurfaceTabGroups().catch((err: unknown) =>
+    console.error("[pilot] tab group startup reconciliation failed:", err),
+  );
+});
+
 // No popup is configured, so let onClicked drive panel opening explicitly.
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: false })
@@ -149,6 +240,12 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log(
     "[pilot] service worker installed (Phase 2: read-only; live MCP by default)",
   );
+  void reconcileOpenSurfaceTabGroups().catch((err: unknown) =>
+    console.error("[pilot] tab group install reconciliation failed:", err),
+  );
 });
 
+void reconcileOpenSurfaceTabGroups().catch((err: unknown) =>
+  console.error("[pilot] tab group initial reconciliation failed:", err),
+);
 console.log("[pilot] service worker started");

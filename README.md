@@ -48,6 +48,19 @@ npm run typecheck # optional: tsc --noEmit
 Then, in Chrome/Edge: `chrome://extensions` → Developer mode → **Load unpacked** →
 select `dist/`. Click the toolbar action to open the side panel.
 
+### Z440 Surface Tab Groups
+
+The MV3 worker gives a generated Z440 browser room a native Chrome tab-group title when
+the window contains its cache marker tab, titled `mo:os surface cache - <surface-key>`.
+It groups only that window's tabs and names the group `mo:os - <surface-key>`; ordinary
+browser windows are never selected. Reconciliation runs after the startup window settles
+and when a marked room changes, so the title survives Chrome and Windows restarts.
+
+The feature uses Chrome's `tabs` and `tabGroups` permissions solely for local tab
+grouping. It does not read page content, contact the kernel, or write HG. Because the
+current cache pages use `file:///`, enable **Allow access to file URLs** in the extension
+details page; otherwise the marker is unavailable and the feature safely does nothing.
+
 ### Layout
 
 ```
