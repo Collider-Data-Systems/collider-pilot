@@ -286,20 +286,19 @@ function PreviewLive() {
     setSelectedUrn(urn);
   }, []);
 
+  // Hint-vs-selection split mirrors sidepanel.tsx exactly (t266): the hint is a claim
+  // about the CURRENT frame and tracks it in the effect below; selection stays a
+  // keystroke act so a frame refresh never steals it.
   const handleSearchChange = useCallback(
     (value: string) => {
       setSearch(value);
       const q = value.trim().toLowerCase();
-      if (!q || !frame) {
-        setSearchHint(null);
-        return;
-      }
+      if (!q || !frame) return;
       const nodes = Array.isArray(frame.nodes) ? frame.nodes : [];
       // RANKED (t264): taking matches[0] in fold order made searching an applied program's
       // name land on a governance_proposal that merely mentioned it. searchNodes prefers an
       // exact/prefix urn-tail match and the hint names the selected node's TYPE.
-      const { hit, hint } = searchNodes(nodes, q);
-      setSearchHint(hint);
+      const { hit } = searchNodes(nodes, q);
       if (!hit) return;
       setSelectedUrn(hit.urn);
       setFocusUrn(hit.urn);
@@ -307,6 +306,17 @@ function PreviewLive() {
     },
     [frame],
   );
+
+  // The hint tracks (frame, query) — see the comment above handleSearchChange.
+  useEffect(() => {
+    const q = search.trim().toLowerCase();
+    if (!q || !frame) {
+      setSearchHint(null);
+      return;
+    }
+    const nodes = Array.isArray(frame.nodes) ? frame.nodes : [];
+    setSearchHint(searchNodes(nodes, q).hint);
+  }, [frame, search]);
 
   const commitSlice = useCallback(
     (nextSpec: SliceSpec, mode: AccessPosture, scopeUrn: string) => {
