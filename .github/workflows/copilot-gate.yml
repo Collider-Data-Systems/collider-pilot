@@ -8,21 +8,67 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
+      contents: read
     steps:
-      - name: Wait for a completed Copilot review
+      - name: Require a Copilot review that COVERS the current head
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          # t264 #32: the old gate exit-0'd on the first Copilot review it found,
+          # asserting a review EXISTS but not that it covers the code being merged.
+          # On #25 a rebase replaced the reviewed commit, yet a review of that orphaned
+          # commit kept the gate green over code Copilot never saw.
+          #
+          # This gate instead requires a Copilot review that COVERS the head: the
+          # reviewed commit is the head, or an ANCESTOR of it (the head only adds
+          # commits on top). A rebase makes the old reviewed commit DIVERGED from the
+          # head, which fails.
+          #
+          # It deliberately does NOT require a review AT the exact head. Copilot answers
+          # a `synchronize` by re-anchoring its existing threads to the new head without
+          # always posting a fresh review (observed live on #33: review stayed at the
+          # pre-remediation commit, an ancestor). A strict head-equality gate would
+          # false-fail those PRs; the ancestor test passes them because the earlier
+          # review still covers the unchanged diff.
+          #
+          # Proven against real PRs (compare base=review...head):
+          #   #33  d62d2e5...63008cb -> "ahead"     PASS (ancestor; Copilot re-anchored)
+          #   #25  e6ab186...b6319b1 -> "diverged"  FAIL (rebase orphaned the review)
+          #
+          # NOT addressed here (and unfixable in a status check): a green gate is the
+          # earliest instant a PR can auto-merge, so a human can still merge before
+          # reading fresh comments. That stays procedural — wait for the review, read
+          # it, resolve threads, then merge.
+          echo "gate: a Copilot review must cover head $HEAD_SHA (== or ancestor)"
           for i in $(seq 1 60); do
-            n=$(gh api "repos/$REPO/pulls/$PR/reviews" --jq '[.[] | select(.user.login | startswith("copilot-pull-request-reviewer"))] | length')
-            if [ "$n" -gt 0 ]; then
-              echo "Copilot review present ($n review(s))"
-              exit 0
+            # --paginate: /reviews returns 30 per page, so on a PR with many
+            # pushes (each a Copilot re-review) the covering review can sit on a
+            # later page — without this the gate would false-timeout (#34 review).
+            mapfile -t shas < <(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" \
+              --jq '.[] | select(.user.login | startswith("copilot-pull-request-reviewer")) | .commit_id' \
+              | sort -u)
+            if [ "${#shas[@]}" -eq 0 ]; then
+              echo "waiting for a Copilot review... ($i/60)"
+              sleep 10
+              continue
             fi
-            echo "waiting for Copilot review... ($i/60)"
+            for sha in "${shas[@]}"; do
+              if [ "$sha" = "$HEAD_SHA" ]; then
+                echo "Copilot review present AT head ($sha)"
+                exit 0
+              fi
+              status=$(gh api "repos/$REPO/compare/$sha...$HEAD_SHA" --jq '.status' 2>/dev/null || echo "unknown")
+              if [ "$status" = "ahead" ] || [ "$status" = "identical" ]; then
+                echo "Copilot review at $sha covers head $HEAD_SHA (compare: $status)"
+                exit 0
+              fi
+              echo "  a Copilot review at $sha does NOT cover the head (compare: $status)"
+            done
+            echo "waiting for a Copilot review that covers $HEAD_SHA... ($i/60)"
             sleep 10
           done
-          echo "No Copilot review landed within 10 minutes"
+          echo "No Copilot review covering the current head ($HEAD_SHA) landed within 10 minutes"
           exit 1
