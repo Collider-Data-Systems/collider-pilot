@@ -6,3 +6,4 @@ dist-extension/
 .vite/
 .claude/
 vite-preview.log
+dist.bak*/
