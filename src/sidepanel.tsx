@@ -317,20 +317,23 @@ function SidePanel() {
   );
 
   // Node search: match by urn/label, then select + center the first hit. Local only.
+  //
+  // The HINT is computed in the effect below, not here: it is a claim about the CURRENT
+  // frame, so it must track the frame, not just keystrokes. Reproduced live (t266): a query
+  // typed under anon read "no match"; bring-in delivered the node into the frame; the hint
+  // kept claiming "no match" until the next keystroke. SELECTION stays here — a deliberate
+  // keystroke act — so a frame refresh (live seq bump, lens flip, posture change) can
+  // re-verdict the hint but never steal the user's selection or recenter the graph.
   const handleSearchChange = useCallback(
     (value: string) => {
       setSearch(value);
       const q = value.trim().toLowerCase();
-      if (!q || !frame) {
-        setSearchHint(null);
-        return;
-      }
+      if (!q || !frame) return;
       const nodes = Array.isArray(frame.nodes) ? frame.nodes : [];
       // RANKED (t264): taking matches[0] in fold order made searching an applied program's
       // name land on a governance_proposal that merely mentioned it. searchNodes prefers an
       // exact/prefix urn-tail match and the hint names the selected node's TYPE.
-      const { hit, hint } = searchNodes(nodes, q);
-      setSearchHint(hint);
+      const { hit } = searchNodes(nodes, q);
       if (!hit) return;
       handleSelect(hit.urn);
       if (showGraph) {
@@ -340,6 +343,17 @@ function SidePanel() {
     },
     [frame, handleSelect, showGraph],
   );
+
+  // The hint tracks (frame, query) — see the comment above handleSearchChange.
+  useEffect(() => {
+    const q = search.trim().toLowerCase();
+    if (!q || !frame) {
+      setSearchHint(null);
+      return;
+    }
+    const nodes = Array.isArray(frame.nodes) ? frame.nodes : [];
+    setSearchHint(searchNodes(nodes, q).hint);
+  }, [frame, search]);
 
   const handleLayoutChange = useCallback((next: GraphLayoutName) => {
     setLayout(next);
