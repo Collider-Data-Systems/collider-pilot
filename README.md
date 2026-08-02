@@ -273,10 +273,12 @@ write path (controlled tool calls + confirmation UI) remains gated to **Phase 4*
   **synchronously** — no `await` runs before it, so the gesture is still valid. Clicking
   again while a mirror is open just **focuses** the existing window (never a second one).
 - **One shared store per surface (`chrome.storage.session`, key `pilot.scratch.v1` — or
-  `pilot.scratch.v1.<surface>` in a `?surface=` window, A17).** A single browser-wide key
-  meant 14 generated windows overwrote one selection and one cached frame; each surface now
-  scratches on its own channel, and both pip.html routes carry an explicit `?scope=` from
-  their opener so a mirror lands on its opener's channel. The panel and the
+  `pilot.scratch.v1.<scope>` when the page carries a scope key, A17).** The scope is the
+  validated `?scope=` param when present (both pip.html routes thread it from their opener,
+  with no `?surface=` needed), else the launcher's `?surface=` room key on sidepanel.html,
+  else the default. A single browser-wide key meant 14 generated windows overwrote one
+  selection and one cached frame; each surface now scratches on its own channel, and a
+  mirror always lands on its opener's channel. The panel and the
   PiP mirror read and write the same [scratch store](src/state/scratch.ts). Sync is
   **event-driven** via `chrome.storage.onChanged` (plus a re-read when the PiP window regains
   focus) — **no polling loop**. The **frame** flows one-way (panel authors it → scratch →
