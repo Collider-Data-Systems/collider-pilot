@@ -33,7 +33,7 @@ import type {
   PilotResponse,
   RawMcpTool,
 } from "./mcp/types";
-import { loadScratch, saveScratch, subscribeScratch } from "./state/scratch";
+import { loadScratch, saveScratch, scratchScopeParam, subscribeScratch } from "./state/scratch";
 import {
   DEFAULT_GRAPH_LAYOUT,
   loadLayoutPref,
@@ -520,11 +520,14 @@ function SidePanel() {
   }, [popOutSupported]);
 
   // Open the read-only mirror (pip.html) in a full browser tab. Feature-detected.
-  // surface=tab keeps the NodeInspector there (the lean-down applies to the PiP only).
+  // surface=tab keeps the NodeInspector there (the lean-down applies to the PiP only);
+  // scope= (A17) puts the tab on THIS surface's scratch channel, not the shared default.
   const handleFullTab = useCallback(() => {
     if (!fullTabSupported) return;
     try {
-      void chrome.tabs.create({ url: chrome.runtime.getURL("pip.html") + "?surface=tab" });
+      void chrome.tabs.create({
+        url: `${chrome.runtime.getURL("pip.html")}?surface=tab&${scratchScopeParam()}`,
+      });
     } catch (err) {
       console.error("[pilot] full-tab open failed:", err);
     }

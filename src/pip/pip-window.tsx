@@ -43,6 +43,7 @@ import type { HgFrame } from "../mcp/types";
 import {
   loadScratch,
   saveSelectedUrn,
+  scratchScopeParam,
   subscribeScratch,
   frameSignature,
   type PilotScratch,
@@ -224,7 +225,9 @@ function openPopupFallback(
   try {
     chrome.windows.create(
       {
-        url: chrome.runtime.getURL("pip.html"),
+        // A17: thread the opener's scratch scope so the popup mirrors THIS surface's
+        // selection/frame channel, not the browser-wide default.
+        url: `${chrome.runtime.getURL("pip.html")}?${scratchScopeParam()}`,
         type: "popup",
         width,
         height,
