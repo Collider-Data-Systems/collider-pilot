@@ -52,8 +52,10 @@ import { resolveAccess, accessKeepSet } from "./access.js";
  * @typedef {{ nodes: Record<string, RawNode>, relations: Record<string, RawRelation> }} RawFold
  */
 /**
- * The `/healthz` reading used to stamp provenance.
- * @typedef {{ log_len?: number, max_log_seq?: number, t_day?: number, ontology_version?: string, status?: string }} Healthz
+ * The `/healthz` reading used to stamp provenance. `kernel_urn` is the engine's OWN
+ * identity (the A6 self-identification surface, live fleet-wide since t274) — the
+ * authority the A16 mismatch warning compares against.
+ * @typedef {{ log_len?: number, max_log_seq?: number, t_day?: number, ontology_version?: string, status?: string, kernel_urn?: string }} Healthz
  */
 
 /** Canonical engine identity/endpoints (defaults; overridable by the adapter). */
@@ -369,6 +371,9 @@ export function applyViewFilter(nodes, relations, viewFilter, tPinned, accessKee
  * @property {FrameRequest} [request]     - the caller's view_filter selection
  * @property {string} [engine]            - engine urn (default hp-z440.primary)
  * @property {string} [engineEndpoint]    - human display of the read endpoints
+ * @property {string} [engineUrl]         - machine-readable engine REST base; stamped as
+ *                                          provenance.engine_url so panel-side readers
+ *                                          (log feed, fold stream) follow the SAME engine
  * @property {string} [foldedAt]          - ISO timestamp; defaults to now
  * @property {AccessResolution} [serverAccess] - a server-computed resolution to trust+echo
  *                                               (future A2); when present the local
@@ -437,7 +442,11 @@ export function selectFrame(fold, opts) {
   /** @type {FrameProvenance} */
   const provenance = {
     engine,
+    // A16: what the connected engine SAYS it is (healthz kernel_urn), beside what the
+    // frame CLAIMS it read (engine). The panel warns when the two disagree.
+    engine_reported: typeof healthz.kernel_urn === "string" ? healthz.kernel_urn : null,
     engine_endpoint: engineEndpoint,
+    ...(typeof opts.engineUrl === "string" ? { engine_url: opts.engineUrl } : {}),
     log_seq: logSeq,
     t_day: typeof healthz.t_day === "number" ? healthz.t_day : 0,
     workspace,

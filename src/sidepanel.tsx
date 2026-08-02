@@ -86,12 +86,27 @@ import "./sidepanel.css";
 
 type Status = "loading" | "ready" | "error";
 
+/**
+ * The launcher's `?surface=<key>` from this page's OWN URL (A16). Read once: the URL never
+ * changes over the page's life. Rides on every GET_FRAME so the worker resolves WHICH
+ * engine this window reads (surface_key -> channel -> engine); undefined for the docked
+ * panel / pop-out / full tab, which keep the default engine.
+ */
+const SURFACE_KEY: string | undefined = (() => {
+  try {
+    return new URLSearchParams(window.location.search).get("surface") ?? undefined;
+  } catch {
+    return undefined;
+  }
+})();
+
 async function requestFrame(request?: FrameRequest): Promise<PilotResponse> {
   // Waking the worker with a message is what restarts it if it was terminated. The
   // request (view_filter) rides along; the worker forwards it to adapter.getFrame().
   return (await chrome.runtime.sendMessage({
     type: "GET_FRAME",
     request,
+    surface: SURFACE_KEY,
   } as PilotRequest)) as PilotResponse;
 }
 
@@ -102,6 +117,7 @@ async function requestFrame(request?: FrameRequest): Promise<PilotResponse> {
 async function requestTools(): Promise<PilotResponse> {
   return (await chrome.runtime.sendMessage({
     type: "LIST_TOOLS",
+    surface: SURFACE_KEY,
   } as PilotRequest)) as PilotResponse;
 }
 
@@ -117,7 +133,7 @@ async function requestTools(): Promise<PilotResponse> {
  */
 function announceSurfaceRoom(): void {
   try {
-    const key = new URLSearchParams(window.location.search).get("surface");
+    const key = SURFACE_KEY;
     if (!key) return;
     void chrome.runtime
       .sendMessage({ type: "SURFACE_ROOM", surfaceKey: key } as PilotRequest)
@@ -480,8 +496,14 @@ function SidePanel() {
   // live, and keep saying so across the retry until a good frame actually replaces it.
   const stale = readFailed && frame != null;
   const reloadForStream = useCallback(() => void loadFrame(), [loadFrame]);
+  // A16: panel-side readers (fold stream, log feed) follow the engine THE FRAME was read
+  // from — provenance.engine_url — not the build-time default, or a twin surface would
+  // stream primary's log under a menno/lola/moos label. Absent (mock, pre-A16 worker)
+  // both fall back to their own defaults.
+  const engineRestUrl = isLive ? frame.provenance.engine_url : undefined;
   const { status: streamStatus, pulseKey } = useFoldStream({
     active: isLive,
+    url: engineRestUrl ? `${engineRestUrl}/fold/stream` : undefined,
     onReload: reloadForStream,
   });
 
@@ -666,7 +688,13 @@ function SidePanel() {
             )}
             {/* t264: the engine jsonl, live. Self-hides on mock frames. */}
             <ErrorBoundary>
-              <LogFeed live={isLive} frame={frame} accessMode={accessMode} onSelect={handleSelect} />
+              <LogFeed
+                live={isLive}
+                frame={frame}
+                accessMode={accessMode}
+                onSelect={handleSelect}
+                engineUrl={engineRestUrl}
+              />
             </ErrorBoundary>
             {/* P9 WebTransport spike: synthetic presence strip. Self-hides when the
                 pilot.wt flag is off / WebTransport is unavailable / the connect fails.

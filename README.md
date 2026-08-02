@@ -83,6 +83,25 @@ group), it only ever touches the sender's window, it is idempotent, and it refus
 does not match `[a-z0-9][a-z0-9-]{0,63}`. With no `?surface=` in the URL — the docked panel,
 the pop-out, the full-tab mirror — it does nothing at all.
 
+### Surface → engine resolution (A16)
+
+The same `?surface=<key>` also decides **which engine the window reads**. The key rides on
+every `GET_FRAME`; the worker resolves it at runtime — surface key → the t266
+`urn:moos:channel:virtual-desktop.<key>` channel node (a read-only directory lookup on the
+default engine) → the engine that channel names — and builds that window's adapter against
+the resolved endpoints (`src/mcp/surface-resolver.js`). A `?surface=z440-menno` (or bare
+`?surface=menno`) window therefore reads `urn:moos:kernel:hp-z440.menno` on :8001/:9001
+instead of inheriting the build-time primary default. The panel's log feed and fold stream
+follow the same resolution via `provenance.engine_url`.
+
+Verification is not the hint: every frame also stamps `provenance.engine_reported` — the
+connected engine's own `/healthz` `kernel_urn`. When it differs from the engine the surface
+expects (an unreachable engine fell back to the default, or an endpoint serves a different
+kernel than the channel names), the PostureStrip renders an **ENGINE MISMATCH** warning
+rather than letting the window silently render the wrong fold. Unknown keys, engine-less
+rooms (the manifold/collective desktops), and a down directory all degrade to the default
+engine with no warning suppressed and no window dead.
+
 ### Layout
 
 ```

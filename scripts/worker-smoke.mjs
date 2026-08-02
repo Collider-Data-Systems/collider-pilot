@@ -156,6 +156,41 @@ assert(
   prov.access.computed_by === "client-presentation",
   `tier is honest: ${prov.access.computed_by}`,
 );
+assert(
+  prov.engine_reported === prov.engine,
+  `A16: the default engine self-reports what the frame claims (${prov.engine_reported})`,
+);
+
+console.log("\n=== B2. GET_FRAME with ?surface= — the A16 acceptance, on the SHIPPED worker ===");
+// A window launched with ?surface=menno must report hp-z440.menno, not primary. The twin
+// may legitimately be down when only the primary is up (TESTING.md's precondition), so
+// probe first: down ⇒ SKIP with a line, never a silent pass-off; up ⇒ hard assertions.
+const MENNO = "urn:moos:kernel:hp-z440.menno";
+let twinUp = false;
+try {
+  const probe = await fetch("http://localhost:8001/healthz", { signal: AbortSignal.timeout(2000) });
+  twinUp = probe.ok && (await probe.json()).kernel_urn === MENNO;
+} catch {
+  // twin down — the resolution path is still covered by smoke:live's directory checks
+}
+if (twinUp) {
+  const menno = await send({ type: "GET_FRAME", surface: "menno" });
+  assert(menno?.type === "FRAME", `surfaced GET_FRAME answered FRAME (got ${menno?.type}${menno?.error ? ": " + menno.error : ""})`);
+  const mProv = menno.frame.provenance;
+  console.log(`  surface=menno -> engine ${mProv.engine} · reported ${mProv.engine_reported} · seq ${mProv.log_seq}`);
+  assert(mProv.engine === MENNO, "A16 ACCEPTANCE: ?surface=menno reports hp-z440.menno, not primary");
+  assert(mProv.engine_reported === MENNO, "the connected engine SELF-reports menno (healthz kernel_urn)");
+  assert(mProv.engine_url === "http://localhost:8001", "provenance.engine_url follows the resolved engine");
+} else {
+  console.log("  SKIP: twin :8001 not up as hp-z440.menno — surfaced-frame acceptance not exercised this run");
+}
+// An invalid surface key must degrade to the default engine, never error the window.
+const junk = await send({ type: "GET_FRAME", surface: "NOT a key!" });
+assert(junk?.type === "FRAME", "an invalid surface key still answers a FRAME (default engine)");
+assert(
+  junk.frame.provenance.engine === prov.engine,
+  "an invalid surface key falls back to the default engine",
+);
 
 console.log("\n=== C. THE TRUST SEAM — a page cannot assert an identity ===");
 // No identity in storage yet: a forged 'identified' claim must collapse to anon.

@@ -1233,6 +1233,20 @@ body {
   padding: 4px 6px;
 }
 
+/* A16 engine-mismatch warning: the surface's labelled engine is not the one answering. */
+.prov-engine-mismatch {
+  margin-top: 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+}
+.prov-engine-mismatch strong {
+  font-weight: 700;
+}
+
 /* Discovered-tools catalog disclosure (Phase 6). */
 .catalog-details > .catalog-summary {
   cursor: pointer;

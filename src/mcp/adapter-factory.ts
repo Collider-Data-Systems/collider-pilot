@@ -22,6 +22,7 @@ import {
   StreamableHttpMcpAdapter,
   type StreamableHttpAdapterConfig,
 } from "./streamable-http-adapter";
+import { resolveSurfaceEngine } from "./surface-resolver.js";
 
 export type AdapterMode = "mock" | "live";
 
@@ -71,22 +72,48 @@ function normalizeEnforcement(value: unknown): AccessEnforcement {
 }
 
 /**
- * Resolve the adapter config from `chrome.storage.local['pilot.access'].enforcement` (A3).
- * Threads the tier posture into the adapter. NO-OP at the client-presentation tier — the
- * access set is computed in the pure transform after the read; this only pre-wires the seam
- * the future server-authoritative tier flips. Safe outside an extension (returns {}).
+ * Resolve the adapter config from `chrome.storage.local['pilot.access'].enforcement` (A3)
+ * and — when the window carries a `?surface=` key (A16) — from the runtime
+ * surface_key -> channel -> engine resolution, so a menno/lola/moos window reads ITS
+ * engine instead of inheriting the build-time primary default.
+ *
+ * The surface resolution is best-effort: an unknown key, an engine-less room, or an
+ * unreachable directory all degrade to the default engine (and, when an engine WAS named
+ * but no local transport exists, the healthz kernel_urn comparison downstream renders the
+ * honest mismatch warning). The enforcement read stays a NO-OP at the client-presentation
+ * tier, as before. Safe outside an extension (returns {} / the surface part only).
  */
-export async function resolveAdapterConfig(): Promise<StreamableHttpAdapterConfig> {
+export async function resolveAdapterConfig(
+  surfaceKey?: string,
+): Promise<StreamableHttpAdapterConfig> {
+  const config: StreamableHttpAdapterConfig = {};
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       const got = await chrome.storage.local.get(STORAGE_ACCESS_KEY);
       const cfg = got?.[STORAGE_ACCESS_KEY] as { enforcement?: unknown } | undefined;
       if (cfg && cfg.enforcement != null) {
-        return { enforcement: normalizeEnforcement(cfg.enforcement) };
+        config.enforcement = normalizeEnforcement(cfg.enforcement);
       }
     }
   } catch {
     // storage unavailable -> default (client-presentation) tier
   }
-  return {};
+  if (surfaceKey) {
+    try {
+      const resolved = await resolveSurfaceEngine(surfaceKey);
+      if (resolved) {
+        // The EXPECTED engine identity always lands in the config — reachable or not —
+        // so provenance states what this surface is SUPPOSED to read and the mismatch
+        // warning can compare it against what the connected engine reports.
+        config.engineUrn = resolved.engine_urn;
+        if (resolved.reachable && resolved.engine_url && resolved.mcp_base_url) {
+          config.engineUrl = resolved.engine_url;
+          config.mcpBaseUrl = resolved.mcp_base_url;
+        }
+      }
+    } catch {
+      // resolution is best-effort — the default engine is always a working fallback
+    }
+  }
+  return config;
 }

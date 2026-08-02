@@ -128,6 +128,15 @@ export function PostureStrip({
 
   const stripUser = effectiveAnon ? "anon" : urnShort(access?.scope?.user, "anon");
 
+  // A16 ENGINE MISMATCH: `engine` is what this surface RESOLVES TO (its label);
+  // `engine_reported` is what the connected engine SAYS it is (/healthz kernel_urn).
+  // They disagree when a surface's engine is unreachable from this seat (the read fell
+  // back to the default) or when an endpoint serves a different kernel than the channel
+  // names — both are exactly the wrong-fold defect, so the strip must say so.
+  const reported = provenance.engine_reported;
+  const engineMismatch =
+    typeof reported === "string" && reported.length > 0 && reported !== provenance.engine;
+
   return (
     <section className="provenance posture-strip" aria-label="Frame posture">
       <button
@@ -153,6 +162,18 @@ export function PostureStrip({
           audit {open ? "▾" : "▸"}
         </span>
       </button>
+
+      {engineMismatch && (
+        <div
+          className="prov-engine-mismatch"
+          role="alert"
+          title="The surface's channel names one engine, but the engine actually read reports a different kernel_urn on /healthz. The frame below comes from the REPORTING engine — do not read it as the labelled one."
+        >
+          ENGINE MISMATCH — this surface expects{" "}
+          <strong>{urnShort(provenance.engine)}</strong>, the connected engine reports{" "}
+          <strong>{urnShort(reported)}</strong>
+        </div>
+      )}
 
       {open && access && (
         <div className="prov-access" aria-label="Access resolution">
@@ -216,6 +237,11 @@ export function PostureStrip({
         <>
           <div className="prov-grid">
             <Field label="engine" value={provenance.engine} />
+            <Field
+              label="engine (reported)"
+              value={reported ?? "—"}
+              title="The connected engine's self-reported /healthz kernel_urn (A6). Should equal `engine`; the strip warns when it does not."
+            />
             <Field label="endpoint" value={provenance.engine_endpoint} />
             <Field
               label="log_seq · t_day"

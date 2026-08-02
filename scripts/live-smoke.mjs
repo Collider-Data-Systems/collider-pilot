@@ -44,6 +44,12 @@ import {
   readRequestedMode,
   ANON_USER_URN,
 } from "../src/mcp/access.js";
+import {
+  channelUrnCandidates,
+  parseEngineHint,
+  resolutionFromChannelNode,
+  resolveSurfaceEngine,
+} from "../src/mcp/surface-resolver.js";
 
 /** Tiny assert — prints and exits non-zero on failure so this is a real gate. */
 function assert(cond, msg) {
@@ -523,6 +529,21 @@ async function main() {
   // this is the coverage the extension's own self-test provides in the browser realm.
   liveAxisChecks(fold, health);
 
+  // A16: the engine self-identifies (healthz kernel_urn, the A6 surface) and the
+  // transform stamps it beside the claimed engine — the mismatch warning's raw material.
+  console.log("\n=== A16 engine self-identification ===");
+  assert(
+    typeof health.kernel_urn === "string" && health.kernel_urn.length > 0,
+    `healthz carries kernel_urn (${health.kernel_urn})`,
+  );
+  assert(
+    frame.provenance.engine_reported === health.kernel_urn,
+    "provenance.engine_reported === healthz kernel_urn",
+  );
+
+  // A16: surface_key -> channel -> engine resolution (pure fixtures + the live directory).
+  await surfaceResolutionChecks(engineUrl);
+
   // Access law over the SAME live fold (+ a synthetic fallback fixture).
   accessChecks(fold);
 
@@ -531,6 +552,115 @@ async function main() {
 
   // t264 slice axes: ports filter · N-hop scope · the ["*"] all-types sentinel.
   sliceAxisChecks();
+}
+
+/**
+ * A16 — surface_key -> channel -> engine resolution. Pure parts on synthetic channel
+ * nodes (public shapes only — the display_name grammar is the tracked manifest's, the
+ * urns synthetic); then the LIVE chain against the running primary's directory read,
+ * exactly as the worker resolves it. The optional twin round-trip (does :8001 really
+ * answer as menno?) is skipped, not failed, when the twin is down — this gate must stay
+ * runnable with only the primary up (TESTING.md's stated precondition).
+ * @param {string} engineUrl
+ */
+async function surfaceResolutionChecks(engineUrl) {
+  console.log("\n=== A16 surface -> channel -> engine resolution ===");
+
+  // Candidates: exact key first; bare twin alias appended; invalid keys resolve nowhere.
+  assert(
+    JSON.stringify(channelUrnCandidates("z440-menno")) ===
+      JSON.stringify(["urn:moos:channel:virtual-desktop.z440-menno"]),
+    "an exact launcher key maps to its channel urn only",
+  );
+  assert(
+    JSON.stringify(channelUrnCandidates("menno")) ===
+      JSON.stringify([
+        "urn:moos:channel:virtual-desktop.menno",
+        "urn:moos:channel:virtual-desktop.z440-menno",
+      ]),
+    "a bare twin key aliases to the z440- channel as fallback",
+  );
+  assert(
+    channelUrnCandidates("Not A Key!").length === 0 && channelUrnCandidates("").length === 0,
+    "invalid keys produce no candidates",
+  );
+
+  // The display_name grammar: "... <host>.<leaf> :<port>" resolves; rooms without an
+  // engine tail do not; the parse is case-sensitive lowercase like every kernel urn.
+  const hint = parseEngineHint("Z440 desktop 2: my-tiny-data-collider.hp-z440.menno :8001");
+  assert(
+    hint !== null &&
+      hint.engineUrn === "urn:moos:kernel:hp-z440.menno" &&
+      hint.port === 8001,
+    `engine hint parses host/leaf/port (${hint && hint.engineUrn} :${hint && hint.port})`,
+  );
+  assert(
+    parseEngineHint("Z440 desktop 9: Example_manifold.WORKSPACE[PARAMETERS]") === null,
+    "an engine-less room's display_name parses to no hint",
+  );
+
+  // Pure resolution over synthetic wrapped nodes: a local engine is reachable with its
+  // own transport (twins answer MCP on :9001-:9003, NOT :8080+offset); another
+  // workstation's engine resolves its IDENTITY but no transport (reachable: false).
+  const wrapped = (displayName) => ({
+    properties: { display_name: { value: displayName } },
+  });
+  const local = resolutionFromChannelNode(
+    "z440-menno",
+    "urn:moos:channel:virtual-desktop.z440-menno",
+    wrapped("Z440 desktop 2: demo.hp-z440.menno :8001"),
+  );
+  assert(
+    local !== null &&
+      local.reachable === true &&
+      local.engine_url === "http://localhost:8001" &&
+      local.mcp_base_url === "http://localhost:9001",
+    "a seat-local twin resolves engine_url :8001 + MCP :9001",
+  );
+  const remote = resolutionFromChannelNode(
+    "hp-laptop-primary",
+    "urn:moos:channel:virtual-desktop.hp-laptop-primary",
+    wrapped("Z440 desktop 5: demo.hp-laptop.primary :8000"),
+  );
+  assert(
+    remote !== null &&
+      remote.reachable === false &&
+      remote.engine_urn === "urn:moos:kernel:hp-laptop.primary" &&
+      remote.engine_url === null,
+    "another workstation's engine resolves identity but NO transport (mismatch warning path)",
+  );
+
+  // LIVE: the t266 channel batch, consumed. The directory is the running primary.
+  const live = await resolveSurfaceEngine("z440-menno", { directoryUrl: engineUrl });
+  assert(
+    live !== null && live.engine_urn === "urn:moos:kernel:hp-z440.menno",
+    `LIVE: ?surface=z440-menno resolves to hp-z440.menno via ${live && live.channel_urn}`,
+  );
+  const alias = await resolveSurfaceEngine("menno", { directoryUrl: engineUrl });
+  assert(
+    alias !== null && alias.engine_urn === "urn:moos:kernel:hp-z440.menno",
+    "LIVE: the bare alias ?surface=menno resolves to the same engine",
+  );
+  const nowhere = await resolveSurfaceEngine("zzz-not-a-surface", { directoryUrl: engineUrl });
+  assert(nowhere === null, "LIVE: an unknown surface key resolves to null (default engine)");
+
+  // Twin round-trip (best-effort): the resolved engine must SELF-REPORT the resolved urn.
+  if (live && live.reachable && live.engine_url) {
+    try {
+      const res = await fetch(`${live.engine_url}/healthz`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      const twinHealth = await res.json();
+      assert(
+        twinHealth.kernel_urn === live.engine_urn,
+        `LIVE: ${live.engine_url} self-reports ${live.engine_urn} (match, no warning)`,
+      );
+    } catch {
+      console.log("  (twin engine not reachable — round-trip skipped, resolution asserted above)");
+    }
+  }
+
+  console.log("\nPASS: A16 surface resolution verified (candidates · hint grammar · transports · live chain).");
 }
 
 /**
