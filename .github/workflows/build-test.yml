@@ -1,0 +1,36 @@
+# A20 (t275 lane B): a real build+test check for a repo that previously had NO CI.
+#
+# Scope is honest about the runner: typecheck, the production build, and smoke:llm —
+# whose A–D assertions (tool mapping, chat body, both parse recovery paths + strict
+# rejection, the cloud-egress access gate) are pure and self-skip the live-Ollama leg.
+# smoke:worker and smoke:live are NOT run here: both drive the real MCP/REST transport
+# against a live Z440 kernel that a GitHub runner cannot reach — they remain the local
+# gates TESTING.md defines. This check becomes REQUIRED only via the org ruleset (G9,
+# Sam-gated); nothing here asserts that status.
+name: build-test
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install (clean, lockfile-exact)
+        run: npm ci
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+      - name: Build (vite -> dist/)
+        run: npm run build
+      - name: Built worker exists (smoke:worker's load target)
+        run: test -f dist/worker.js && test -f dist/manifest.json
+      - name: LLM seam smoke (pure A-D; live leg self-skips)
+        run: npm run smoke:llm

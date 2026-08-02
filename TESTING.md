@@ -5,6 +5,12 @@ with the Z440 primary kernel up. `build` appears in the sequence below but is a 
 not a gate: it produces the `dist/` that `smoke:worker` reads. Run them in this order; each is
 fast and each catches a distinct class.
 
+CI (`.github/workflows/build-test.yml`, the `build-test` check) runs the subset a GitHub
+runner can honestly execute: `typecheck`, `build`, a dist sanity check, and `smoke:llm`
+(whose live-Ollama leg self-skips). `smoke:worker` and `smoke:live` need the live Z440
+kernel and stay local-only — CI green is therefore **not** a substitute for the full gate
+sequence below.
+
 ```bash
 npm run typecheck        # GATE  tsc --noEmit
 npm run build            #       prerequisite -> dist/ (also the load-unpacked target)
