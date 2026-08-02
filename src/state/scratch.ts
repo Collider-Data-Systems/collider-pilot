@@ -11,8 +11,48 @@
  */
 
 import type { HgFrame } from "../mcp/types";
+import { SURFACE_KEY_PATTERN } from "../mcp/surface-resolver.js";
 
-const SCRATCH_KEY = "pilot.scratch.v1";
+/**
+ * A17: the scratch store is PER SURFACE. One browser-wide key meant every generated Z440
+ * window shared (and overwrote) one selection + one cached frame — 14 windows, one frame.
+ * Each surface now scratches under its own key; the docked panel / pop-out / selftest
+ * (no surface) keep the legacy key, so their behaviour is unchanged.
+ *
+ * Scope resolution, per page:
+ *   - `?scope=<key>`   — explicit, threaded by whichever page OPENED this one (both
+ *                        pip.html routes), so a mirror lands on its opener's channel.
+ *                        An empty `scope=` pins the default scope explicitly.
+ *   - `?surface=<key>` — the launcher's room key on sidepanel.html. `"tab"` is excluded:
+ *                        on pip.html that value is the full-tab DISPLAY-MODE sentinel,
+ *                        not a room.
+ *   - neither          — the default (legacy) scope.
+ * Invalid keys collapse to the default scope rather than minting junk storage keys.
+ */
+function scratchScope(): string {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const scope = params.get("scope");
+    if (scope !== null) {
+      return SURFACE_KEY_PATTERN.test(scope) ? scope : "";
+    }
+    const surface = params.get("surface");
+    if (surface !== null && surface !== "tab" && SURFACE_KEY_PATTERN.test(surface)) {
+      return surface;
+    }
+  } catch {
+    // no DOM/location (never the case for the pages that import this) — default scope
+  }
+  return "";
+}
+
+const SCRATCH_SCOPE = scratchScope();
+const SCRATCH_KEY = SCRATCH_SCOPE ? `pilot.scratch.v1.${SCRATCH_SCOPE}` : "pilot.scratch.v1";
+
+/** The `?scope=` query fragment a page must append when OPENING a mirror (pip.html). */
+export function scratchScopeParam(): string {
+  return `scope=${encodeURIComponent(SCRATCH_SCOPE)}`;
+}
 
 export interface PilotScratch {
   /** urn of the currently selected node, or null. */

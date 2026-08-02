@@ -116,7 +116,7 @@ src/mcp/transform.js               SHARED pure fold -> HgFrame transform + view_
 src/mcp/streamable-http-client.js  SHARED read-only MCP/REST transport (Phase 2)
 src/mcp/streamable-http-adapter.ts StreamableHttpMcpAdapter — live read (Phase 2)
 src/mcp/adapter-factory.ts         mode switch: 'mock' | 'live' (extension defaults live)
-src/state/scratch.ts               chrome.storage.session helpers (selection + frame cache; onChanged subscription — Phase 3 shared store)
+src/state/scratch.ts               chrome.storage.session helpers (selection + frame cache; onChanged subscription — per-surface store since A17)
 src/components/                    PostureStrip (strip + audit drawer) · SettingsPanel · GraphControls · FrameGraph (Cytoscape) · NodeInspector · ActionsPanel + ConfirmActionModal
 src/tools/types.ts                 controlled-tools contract: ToolKind/ToolChannel, ToolSpec, AffordancePack, ToolCall, PendingAction (Phase 4)
 src/tools/tool-call.ts             structured ToolCall validator (args_schema JSON-shape check; NO text parsing) (Phase 4)
@@ -272,7 +272,11 @@ write path (controlled tool calls + confirmation UI) remains gated to **Phase 4*
   [`openPipMirror()`](src/pip/pip-window.tsx) which invokes `requestWindow({width, height})`
   **synchronously** — no `await` runs before it, so the gesture is still valid. Clicking
   again while a mirror is open just **focuses** the existing window (never a second one).
-- **One shared store (`chrome.storage.session`, key `pilot.scratch.v1`).** The panel and the
+- **One shared store per surface (`chrome.storage.session`, key `pilot.scratch.v1` — or
+  `pilot.scratch.v1.<surface>` in a `?surface=` window, A17).** A single browser-wide key
+  meant 14 generated windows overwrote one selection and one cached frame; each surface now
+  scratches on its own channel, and both pip.html routes carry an explicit `?scope=` from
+  their opener so a mirror lands on its opener's channel. The panel and the
   PiP mirror read and write the same [scratch store](src/state/scratch.ts). Sync is
   **event-driven** via `chrome.storage.onChanged` (plus a re-read when the PiP window regains
   focus) — **no polling loop**. The **frame** flows one-way (panel authors it → scratch →
