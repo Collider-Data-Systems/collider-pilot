@@ -38,6 +38,7 @@ import {
   resolveAdapterMode,
   resolveAdapterConfig,
 } from "./mcp/adapter-factory";
+import { SURFACE_KEY_PATTERN } from "./mcp/surface-resolver.js";
 import { resolveTrustedAccess } from "./state/access-identity";
 import { readRequestedMode } from "./mcp/access.js";
 
@@ -80,8 +81,9 @@ async function withTrustedAccess(
  */
 // Case-SENSITIVE on purpose: the documented form is lowercase, every launcher key is
 // lowercase, and an /i flag would both contradict the docs and hash `Z440-Primary` to a
-// different colour than `z440-primary` (Copilot #24).
-const SURFACE_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+// different colour than `z440-primary` (Copilot #24). The pattern now lives in
+// surface-resolver.js (imported above) so the room handshake and the A16 engine
+// resolution can never drift on what a valid key is.
 
 const GROUP_COLORS: chrome.tabGroups.ColorEnum[] = [
   "blue",
@@ -167,21 +169,36 @@ function hasToolDiscovery(
 }
 
 // Lazily resolve the adapter (mode = build-time default 'live', overridable via storage),
-// then memoize it. No correctness-critical global: if the worker is terminated, the next
-// message rebuilds it identically.
-let adapterPromise: Promise<McpAdapter> | null = null;
-function getAdapter(): Promise<McpAdapter> {
-  if (!adapterPromise) {
-    adapterPromise = Promise.all([resolveAdapterMode(), resolveAdapterConfig()]).then(
-      ([mode, config]) => {
-        console.log(
-          `[pilot] adapter mode: ${mode} · access tier: ${config.enforcement ?? "client-presentation"}`,
-        );
-        return createAdapter(mode, config);
-      },
-    );
+// then memoize it PER SURFACE (A16): a `?surface=` window resolves its OWN engine
+// (surface_key -> channel -> engine), while surfaceless callers ("" — the docked panel,
+// the pop-out, the PiP) share the default. No correctness-critical global: if the worker
+// is terminated, the next message rebuilds the map identically.
+const adapterPromises = new Map<string, Promise<McpAdapter>>();
+function getAdapter(surface = ""): Promise<McpAdapter> {
+  let promise = adapterPromises.get(surface);
+  if (!promise) {
+    promise = Promise.all([
+      resolveAdapterMode(),
+      resolveAdapterConfig(surface || undefined),
+    ]).then(([mode, config]) => {
+      console.log(
+        `[pilot] adapter mode: ${mode} · access tier: ${config.enforcement ?? "client-presentation"}` +
+          (surface ? ` · surface: ${surface} -> ${config.engineUrn ?? "default engine"}` : ""),
+      );
+      return createAdapter(mode, config);
+    });
+    adapterPromises.set(surface, promise);
   }
-  return adapterPromise;
+  return promise;
+}
+
+/** The validated `?surface=` key riding on a GET_FRAME, or "" (default engine). */
+function surfaceOf(message: PilotRequest): string {
+  const key =
+    message.type === "GET_FRAME" && typeof message.surface === "string"
+      ? message.surface
+      : "";
+  return SURFACE_KEY_PATTERN.test(key) ? key : "";
 }
 
 // No popup is configured, so let onClicked drive panel opening explicitly.
@@ -210,7 +227,7 @@ chrome.runtime.onMessage.addListener(
     if (message?.type === "GET_FRAME") {
       // Strip inbound access + re-inject the trusted identity BEFORE the adapter reads. The
       // panel only ever contributes view_filter.access.mode; identity comes from storage.
-      Promise.all([getAdapter(), withTrustedAccess(message.request)])
+      Promise.all([getAdapter(surfaceOf(message)), withTrustedAccess(message.request)])
         .then(([adapter, request]) => adapter.getFrame(request))
         .then((frame) => sendResponse({ type: "FRAME", frame }))
         .catch((err: unknown) =>

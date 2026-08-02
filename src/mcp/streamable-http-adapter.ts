@@ -73,6 +73,7 @@ export interface RelationNeighborhood {
 export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapter {
   private readonly client: ReturnType<typeof createStreamableHttpClient>;
   private readonly engineUrn: string;
+  private readonly engineUrl: string;
   private readonly engineEndpoint: string;
   private lastError: string | null = null;
 
@@ -80,6 +81,7 @@ export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapte
     const mcpBaseUrl = config.mcpBaseUrl ?? DEFAULT_MCP_BASE_URL;
     const engineUrl = config.engineUrl ?? DEFAULT_ENGINE_URL;
     this.engineUrn = config.engineUrn ?? DEFAULT_ENGINE_URN;
+    this.engineUrl = engineUrl;
     this.engineEndpoint = `${engineUrl} (HTTP) · ${mcpBaseUrl} (MCP)`;
     this.client = createStreamableHttpClient({
       mcpBaseUrl,
@@ -111,6 +113,7 @@ export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapte
         request,
         engine: this.engineUrn,
         engineEndpoint: this.engineEndpoint,
+        engineUrl: this.engineUrl,
         foldedAt: new Date().toISOString(),
       });
       this.lastError = null;

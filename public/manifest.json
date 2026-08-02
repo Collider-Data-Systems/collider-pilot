@@ -9,6 +9,12 @@
   "host_permissions": [
     "http://localhost:8080/*",
     "http://localhost:8000/*",
+    "http://localhost:8001/*",
+    "http://localhost:8002/*",
+    "http://localhost:8003/*",
+    "http://localhost:9001/*",
+    "http://localhost:9002/*",
+    "http://localhost:9003/*",
     "http://localhost:11434/*",
     "https://localhost:8443/*"
   ],

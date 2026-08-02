@@ -156,7 +156,21 @@ export interface ViewFilter {
  */
 export interface FrameProvenance {
   engine: string; // source engine urn, e.g. "urn:moos:kernel:hp-z440.primary"
+  /**
+   * A16: the engine's SELF-REPORTED identity — /healthz `kernel_urn` (the A6 surface,
+   * live fleet-wide since t274) read in the same breath as the frame. `engine` is what
+   * the surface resolution EXPECTS; this is what the connected engine SAYS. The panel
+   * renders an ENGINE MISMATCH warning when they differ. Null when the engine predates
+   * the A6 healthz surface; absent on fixture frames.
+   */
+  engine_reported?: string | null;
   engine_endpoint: string; // human display of the read endpoint
+  /**
+   * A16: machine-readable engine REST base (e.g. "http://localhost:8001") so panel-side
+   * readers (log feed, fold stream) follow the SAME engine the frame was read from,
+   * instead of falling back to the build-time default. Absent on fixture frames.
+   */
+  engine_url?: string;
   log_seq: number; // append-only log sequence the fold was taken at
   t_day: number; // MOOS T-day
   workspace: string; // session/workspace urn
@@ -228,7 +242,14 @@ export interface ToolDiscoveryAdapter {
 
 /** Worker <-> side-panel message envelope (typed, discriminated, request-scoped). */
 export type PilotRequest =
-  | { type: "GET_FRAME"; request?: FrameRequest }
+  /**
+   * `surface` (A16) is the launcher's `?surface=<key>` riding along so the worker can
+   * resolve WHICH engine this window reads (surface_key -> channel -> engine) at runtime.
+   * Pattern-checked in the worker; an invalid/absent key means the default engine. It
+   * carries no identity and no trust — engine verification is the healthz kernel_urn
+   * comparison, not this string.
+   */
+  | { type: "GET_FRAME"; request?: FrameRequest; surface?: string }
   | { type: "LIST_TOOLS" }
   /**
    * SURFACE ROOM handshake. A generated Z440 surface window opens this extension's own

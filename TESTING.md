@@ -27,7 +27,11 @@ dropped, its `identity_source` overwritten to anon and its tier left unpromoted;
 identity must resolve from storage alone; anon posture and `enabled:false` must both fail
 closed. It also covers the surface-room handshake's tab safety (a user's own tab group must
 survive, pinned tabs stay ungrouped, other windows are untouched, re-runs are idempotent) and
-asserts that an unknown message type is *not* answered.
+asserts that an unknown message type is *not* answered. It also carries the **A16
+acceptance**: `GET_FRAME` with `surface:"menno"` must come back with
+`provenance.engine === urn:moos:kernel:hp-z440.menno` (self-confirmed by the engine's
+healthz `kernel_urn`), an invalid key must fall back to the default engine, and — when the
+menno twin is not up — the surfaced case reports SKIP rather than silently passing.
 
 **`smoke:live`** proves the slice law twice: on a synthetic chain (ports narrow relations;
 hops expand only along retained ports) and on the **live fold** (the default lens loses no
@@ -35,7 +39,11 @@ node or relation the legacy default showed; `["*"]` reaches the whole fold; hops
 focus monotonically). One assertion there earns its keep long-term: **every live relation
 label must be present in the UI's port vocabulary** — it caught `guards` and `participates`
 being unreachable, and it will fail the next time an ontology bump adds a port the UI cannot
-select.
+select. It also exercises the **A16 surface→channel→engine resolution** with the code the
+worker runs: candidate/alias mapping, the display_name engine-hint grammar, the local
+transport table (twins answer MCP on :9001–:9003, not :8080), the live directory chain
+against the t266 channel nodes, and — when the twin is up — that the resolved endpoint
+self-reports the resolved `kernel_urn`.
 
 **`smoke:llm`** covers the ToolSpec→OpenAI mapping, both recovery paths (structured
 `tool_calls` and strict content-JSON) with fenced/prose content *rejected*, the cloud-egress
