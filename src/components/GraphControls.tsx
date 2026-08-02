@@ -47,9 +47,24 @@ export const LENSES: Lens[] = [
     id: "identity",
     label: "identity",
     types: ["user", "group", "agent", "role", "manifold"],
-    ports: ["member-of", "governs", "delegates-to", "owns", "spans", "presents-as"],
+    // T7: the WF01 kinship ports (ontology 4.0.5 — parent-of/child-of, spouse-of,
+    // sibling-of; `topology`-coloured there, but "who is who" is this lens's job). The
+    // VOCAB must render BEFORE any kinship data is applied to a fold (the apply is
+    // Sam-gated behind G3) — the pilot must never be the blocker.
+    ports: [
+      "member-of",
+      "governs",
+      "delegates-to",
+      "owns",
+      "spans",
+      "presents-as",
+      "parent-of",
+      "child-of",
+      "spouse-of",
+      "sibling-of",
+    ],
     title:
-      "The A1 identity poset: who is who, who belongs to what, who governs whom (user · group · agent · role · manifold + member-of / governs / delegates-to / owns / spans / presents-as). What those relations point AT comes along even when its type is not listed here — so `owns` brings the owned workstation and channel in with it.",
+      "The A1 identity poset: who is who, who belongs to what, who governs whom (user · group · agent · role · manifold + member-of / governs / delegates-to / owns / spans / presents-as, and the 4.0.5 kinship ports parent-of / child-of / spouse-of / sibling-of). What those relations point AT comes along even when its type is not listed here — so `owns` brings the owned workstation and channel in with it.",
   },
   {
     id: "topology",
@@ -170,6 +185,8 @@ export const TYPE_GROUPS: { label: string; types: string[] }[] = [
 /** Relation ports offered in the advanced drawer, grouped by family. */
 export const PORT_GROUPS: { label: string; ports: string[] }[] = [
   { label: "identity/authority", ports: ["owns", "member-of", "governs", "delegates-to"] },
+  // T7: WF01 kinship (ontology 4.0.5). Declared ahead of any applied kinship data.
+  { label: "kinship", ports: ["parent-of", "child-of", "spouse-of", "sibling-of"] },
   {
     label: "placement",
     ports: [
