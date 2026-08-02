@@ -250,7 +250,10 @@ export type PilotRequest =
    * comparison, not this string.
    */
   | { type: "GET_FRAME"; request?: FrameRequest; surface?: string }
-  | { type: "LIST_TOOLS" }
+  /** Same `surface` semantics as GET_FRAME (Copilot #37): tool discovery must target the
+   *  SAME resolved engine as the frames, or a twin window would render menno's fold while
+   *  offering the default engine's tool catalog. */
+  | { type: "LIST_TOOLS"; surface?: string }
   /**
    * SURFACE ROOM handshake. A generated Z440 surface window opens this extension's own
    * `sidepanel.html?surface=<key>` as one of its tabs; that page reports the key here and

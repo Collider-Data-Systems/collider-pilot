@@ -117,6 +117,7 @@ async function requestFrame(request?: FrameRequest): Promise<PilotResponse> {
 async function requestTools(): Promise<PilotResponse> {
   return (await chrome.runtime.sendMessage({
     type: "LIST_TOOLS",
+    surface: SURFACE_KEY,
   } as PilotRequest)) as PilotResponse;
 }
 

@@ -174,6 +174,10 @@ function hasToolDiscovery(
 // the pop-out, the PiP) share the default. No correctness-critical global: if the worker
 // is terminated, the next message rebuilds the map identically.
 const adapterPromises = new Map<string, Promise<McpAdapter>>();
+/** Cache backstop (Copilot #37): a browser session uses ~15 surfaces, but messages are
+ *  programmatic, so an unbounded per-key memo would be a slow leak. Insertion-order
+ *  eviction — a re-requested surface just rebuilds its adapter identically. */
+const ADAPTER_CACHE_MAX = 32;
 function getAdapter(surface = ""): Promise<McpAdapter> {
   let promise = adapterPromises.get(surface);
   if (!promise) {
@@ -187,15 +191,20 @@ function getAdapter(surface = ""): Promise<McpAdapter> {
       );
       return createAdapter(mode, config);
     });
+    if (adapterPromises.size >= ADAPTER_CACHE_MAX) {
+      const oldest = adapterPromises.keys().next().value;
+      if (oldest !== undefined) adapterPromises.delete(oldest);
+    }
     adapterPromises.set(surface, promise);
   }
   return promise;
 }
 
-/** The validated `?surface=` key riding on a GET_FRAME, or "" (default engine). */
+/** The validated `?surface=` key riding on a GET_FRAME / LIST_TOOLS, or "" (default). */
 function surfaceOf(message: PilotRequest): string {
   const key =
-    message.type === "GET_FRAME" && typeof message.surface === "string"
+    (message.type === "GET_FRAME" || message.type === "LIST_TOOLS") &&
+    typeof message.surface === "string"
       ? message.surface
       : "";
   return SURFACE_KEY_PATTERN.test(key) ? key : "";
@@ -275,7 +284,7 @@ chrome.runtime.onMessage.addListener(
     // an empty list and the side panel falls back to the MOCK affordance pack. No tool
     // is ever invoked here — this only enumerates what exists.
     if (message?.type === "LIST_TOOLS") {
-      getAdapter()
+      getAdapter(surfaceOf(message))
         .then((adapter) =>
           hasToolDiscovery(adapter) ? adapter.listTools() : Promise.resolve([]),
         )
