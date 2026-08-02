@@ -552,6 +552,84 @@ async function main() {
 
   // t264 slice axes: ports filter · N-hop scope · the ["*"] all-types sentinel.
   sliceAxisChecks();
+
+  // T7: the 4.0.5 kinship VOCAB renders BEFORE any kinship data reaches a fold.
+  kinshipVocabChecks();
+}
+
+/**
+ * T7 — WF01 kinship ports (ontology 4.0.5: parent-of/child-of · spouse-of/spouse-of ·
+ * sibling-of/sibling-of). The kinship APPLY is Sam-gated behind G3, so no live fold
+ * carries these labels yet — which is exactly why this is asserted on a SYNTHETIC family
+ * (synthetic urns only; the repo is public): the pilot's vocabulary and lens must render
+ * kinship the day the data lands, never be the blocker. Checks (d)/(g) above then keep
+ * covering the live side once real labels appear.
+ */
+function kinshipVocabChecks() {
+  console.log("\n=== T7 kinship VOCAB (ontology 4.0.5, ahead of any applied data) ===");
+
+  // The identity lens declares all four ports (parsed from GraphControls.tsx — no copy).
+  const identity = parseLensTable().find((l) => l.id === "identity");
+  const KINSHIP = ["parent-of", "child-of", "spouse-of", "sibling-of"];
+  assert(identity !== undefined, "the identity lens exists");
+  for (const p of KINSHIP) {
+    assert(identity.ports.includes(p), `identity lens declares '${p}'`);
+  }
+
+  // A synthetic family folds through the REAL applyViewFilter and every kinship relation
+  // survives — i.e. the pilot RENDERS these relation types, both under the identity
+  // lens's declared ports and under the all-ports default.
+  const person = (n) => ({ urn: `urn:moos:user:${n}`, type_id: "user", label: n, properties: {} });
+  const nodes = [person("ada"), person("ben"), person("cai"), person("dot")];
+  const kin = (urn, label, src, tgt) => ({
+    urn,
+    type_id: "WF01",
+    label,
+    source_urn: `urn:moos:user:${src}`,
+    target_urn: `urn:moos:user:${tgt}`,
+  });
+  const relations = [
+    kin("k1", "parent-of", "ada", "cai"),
+    kin("k2", "child-of", "cai", "ada"),
+    kin("k3", "spouse-of", "ada", "ben"),
+    kin("k4", "sibling-of", "cai", "dot"),
+  ];
+  const lensSlice = applyViewFilter(
+    nodes,
+    relations,
+    resolveViewFilter(
+      { view_filter: { types: identity.types, ports: identity.ports, lens: "identity" } },
+      { t_day: 275 },
+    ),
+    false,
+  );
+  assert(
+    lensSlice.relations.length === 4,
+    `the identity lens renders all 4 kinship relations (got ${lensSlice.relations.length})`,
+  );
+  const allSlice = applyViewFilter(
+    nodes,
+    relations,
+    resolveViewFilter({ view_filter: { types: ["*"] } }, { t_day: 275 }),
+    false,
+  );
+  assert(
+    allSlice.relations.length === 4,
+    "the all-ports default renders all 4 kinship relations",
+  );
+  // Kinship narrows like any other port family: asking for spouse-of alone keeps only it.
+  const spouseOnly = applyViewFilter(
+    nodes,
+    relations,
+    resolveViewFilter({ view_filter: { types: ["*"], ports: ["spouse-of"] } }, { t_day: 275 }),
+    false,
+  );
+  assert(
+    spouseOnly.relations.length === 1 && spouseOnly.relations[0].label === "spouse-of",
+    "ports ['spouse-of'] narrows to exactly the spouse relation",
+  );
+
+  console.log("\nPASS: T7 kinship VOCAB present and renderable ahead of the G3-gated apply.");
 }
 
 /**
@@ -788,6 +866,7 @@ function liveAxisChecks(fold, health) {
   // the live label set. This is the check that caught `guards` / `participates` missing.
   const VOCAB = new Set([
     "owns", "member-of", "governs", "delegates-to",
+    "parent-of", "child-of", "spouse-of", "sibling-of", // T7: WF01 kinship (ontology 4.0.5)
     "opens-on", "has-occupant", "hosts", "routes-to", "spans", "realizes", "presents-as", "participates",
     "provides-kb", "classifies", "pins-urn", "cites", "depends-on", "composes", "produces",
     "causes", "triggers", "has-purpose", "curates", "scheduled-after", "focus", "guards",
