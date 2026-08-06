@@ -81,8 +81,12 @@ export async function loadPilotEngine(): Promise<PilotEngineConfig | null> {
 export async function savePilotEngine(cfg: PilotEngineConfig | null): Promise<void> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      if (cfg && normalizeEngineConfig(cfg)) {
-        await chrome.storage.local.set({ [STORAGE_ENGINE_KEY]: cfg });
+      // Store the NORMALIZED object, not the caller's — so storage always matches the
+      // shape loadPilotEngine/resolveAdapterConfig consume (no extra fields, no invalid
+      // urn riding along). Copilot PR #41 review catch.
+      const normalized = cfg ? normalizeEngineConfig(cfg) : null;
+      if (normalized) {
+        await chrome.storage.local.set({ [STORAGE_ENGINE_KEY]: normalized });
       } else {
         await chrome.storage.local.remove(STORAGE_ENGINE_KEY);
       }
