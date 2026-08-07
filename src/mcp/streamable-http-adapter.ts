@@ -73,6 +73,15 @@ export interface RelationNeighborhood {
 export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapter {
   private readonly client: ReturnType<typeof createStreamableHttpClient>;
   private readonly engineUrn: string;
+  /**
+   * Whether the engine urn was NAMED by the caller (a ?surface= resolution or the stored
+   * pilot.engine override) or merely DEFAULTED. An explicit urn is an EXPECTATION —
+   * provenance keeps it even when the connected engine reports otherwise, so the
+   * mismatch warning can render. The defaulted urn is a fiction on any seat that is not
+   * hp-z440 ("localhost" simply means THIS box's engine), so provenance prefers the
+   * engine's own /healthz kernel_urn there — no spurious mismatch on other seats (t278).
+   */
+  private readonly engineUrnExplicit: boolean;
   private readonly engineUrl: string;
   private readonly engineEndpoint: string;
   private lastError: string | null = null;
@@ -80,6 +89,7 @@ export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapte
   constructor(config: StreamableHttpAdapterConfig = {}) {
     const mcpBaseUrl = config.mcpBaseUrl ?? DEFAULT_MCP_BASE_URL;
     const engineUrl = config.engineUrl ?? DEFAULT_ENGINE_URL;
+    this.engineUrnExplicit = config.engineUrn != null;
     this.engineUrn = config.engineUrn ?? DEFAULT_ENGINE_URN;
     this.engineUrl = engineUrl;
     this.engineEndpoint = `${engineUrl} (HTTP) · ${mcpBaseUrl} (MCP)`;
@@ -108,10 +118,16 @@ export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapte
         this.client.healthz(),
       ]);
       const fold = parseGraphStateResult(graphRpc);
+      const reported = (health as { kernel_urn?: unknown })?.kernel_urn;
       const frame = selectFrame(fold, {
         healthz: health,
         request,
-        engine: this.engineUrn,
+        // Explicit urn = the caller's EXPECTATION (mismatch warning material); defaulted
+        // urn = no expectation, so the engine's own self-report is the honest identity.
+        engine:
+          this.engineUrnExplicit || typeof reported !== "string" || reported.length === 0
+            ? this.engineUrn
+            : reported,
         engineEndpoint: this.engineEndpoint,
         engineUrl: this.engineUrl,
         foldedAt: new Date().toISOString(),

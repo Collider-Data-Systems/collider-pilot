@@ -677,9 +677,11 @@ async function surfaceResolutionChecks(engineUrl) {
     "an engine-less room's display_name parses to no hint",
   );
 
-  // Pure resolution over synthetic wrapped nodes: a local engine is reachable with its
-  // own transport (twins answer MCP on :9001-:9003, NOT :8080+offset); another
-  // workstation's engine resolves its IDENTITY but no transport (reachable: false).
+  // Pure resolution over synthetic wrapped nodes: a Z440 twin PREFERS its localhost
+  // transport (twins answer MCP on :9001-:9003, NOT :8080+offset) with the tailnet pair
+  // as the verification alternative; another workstation's engine prefers its TAILNET
+  // transport (t278 fleet-wide reads — the async resolver then keeps the first candidate
+  // whose engine self-reports the expected kernel_urn).
   const wrapped = (displayName) => ({
     properties: { display_name: { value: displayName } },
   });
@@ -693,7 +695,14 @@ async function surfaceResolutionChecks(engineUrl) {
       local.reachable === true &&
       local.engine_url === "http://localhost:8001" &&
       local.mcp_base_url === "http://localhost:9001",
-    "a seat-local twin resolves engine_url :8001 + MCP :9001",
+    "a Z440 twin prefers engine_url :8001 + MCP :9001 (localhost first)",
+  );
+  assert(
+    local !== null &&
+      Array.isArray(local.transport_candidates) &&
+      local.transport_candidates.length === 2 &&
+      local.transport_candidates[1].engineUrl === "http://100.82.243.13:8001",
+    "the twin's verification alternative is its tailnet pair",
   );
   const remote = resolutionFromChannelNode(
     "hp-laptop-primary",
@@ -702,10 +711,11 @@ async function surfaceResolutionChecks(engineUrl) {
   );
   assert(
     remote !== null &&
-      remote.reachable === false &&
+      remote.reachable === true &&
       remote.engine_urn === "urn:moos:kernel:hp-laptop.primary" &&
-      remote.engine_url === null,
-    "another workstation's engine resolves identity but NO transport (mismatch warning path)",
+      remote.engine_url === "http://100.106.220.58:8000" &&
+      remote.mcp_base_url === "http://100.106.220.58:8080",
+    "another workstation's engine resolves its TAILNET transport (fleet-wide reads, t278)",
   );
 
   // LIVE: the t266 channel batch, consumed. The directory is the running primary.

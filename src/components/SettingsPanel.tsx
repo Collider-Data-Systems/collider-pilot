@@ -42,6 +42,8 @@ import {
   saveLLMToken,
 } from "../tools/model-providers";
 import { evaluateEgress } from "../tools/llm-provider";
+import { loadPilotEngine, savePilotEngine } from "../mcp/adapter-factory";
+import { FLEET_ENGINES } from "../mcp/surface-resolver.js";
 
 const LAYOUT_LABEL: Record<GraphLayoutName, string> = {
   concentric: "Concentric",
@@ -179,6 +181,7 @@ export function SettingsPanel({
           onLoaded={() => setIdentityLoaded(true)}
           onReloadFrame={onReloadFrame}
         />
+        <EngineSection onReloadFrame={onReloadFrame} />
         {provider && <ProviderSection {...provider} />}
         <div className="settings-section">
           <div className="settings-section-title">layout</div>
@@ -404,6 +407,71 @@ function IdentitySection({
       <div className="gc-note">
         writes only <code>chrome.storage.local['pilot.access']</code> — never the HG, never
         a secret.
+      </div>
+    </div>
+  );
+}
+
+/**
+ * EngineSection (t278) — which fleet engine surfaceless windows read. The pick writes
+ * `chrome.storage.local['pilot.engine']`; the worker's storage.onChanged listener drops
+ * its adapter memo, and the reload re-reads through the new default. READ-ONLY like the
+ * whole seat: this changes which engine is READ, never what can be written (nothing
+ * can). A `?surface=` window's own verified engine resolution still wins. WHAT a user
+ * sees on any engine stays the A3 access posture's decision, not this picker's.
+ */
+function EngineSection({ onReloadFrame }: { onReloadFrame: () => void }) {
+  // "" = the build-time localhost default (this box); otherwise a fleet engine urn.
+  const [pick, setPick] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadPilotEngine().then((cfg) => {
+      if (cancelled) return;
+      if (cfg?.engineUrn) setPick(cfg.engineUrn);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handlePick = useCallback(
+    async (urn: string) => {
+      setPick(urn);
+      const engine = FLEET_ENGINES.find((e) => e.engineUrn === urn);
+      await savePilotEngine(
+        engine
+          ? {
+              engineUrl: engine.engineUrl,
+              mcpBaseUrl: engine.mcpBaseUrl,
+              engineUrn: engine.engineUrn,
+            }
+          : null,
+      );
+      onReloadFrame(); // the worker rebuilt its adapters on the storage change
+    },
+    [onReloadFrame],
+  );
+
+  return (
+    <div className="settings-section">
+      <div className="settings-section-title">engine</div>
+      <select
+        className="gc-select"
+        value={pick}
+        onChange={(e) => void handlePick(e.target.value)}
+        title="Default engine for surfaceless windows (docked panel / pop-out / PiP). A ?surface= window still resolves its own engine. Read-only either way."
+      >
+        <option value="">This box (localhost — default)</option>
+        {FLEET_ENGINES.map((e) => (
+          <option key={e.engineUrn} value={e.engineUrn} title={e.engineUrn}>
+            {e.label} · {urnTail(e.engineUrn)}
+          </option>
+        ))}
+      </select>
+      <div className="gc-note">
+        writes only <code>chrome.storage.local['pilot.engine']</code> — a read target,
+        never a write path. Access posture decides what is visible on any engine.
       </div>
     </div>
   );

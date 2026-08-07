@@ -37,6 +37,7 @@ import {
   createAdapter,
   resolveAdapterMode,
   resolveAdapterConfig,
+  STORAGE_ENGINE_KEY,
 } from "./mcp/adapter-factory";
 import { SURFACE_KEY_PATTERN } from "./mcp/surface-resolver.js";
 import { resolveTrustedAccess } from "./state/access-identity";
@@ -199,6 +200,16 @@ function getAdapter(surface = ""): Promise<McpAdapter> {
   }
   return promise;
 }
+
+// The adapter memo bakes in the engine config at build time, so a changed default-engine
+// override (Settings "engine" section writes pilot.engine) must drop the memo — the next
+// GET_FRAME rebuilds each adapter against the new default. Not correctness-critical
+// state: a terminated worker loses the map and rebuilds identically anyway.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && STORAGE_ENGINE_KEY in changes) {
+    adapterPromises.clear();
+  }
+});
 
 /** The validated `?surface=` key riding on a GET_FRAME / LIST_TOOLS, or "" (default). */
 function surfaceOf(message: PilotRequest): string {

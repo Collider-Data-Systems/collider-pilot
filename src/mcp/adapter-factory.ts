@@ -28,6 +28,73 @@ export type AdapterMode = "mock" | "live";
 
 const STORAGE_MODE_KEY = "pilot.adapterMode";
 const STORAGE_ACCESS_KEY = "pilot.access";
+export const STORAGE_ENGINE_KEY = "pilot.engine";
+
+/**
+ * The stored default-engine override (Settings "engine" section, t278): which fleet
+ * engine surfaceless windows (the docked panel, the pop-out, the PiP) read instead of
+ * the build-time localhost default. READ-ONLY like everything here — it changes which
+ * engine is read, never what can be written (nothing can). A `?surface=` window's own
+ * resolution still wins over this default.
+ */
+export interface PilotEngineConfig {
+  engineUrl?: string;
+  mcpBaseUrl?: string;
+  engineUrn?: string;
+}
+
+function isHttpUrl(value: unknown): value is string {
+  return typeof value === "string" && /^https?:\/\/[^\s]+$/.test(value);
+}
+
+function normalizeEngineConfig(value: unknown): PilotEngineConfig | null {
+  if (!value || typeof value !== "object") return null;
+  const cfg = value as Record<string, unknown>;
+  const out: PilotEngineConfig = {};
+  if (isHttpUrl(cfg.engineUrl)) out.engineUrl = cfg.engineUrl;
+  if (isHttpUrl(cfg.mcpBaseUrl)) out.mcpBaseUrl = cfg.mcpBaseUrl;
+  if (typeof cfg.engineUrn === "string" && cfg.engineUrn.startsWith("urn:moos:kernel:")) {
+    out.engineUrn = cfg.engineUrn;
+  }
+  // An override without BOTH transports is not actionable — treat as unset.
+  return out.engineUrl && out.mcpBaseUrl ? out : null;
+}
+
+/** Read the stored default-engine override, or null (= the build-time localhost default). */
+export async function loadPilotEngine(): Promise<PilotEngineConfig | null> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const got = await chrome.storage.local.get(STORAGE_ENGINE_KEY);
+      return normalizeEngineConfig(got?.[STORAGE_ENGINE_KEY]);
+    }
+  } catch {
+    // storage unavailable (served harness) -> no override
+  }
+  return null;
+}
+
+/**
+ * Write (or, with null, clear) the default-engine override. The worker's
+ * storage.onChanged listener drops its adapter memo so the next GET_FRAME rebuilds
+ * against the new default.
+ */
+export async function savePilotEngine(cfg: PilotEngineConfig | null): Promise<void> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      // Store the NORMALIZED object, not the caller's — so storage always matches the
+      // shape loadPilotEngine/resolveAdapterConfig consume (no extra fields, no invalid
+      // urn riding along). Copilot PR #41 review catch.
+      const normalized = cfg ? normalizeEngineConfig(cfg) : null;
+      if (normalized) {
+        await chrome.storage.local.set({ [STORAGE_ENGINE_KEY]: normalized });
+      } else {
+        await chrome.storage.local.remove(STORAGE_ENGINE_KEY);
+      }
+    }
+  } catch {
+    // storage unavailable (served harness) -> no-op
+  }
+}
 
 function normalizeMode(value: unknown): AdapterMode | null {
   return value === "mock" || value === "live" ? value : null;
@@ -89,10 +156,18 @@ export async function resolveAdapterConfig(
   const config: StreamableHttpAdapterConfig = {};
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const got = await chrome.storage.local.get(STORAGE_ACCESS_KEY);
+      const got = await chrome.storage.local.get([STORAGE_ACCESS_KEY, STORAGE_ENGINE_KEY]);
       const cfg = got?.[STORAGE_ACCESS_KEY] as { enforcement?: unknown } | undefined;
       if (cfg && cfg.enforcement != null) {
         config.enforcement = normalizeEnforcement(cfg.enforcement);
+      }
+      // The stored default-engine override (t278). Applied BEFORE surface resolution so
+      // a ?surface= window's own verified engine still wins below.
+      const engine = normalizeEngineConfig(got?.[STORAGE_ENGINE_KEY]);
+      if (engine) {
+        config.engineUrl = engine.engineUrl;
+        config.mcpBaseUrl = engine.mcpBaseUrl;
+        if (engine.engineUrn) config.engineUrn = engine.engineUrn;
       }
     }
   } catch {
@@ -100,7 +175,9 @@ export async function resolveAdapterConfig(
   }
   if (surfaceKey) {
     try {
-      const resolved = await resolveSurfaceEngine(surfaceKey);
+      const resolved = await resolveSurfaceEngine(surfaceKey, {
+        directoryUrl: config.engineUrl,
+      });
       if (resolved) {
         // The EXPECTED engine identity always lands in the config — reachable or not —
         // so provenance states what this surface is SUPPOSED to read and the mismatch

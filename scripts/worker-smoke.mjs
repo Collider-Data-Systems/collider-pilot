@@ -42,7 +42,12 @@ function assert(cond, msg) {
 /* ---------------------------------------------------------------------------- */
 
 const storage = new Map();
-const listeners = { message: [], installed: [], clicked: [] };
+const listeners = { message: [], installed: [], clicked: [], storageChanged: [] };
+
+/** Fire chrome.storage.onChanged the way Chrome does: {key: {oldValue,newValue}}, area. */
+function fireStorageChanged(changes) {
+  for (const fn of listeners.storageChanged) fn(changes, "local");
+}
 /** Tab-strip state for the SURFACE_ROOM checks. */
 const tabState = { tabs: [], groups: new Map(), nextGroupId: 100, getCalls: 0 };
 
@@ -91,6 +96,7 @@ globalThis.chrome = {
     open: async () => undefined,
   },
   storage: {
+    onChanged: { addListener: (fn) => listeners.storageChanged.push(fn) },
     local: {
       async get(keys) {
         const list = keys == null ? [...storage.keys()] : Array.isArray(keys) ? keys : [keys];
@@ -99,10 +105,20 @@ globalThis.chrome = {
         return out;
       },
       async set(items) {
-        for (const [k, v] of Object.entries(items)) storage.set(k, v);
+        const changes = {};
+        for (const [k, v] of Object.entries(items)) {
+          changes[k] = { oldValue: storage.get(k), newValue: v };
+          storage.set(k, v);
+        }
+        fireStorageChanged(changes);
       },
       async remove(keys) {
-        for (const k of Array.isArray(keys) ? keys : [keys]) storage.delete(k);
+        const changes = {};
+        for (const k of Array.isArray(keys) ? keys : [keys]) {
+          changes[k] = { oldValue: storage.get(k) };
+          storage.delete(k);
+        }
+        fireStorageChanged(changes);
       },
     },
   },
@@ -150,7 +166,17 @@ console.log(
   `  frame: ${base.frame.nodes.length} nodes · ${base.frame.relations.length} relations · seq ${prov.log_seq} · T=${prov.t_day} · ontology ${prov.ontology_version}`,
 );
 assert(prov.mock === false, "frame is a LIVE read (mock === false)");
-assert(base.frame.nodes.length > 0, "frame carries nodes");
+// The default view_filter scopes to the Z440 Cowork seat, so a non-zero count is only
+// guaranteed when the DEFAULT engine is the Z440 primary. On another seat (hp-laptop /
+// hpprodesk) the sovereign local fold legitimately selects 0 nodes here — content
+// assertions for those seats run in B3 against the fleet primary via the override.
+if (prov.engine_reported === "urn:moos:kernel:hp-z440.primary") {
+  assert(base.frame.nodes.length > 0, "frame carries nodes");
+} else {
+  console.log(
+    `  note: default engine is ${prov.engine_reported ?? "unknown"} — the Cowork-scoped default filter selected ${base.frame.nodes.length} nodes (content asserted in B3)`,
+  );
+}
 assert(!!prov.access, "worker INJECTED the access fiber (the LogFeed gate depends on it)");
 assert(
   prov.access.computed_by === "client-presentation",
@@ -166,24 +192,75 @@ console.log("\n=== B2. GET_FRAME with ?surface= — the A16 acceptance, on the S
 // may legitimately be down when only the primary is up (TESTING.md's precondition), so
 // probe first: down ⇒ SKIP with a line, never a silent pass-off; up ⇒ hard assertions.
 const MENNO = "urn:moos:kernel:hp-z440.menno";
-let twinUp = false;
-try {
-  const probe = await fetch("http://localhost:8001/healthz", { signal: AbortSignal.timeout(2000) });
-  twinUp = probe.ok && (await probe.json()).kernel_urn === MENNO;
-} catch {
-  // twin down — the resolution path is still covered by smoke:live's directory checks
+// Probe the twin on the resolver's OWN candidate order (localhost first, tailnet second,
+// t278): whichever self-reports menno is the transport the resolution must land on. On
+// the Z440 seat that is localhost:8001, byte-for-byte the old assertion; from any other
+// seat it is the tailnet pair — the same acceptance, now exercisable fleet-wide.
+let twinUrl = null;
+for (const cand of ["http://localhost:8001", "http://100.82.243.13:8001"]) {
+  try {
+    const probe = await fetch(`${cand}/healthz`, { signal: AbortSignal.timeout(2000) });
+    if (probe.ok && (await probe.json()).kernel_urn === MENNO) {
+      twinUrl = cand;
+      break;
+    }
+  } catch {
+    // this candidate down — try the next; both down ⇒ SKIP below
+  }
 }
-if (twinUp) {
+if (twinUrl) {
   const menno = await send({ type: "GET_FRAME", surface: "menno" });
   assert(menno?.type === "FRAME", `surfaced GET_FRAME answered FRAME (got ${menno?.type}${menno?.error ? ": " + menno.error : ""})`);
   const mProv = menno.frame.provenance;
-  console.log(`  surface=menno -> engine ${mProv.engine} · reported ${mProv.engine_reported} · seq ${mProv.log_seq}`);
+  console.log(`  surface=menno -> engine ${mProv.engine} · reported ${mProv.engine_reported} · via ${mProv.engine_url} · seq ${mProv.log_seq}`);
   assert(mProv.engine === MENNO, "A16 ACCEPTANCE: ?surface=menno reports hp-z440.menno, not primary");
   assert(mProv.engine_reported === MENNO, "the connected engine SELF-reports menno (healthz kernel_urn)");
-  assert(mProv.engine_url === "http://localhost:8001", "provenance.engine_url follows the resolved engine");
+  assert(mProv.engine_url === twinUrl, "provenance.engine_url follows the VERIFIED transport candidate");
 } else {
-  console.log("  SKIP: twin :8001 not up as hp-z440.menno — surfaced-frame acceptance not exercised this run");
+  console.log("  SKIP: twin hp-z440.menno reachable on no candidate — surfaced-frame acceptance not exercised this run");
 }
+console.log("\n=== B3. stored default-engine override (pilot.engine, t278) ===");
+// The Settings engine picker writes chrome.storage.local['pilot.engine']; the worker's
+// storage.onChanged listener drops its adapter memo; the next GET_FRAME reads the picked
+// engine. Gate like B2: the fleet primary may be down/unroutable from this box ⇒ SKIP
+// with a line, never a silent pass-off.
+const Z440_PRIMARY = "urn:moos:kernel:hp-z440.primary";
+const Z440_ENGINE_URL = "http://100.82.243.13:8000";
+const Z440_MCP_URL = "http://100.82.243.13:8080";
+let z440Up = false;
+try {
+  const probe = await fetch(`${Z440_ENGINE_URL}/healthz`, { signal: AbortSignal.timeout(3000) });
+  z440Up = probe.ok && (await probe.json()).kernel_urn === Z440_PRIMARY;
+} catch {
+  // fleet primary unreachable — override acceptance not exercisable from this box
+}
+if (z440Up) {
+  await chrome.storage.local.set({
+    "pilot.engine": { engineUrl: Z440_ENGINE_URL, mcpBaseUrl: Z440_MCP_URL, engineUrn: Z440_PRIMARY },
+  });
+  const over = await send({ type: "GET_FRAME" });
+  assert(over?.type === "FRAME", `override GET_FRAME answered FRAME (got ${over?.type}${over?.error ? ": " + over.error : ""})`);
+  const oProv = over.frame.provenance;
+  console.log(
+    `  override -> engine ${oProv.engine} · reported ${oProv.engine_reported} · ${over.frame.nodes.length} nodes · seq ${oProv.log_seq}`,
+  );
+  assert(oProv.engine === Z440_PRIMARY, "provenance.engine follows the stored override");
+  assert(oProv.engine_reported === Z440_PRIMARY, "the overridden engine SELF-reports (healthz kernel_urn)");
+  assert(oProv.engine_url === Z440_ENGINE_URL, "provenance.engine_url follows the stored override");
+  assert(over.frame.nodes.length > 0, "the fleet primary's Cowork slice carries nodes");
+  // Clearing must restore the build default on the NEXT frame (the onChanged listener
+  // drops the memo again).
+  await chrome.storage.local.remove("pilot.engine");
+  const back = await send({ type: "GET_FRAME" });
+  assert(back?.type === "FRAME", "post-clear GET_FRAME answered FRAME");
+  assert(
+    back.frame.provenance.engine_url === prov.engine_url,
+    `clearing the override restores the default engine (${back.frame.provenance.engine_url})`,
+  );
+} else {
+  console.log("  SKIP: Z440 primary not reachable on the tailnet — override acceptance not exercised this run");
+}
+
 // An invalid surface key must degrade to the default engine, never error the window.
 const junk = await send({ type: "GET_FRAME", surface: "NOT a key!" });
 assert(junk?.type === "FRAME", "an invalid surface key still answers a FRAME (default engine)");
@@ -294,10 +371,22 @@ const narrowed = await send({
   request: withPosture({ types: ["*"], ports: ["member-of"] }),
 });
 const labels = new Set(narrowed.frame.relations.map((r) => r.label));
-assert(
-  narrowed.frame.relations.length > 0 && labels.size === 1 && labels.has("member-of"),
-  `ports narrows via the worker (${narrowed.frame.relations.length} relations, all member-of)`,
-);
+// A fold with no member-of relation at all (the ProDesk sovereign fold — its group
+// membership is an OPEN item, ffs0#174) can only narrow to zero; the non-zero half of
+// the assertion is exercisable only where the port exists in the widened view.
+const memberOfInFold = all.frame.relations.some((r) => r.label === "member-of");
+if (memberOfInFold) {
+  assert(
+    narrowed.frame.relations.length > 0 && labels.size === 1 && labels.has("member-of"),
+    `ports narrows via the worker (${narrowed.frame.relations.length} relations, all member-of)`,
+  );
+} else {
+  assert(
+    narrowed.frame.relations.length === 0,
+    "ports narrows via the worker (fold carries no member-of; narrowing selects exactly none)",
+  );
+  console.log("  note: this fold carries no member-of relation — non-zero narrowing asserted only where the port exists");
+}
 
 const manifold = all.frame.nodes.find((n) => n.type_id === "manifold");
 if (manifold) {
