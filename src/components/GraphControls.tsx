@@ -113,6 +113,46 @@ export const LENSES: Lens[] = [
       "Knowledge and work products: knowledge items, derivations, applied programs, grammar fragments — with every relation between them.",
   },
   {
+    id: "substrate",
+    label: "substrate",
+    // T=281: the A2 DEPLOYMENT axis — where a manifold's rewrites actually execute, as
+    // opposed to `topology`'s A3 presentation axis (where a human sees it). The two were
+    // conflated under one word until t265 separated them; this lens is the half that had
+    // no surface at all.
+    //
+    // Declared AHEAD of any data, exactly as the kinship ports above were: mtdc-lab's round-7
+    // census measured ZERO live compute/storage nodes and zero WF04/WF08/WF09/WF10 relations
+    // fleet-wide — the grammar is ratified and empty. The first environment minted under
+    // spec/0001 ruling 1 (sandbox -> substrate -> provisioning) would otherwise be visible
+    // only inside `everything`, with no way to isolate it. The pilot must never be the blocker.
+    types: [
+      "compute",
+      "storage",
+      "harness",
+      "kernel",
+      "workstation",
+      "transport_binding",
+      "twin_link",
+      "runtime",
+      "workflow",
+    ],
+    ports: [
+      "contains",
+      "bound-to",
+      "computes-on",
+      "computed-by",
+      "persisted-in",
+      "persists",
+      "hosts",
+      "hosted-on",
+      "exposes",
+      "synced-via",
+      "sync-target",
+    ],
+    title:
+      "Where a manifold actually RUNS — the A2 deployment axis: compute and storage substrates, the engines bound to them, the harness that hosts execution, and the log's storage home (compute · storage · harness · kernel · workstation · transport_binding · twin_link + contains / bound-to / computes-on / persisted-in / hosts / exposes / synced-via). Distinct from `topology`, which is where a human SEES it. Expect this lens to be empty until the first environment is minted — the grammar is ratified, the instances are not.",
+  },
+  {
     id: "everything",
     label: "everything",
     types: ["*"],
@@ -164,6 +204,12 @@ export const TYPE_GROUPS: { label: string; types: string[] }[] = [
     ],
   },
   {
+    // T=281: the A2 deployment axis. Declared ahead of data — zero live instances today
+    // (mtdc-lab round 7); the grammar for all of it is ratified.
+    label: "substrate",
+    types: ["compute", "storage", "harness", "transport_binding", "runtime", "workflow"],
+  },
+  {
     label: "governance & ops",
     types: [
       "purpose",
@@ -198,6 +244,21 @@ export const PORT_GROUPS: { label: string; ports: string[] }[] = [
       "realizes",
       "presents-as",
       "participates",
+    ],
+  },
+  {
+    // T=281: WF04 contains · WF08 bound-to · WF09 computes-on · WF10 persisted-in — the
+    // substrate chain. Ratified, zero live instances, declared here ahead of the data.
+    label: "substrate",
+    ports: [
+      "contains",
+      "bound-to",
+      "computes-on",
+      "computed-by",
+      "persisted-in",
+      "persists",
+      "exposes",
+      "synced-via",
     ],
   },
   {
