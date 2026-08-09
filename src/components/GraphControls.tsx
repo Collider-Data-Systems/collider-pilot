@@ -150,7 +150,7 @@ export const LENSES: Lens[] = [
       "sync-target",
     ],
     title:
-      "Where a manifold actually RUNS — the A2 deployment axis: compute and storage substrates, the engines bound to them, the harness that hosts execution, and the log's storage home (compute · storage · harness · kernel · workstation · transport_binding · twin_link + contains / bound-to / computes-on / persisted-in / hosts / exposes / synced-via). Distinct from `topology`, which is where a human SEES it. Expect this lens to be empty until the first environment is minted — the grammar is ratified, the instances are not.",
+      "Where a manifold actually RUNS — the A2 deployment axis: compute and storage substrates, the engines bound to them, the harness that hosts execution, and the log's storage home (compute · storage · harness · runtime · workflow · kernel · workstation · transport_binding · twin_link + contains / bound-to / computes-on / computed-by / persisted-in / persists / hosts / hosted-on / exposes / synced-via / sync-target). Distinct from `topology`, which is where a human SEES it. Expect this lens to be empty until the first environment is minted — the grammar is ratified, the instances are not.",
   },
   {
     id: "everything",
@@ -257,8 +257,10 @@ export const PORT_GROUPS: { label: string; ports: string[] }[] = [
       "computed-by",
       "persisted-in",
       "persists",
+      "hosted-on",
       "exposes",
       "synced-via",
+      "sync-target",
     ],
   },
   {
