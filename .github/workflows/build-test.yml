@@ -34,3 +34,8 @@ jobs:
         run: test -f dist/worker.js && test -f dist/manifest.json
       - name: LLM seam smoke (pure A-D; live leg self-skips)
         run: npm run smoke:llm
+      # Pure and offline, so it belongs in the runner subset: the lens vocabulary lives in
+      # three hand-maintained lists in GraphControls.tsx and they have drifted twice (#42
+      # substrate, and a pre-existing topology tooltip found by this check on its first run).
+      - name: Lens vocabulary smoke (pure, offline)
+        run: npm run smoke:lens

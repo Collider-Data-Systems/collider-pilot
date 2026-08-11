@@ -2,7 +2,7 @@
   "name": "collider-pilot",
   "version": "0.1.0",
   "private": true,
-  "description": "Collider Pilot - read-only MV3 side-panel seat over live mo:os HG frames: A3 access view-filter, P7 LLM proposer (ollama-local + gemini via kernel-proxy behind a scope-split bearer), review-only HG previews \u2014 no writes",
+  "description": "Collider Pilot - read-only MV3 side-panel seat over live mo:os HG frames: A3 access view-filter, P7 LLM proposer (ollama-local + gemini via kernel-proxy behind a scope-split bearer), review-only HG previews — no writes",
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",
@@ -11,7 +11,8 @@
     "dev:preview": "vite --port 5177 --strictPort",
     "smoke:worker": "node scripts/worker-smoke.mjs",
     "smoke:live": "node scripts/live-smoke.mjs",
-    "smoke:llm": "node scripts/llm-smoke.mjs"
+    "smoke:llm": "node scripts/llm-smoke.mjs",
+    "smoke:lens": "node scripts/lens-smoke.mjs"
   },
   "dependencies": {
     "cytoscape": "^3.30.2",

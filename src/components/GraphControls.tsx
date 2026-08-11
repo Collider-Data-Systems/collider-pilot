@@ -91,7 +91,7 @@ export const LENSES: Lens[] = [
       "participates",
     ],
     title:
-      "Machines, workspaces, channels and how they connect (session · kernel · workstation · router · channel · manifold + opens-on / has-occupant / hosts / routes-to / spans / realizes / composes / participates). What those relations point AT comes along even when its type is not listed here — so `routes-to` brings the shard rules the router routes through.",
+      "Machines, workspaces, channels and how they connect (session · kernel · workstation · router · channel · manifold · twin_link · endpoint · agent + opens-on / has-occupant / hosts / routes-to / spans / realizes / composes / participates). What those relations point AT comes along even when its type is not listed here — so `routes-to` brings the shard rules the router routes through.",
   },
   {
     id: "content",
