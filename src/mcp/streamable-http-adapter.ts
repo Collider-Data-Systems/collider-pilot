@@ -43,6 +43,12 @@ import {
 } from "./transform.js";
 
 export interface StreamableHttpAdapterConfig {
+  /**
+   * Cloudflare Access service-token headers, when this engine is reached through the
+   * tunnel. Built by `cfAccessHeadersFor()`, which returns `{}` for localhost/Tailscale —
+   * so the credential never leaves the LAN and local operation is unchanged.
+   */
+  accessHeaders?: Record<string, string>;
   /** MCP Streamable HTTP base (POST {mcpBaseUrl}/sse). Default http://localhost:8080. */
   mcpBaseUrl?: string;
   /** Engine REST base (/healthz, /state/*). Default http://localhost:8000. */
@@ -98,6 +104,7 @@ export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapte
       engineUrl,
       origin: config.origin,
       retries: config.retries,
+      accessHeaders: config.accessHeaders,
     });
   }
 

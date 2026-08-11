@@ -17,6 +17,7 @@
  */
 
 import type { AccessEnforcement, McpAdapter } from "./types";
+import { cfAccessHeadersFor, loadCfAccess } from "../state/cf-access";
 import { MockMcpAdapter } from "./mock-adapter";
 import {
   StreamableHttpMcpAdapter,
@@ -192,5 +193,18 @@ export async function resolveAdapterConfig(
       // resolution is best-effort — the default engine is always a working fallback
     }
   }
+
+  // Cloudflare Access: attach the service token IFF this engine is reached through the
+  // tunnel. cfAccessHeadersFor() returns {} for localhost/Tailscale, so a LAN engine is
+  // byte-identical to before and the credential never leaves the machine for a host that
+  // is not behind Access. Single injection point — every caller resolves through here.
+  try {
+    const cf = await loadCfAccess();
+    const headers = cfAccessHeadersFor(config.engineUrl ?? "", cf);
+    if (Object.keys(headers).length > 0) config.accessHeaders = headers;
+  } catch {
+    // no token / no storage -> unauthenticated, exactly as before
+  }
+
   return config;
 }

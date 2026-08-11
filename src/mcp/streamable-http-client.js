@@ -77,6 +77,9 @@ export function parseMcpBody(text, contentType) {
  * @property {number} [retries]      - retry attempts on failure (default 3)
  * @property {number} [backoffMs]    - base backoff, grows linearly per attempt (default 200)
  * @property {typeof fetch} [fetchImpl] - injected fetch (defaults to global fetch)
+ * @property {Record<string,string>} [accessHeaders] - Cloudflare Access service-token headers,
+ *   merged into every MCP and REST request. Empty/absent for localhost and Tailscale engines,
+ *   which are not behind Access. Edge passage only — never write authority.
  */
 
 /**
@@ -87,6 +90,10 @@ export function createStreamableHttpClient(config = {}) {
   const mcpBaseUrl = (config.mcpBaseUrl || "http://localhost:8080").replace(/\/$/, "");
   const engineUrl = (config.engineUrl || "http://localhost:8000").replace(/\/$/, "");
   const sseEndpoint = `${mcpBaseUrl}/sse`;
+  // Cloudflare Access service-token headers, already scoped to cloud hosts by the caller
+  // (src/state/cf-access.ts). Empty for localhost/Tailscale engines, which are not behind
+  // Access. Edge passage only — never write authority; that is the kernel bearer.
+  const accessHeaders = config.accessHeaders || {};
   let origin = config.origin;
   if (origin === undefined) {
     try {
@@ -137,7 +144,7 @@ export function createStreamableHttpClient(config = {}) {
       Accept: "application/json, text/event-stream",
     };
     if (origin) h.Origin = origin;
-    return h;
+    return { ...h, ...accessHeaders };
   }
 
   /**
@@ -226,7 +233,7 @@ export function createStreamableHttpClient(config = {}) {
   async function healthz() {
     const { text } = await fetchWithRetry(`${engineUrl}/healthz`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...accessHeaders },
     });
     return JSON.parse(text);
   }
@@ -239,7 +246,7 @@ export function createStreamableHttpClient(config = {}) {
   async function restNode(urn) {
     const { text } = await fetchWithRetry(
       `${engineUrl}/state/nodes/${encodeURIComponent(urn)}`,
-      { method: "GET", headers: { Accept: "application/json" } },
+      { method: "GET", headers: { Accept: "application/json", ...accessHeaders } },
     );
     return JSON.parse(text);
   }
@@ -252,7 +259,7 @@ export function createStreamableHttpClient(config = {}) {
   async function restRelationsBySrc(urn) {
     const { text } = await fetchWithRetry(
       `${engineUrl}/state/relations/src/${encodeURIComponent(urn)}`,
-      { method: "GET", headers: { Accept: "application/json" } },
+      { method: "GET", headers: { Accept: "application/json", ...accessHeaders } },
     );
     const parsed = JSON.parse(text);
     return Array.isArray(parsed) ? parsed : [];
