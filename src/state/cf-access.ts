@@ -17,10 +17,16 @@
  * it decides whether a request reaches the origin at all. Whether that request may WRITE is a
  * separate gate: the kernel's own bearer (`--auth-token-file`). Never reuse one as the other.
  *
- * STORAGE TIER. `chrome.storage.local` is extension-local and not synced. It is readable by
- * anything with access to this profile — same trust tier as the browser's own password store,
- * and strictly better than the alternative of embedding the pair in a committed config. The
- * pair is only ever sent to the two configured Cloudflare hostnames (see `isCloudHost`).
+ * STORAGE TIER, stated honestly. `chrome.storage.local` is extension-local and not synced, but
+ * it is NOT encrypted at rest and it is NOT the browser's password store: anything that can read
+ * this Chrome profile's data can read the pair. It is better than embedding the credential in a
+ * committed config, and worse than an OS keychain. Rotate the token if the profile is exposed —
+ * the Access policy references the token by NAME, so rotation needs no dashboard rework.
+ *
+ * HOST SCOPE. The pair is attached only to `https://` requests whose hostname ends in
+ * `.my-tiny-data-collider.nl` (see `isCloudHost`) — today that is `kernel.` and `api.`, but the
+ * check is a suffix match, so any future subdomain of that zone would also receive it. Localhost,
+ * Tailscale, plain http, and lookalike domains never do.
  *
  * Best-effort + fail-safe, mirroring prefs.ts: outside an extension (a served harness) or on
  * any storage error, every call silently no-ops and the pilot behaves exactly as it did before
@@ -39,7 +45,7 @@ export interface CfAccessConfig {
 }
 
 /** True when the config can actually authenticate (both halves present and switched on). */
-export function isCfAccessSet(cfg: CfAccessConfig | null | undefined): boolean {
+export function isCfAccessSet(cfg: CfAccessConfig | null | undefined): cfg is CfAccessConfig {
   return (
     !!cfg &&
     cfg.enabled === true &&
@@ -120,7 +126,7 @@ export function cfAccessHeadersFor(
 ): Record<string, string> {
   if (!isCfAccessSet(cfg) || !isCloudHost(url)) return {};
   return {
-    "CF-Access-Client-Id": cfg!.clientId,
-    "CF-Access-Client-Secret": cfg!.clientSecret,
+    "CF-Access-Client-Id": cfg.clientId,
+    "CF-Access-Client-Secret": cfg.clientSecret,
   };
 }

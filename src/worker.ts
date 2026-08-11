@@ -26,6 +26,7 @@
  * all in-memory chat/model/context state.
  */
 
+import { PILOT_CF_ACCESS_KEY } from "./state/cf-access";
 import type {
   FrameRequest,
   McpAdapter,
@@ -206,7 +207,13 @@ function getAdapter(surface = ""): Promise<McpAdapter> {
 // GET_FRAME rebuilds each adapter against the new default. Not correctness-critical
 // state: a terminated worker loses the map and rebuilds identically anyway.
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && STORAGE_ENGINE_KEY in changes) {
+  // The Cloudflare Access pair is baked into an adapter when it is built, so rotating or
+  // DISABLING the token has to drop the memo as well — otherwise live adapters keep sending
+  // the old credential until the service worker happens to restart. Copilot PR #44 review.
+  if (
+    areaName === "local" &&
+    (STORAGE_ENGINE_KEY in changes || PILOT_CF_ACCESS_KEY in changes)
+  ) {
     adapterPromises.clear();
   }
 });
