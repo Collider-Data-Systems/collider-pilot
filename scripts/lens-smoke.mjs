@@ -1,8 +1,9 @@
 /**
  * Collider Pilot — LENS VOCABULARY smoke test
  * ===========================================
- * Pure, offline, no engine. Guards the one invariant that has already broken once (#42):
- * the lens vocabulary lives in THREE hand-maintained lists in
+ * Pure, offline, no engine. Guards the one invariant that has already broken twice — in #42
+ * (`substrate`) and, undetected until this script first ran, in the `topology` tooltip: the
+ * lens vocabulary lives in THREE hand-maintained lists in
  * `src/components/GraphControls.tsx` and nothing made them agree.
  *
  *   A. Every lens's `types` is a subset of ALL_TYPES, and its `ports` a subset of ALL_PORTS.
@@ -10,8 +11,13 @@
  *      in no group is invisible in the advanced drawer and unreachable by `specTogglePort`,
  *      whose expand-from-all base is ALL_PORTS. In #42 `hosted-on` and `sync-target` were
  *      exactly this.
- *   B. A lens tooltip that enumerates its slice in a parenthetical must match its arrays
- *      set-for-set. In #42 the substrate tooltip omitted 2 types and 4 ports.
+ *   B. A lens tooltip that enumerates its slice must NAME every type and port the lens
+ *      selects — membership, not set equality. A lens must never be wider than it says.
+ *      In #42 the substrate tooltip omitted 2 types and 4 ports; a pre-existing `topology`
+ *      drift (3 unnamed types) was found by this check on its first run. Deliberately not
+ *      set equality: tooltips carry prose between the names, and parsing them into a list
+ *      mis-reads that as drift — the first version of this script did exactly that and
+ *      false-positived on `identity`.
  *   C. No duplicate ids, and every lens is non-empty (except the `["*"]` sentinel).
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
@@ -27,7 +33,6 @@
  */
 
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
@@ -62,11 +67,6 @@ async function loadModule() {
     rmSync(dir, { recursive: true, force: true });
   }
 }
-
-const sameSet = (a, b) => {
-  const [x, y] = [new Set(a), new Set(b)];
-  return x.size === y.size && [...x].every((v) => y.has(v));
-};
 
 const m = await loadModule();
 const { LENSES, ALL_TYPES, ALL_PORTS } = m;
