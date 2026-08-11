@@ -3,9 +3,13 @@
   "name": "Collider Pilot",
   "version": "0.1.0",
   "description": "Read-only mo:os seat: live HG frame, A3 access view-filter, LLM proposer (Ollama / Gemini via kernel-proxy), review-only previews.",
-
-  "permissions": ["sidePanel", "storage", "activeTab", "clipboardWrite", "tabGroups"],
-
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "activeTab",
+    "clipboardWrite",
+    "tabGroups"
+  ],
   "host_permissions": [
     "http://localhost:8080/*",
     "http://localhost:8000/*",
@@ -28,25 +32,29 @@
     "http://100.106.220.58:8000/*",
     "http://100.106.220.58:8080/*",
     "http://100.87.28.95:8000/*",
-    "http://100.87.28.95:8080/*"
+    "http://100.87.28.95:8080/*",
+    "https://kernel.my-tiny-data-collider.nl/*",
+    "https://api.my-tiny-data-collider.nl/*"
   ],
-
   "side_panel": {
     "default_path": "sidepanel.html"
   },
-
   "web_accessible_resources": [
     {
-      "resources": ["sidepanel.html", "pip.html", "selftest.html"],
-      "matches": ["http://localhost/*"]
+      "resources": [
+        "sidepanel.html",
+        "pip.html",
+        "selftest.html"
+      ],
+      "matches": [
+        "http://localhost/*"
+      ]
     }
   ],
-
   "background": {
     "service_worker": "worker.js",
     "type": "module"
   },
-
   "action": {
     "default_title": "Open Collider Pilot",
     "default_icon": {
@@ -56,7 +64,6 @@
       "128": "icons/pilot-128.png"
     }
   },
-
   "icons": {
     "16": "icons/pilot-16.png",
     "32": "icons/pilot-32.png",
