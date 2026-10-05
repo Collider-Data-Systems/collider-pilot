@@ -125,6 +125,13 @@ export async function saveSelectedUrn(selectedUrn: string | null): Promise<void>
 export function subscribeScratch(
   cb: (scratch: PilotScratch) => void,
 ): () => void {
+  return subscribeSessionKey(SCRATCH_KEY, (value) =>
+    cb((value as PilotScratch | undefined) ?? EMPTY),
+  );
+}
+
+/** One session-store key, followed through `chrome.storage.onChanged`. Never throws. */
+function subscribeSessionKey(key: string, cb: (newValue: unknown) => void): () => void {
   try {
     const onChanged = chrome?.storage?.onChanged;
     if (!onChanged) return () => {};
@@ -133,8 +140,8 @@ export function subscribeScratch(
       areaName: string,
     ): void => {
       if (areaName !== "session") return;
-      if (!(SCRATCH_KEY in changes)) return;
-      cb((changes[SCRATCH_KEY].newValue as PilotScratch | undefined) ?? EMPTY);
+      if (!(key in changes)) return;
+      cb(changes[key].newValue);
     };
     onChanged.addListener(listener);
     return () => {
@@ -147,4 +154,65 @@ export function subscribeScratch(
   } catch {
     return () => {};
   }
+}
+
+/** A request to centre the graph on a node, and when it was made (ms since the epoch). */
+export interface ScratchFocus {
+  urn: string;
+  at: number;
+}
+
+/**
+ * t337: the VIEW the panel's search and inspector put on the frame, mirrored ONE way
+ * (panel -> mirrors): which nodes the search matched, and which node to centre on. The
+ * mirrors carry the picture (the panel's inline graph is off by default), so without this
+ * a search would fade nothing the user can see. It lives under its OWN key — same store,
+ * same per-surface scope as the scratch — so a keystroke writes a few urns, not the frame.
+ * Browser scratch like the rest of this file: never HG node data.
+ */
+export interface PilotScratchView {
+  /** urns the panel's search matched; a mirror fades every other node. Empty = no fade. */
+  highlightUrns: string[];
+  /** The latest centre request (an inspector relation row), or null. */
+  focus: ScratchFocus | null;
+}
+
+const VIEW_KEY = SCRATCH_SCOPE ? `pilot.scratchView.v1.${SCRATCH_SCOPE}` : "pilot.scratchView.v1";
+
+/** Never trust a stored shape: anything malformed reads as "no fade, no centre request". */
+function normalizeView(value: unknown): PilotScratchView {
+  const v = (value ?? {}) as { highlightUrns?: unknown; focus?: unknown };
+  const focus = v.focus as { urn?: unknown; at?: unknown } | null | undefined;
+  return {
+    highlightUrns: Array.isArray(v.highlightUrns)
+      ? v.highlightUrns.filter((u): u is string => typeof u === "string")
+      : [],
+    focus:
+      focus && typeof focus.urn === "string" && typeof focus.at === "number"
+        ? { urn: focus.urn, at: focus.at }
+        : null,
+  };
+}
+
+export async function loadScratchView(): Promise<PilotScratchView> {
+  try {
+    const result = await chrome.storage.session.get(VIEW_KEY);
+    return normalizeView(result[VIEW_KEY]);
+  } catch {
+    return normalizeView(null);
+  }
+}
+
+/** Written by the panel only — the surface that owns the search box and the inspector. */
+export async function saveScratchView(view: PilotScratchView): Promise<void> {
+  try {
+    await chrome.storage.session.set({ [VIEW_KEY]: view });
+  } catch {
+    // Best-effort scratch; a failure is non-fatal.
+  }
+}
+
+/** Follow the panel's view (event-driven, like subscribeScratch). Returns an unsubscribe. */
+export function subscribeScratchView(cb: (view: PilotScratchView) => void): () => void {
+  return subscribeSessionKey(VIEW_KEY, (value) => cb(normalizeView(value)));
 }

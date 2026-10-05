@@ -61,6 +61,8 @@ function Preview() {
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [focusUrn, setFocusUrn] = useState<string | null>(null);
   const [focusSignal, setFocusSignal] = useState(0);
+  // t337: the nodes `find` matched — the graph fades the rest (same wiring as the panel).
+  const [highlightUrns, setHighlightUrns] = useState<string[]>([]);
   const [spec, setSpec] = useState<SliceSpec>(() => defaultSliceSpec());
   const [showGraph, setShowGraph] = useState(true);
   // Access posture is inert on the MOCK adapter (it ignores view_filter) — the toggle is
@@ -100,14 +102,16 @@ function Preview() {
       const q = value.trim().toLowerCase();
       if (!q || !frame) {
         setSearchHint(null);
+        setHighlightUrns([]);
         return;
       }
       const nodes = Array.isArray(frame.nodes) ? frame.nodes : [];
       // RANKED (t264): taking matches[0] in fold order made searching an applied program's
       // name land on a governance_proposal that merely mentioned it. searchNodes prefers an
       // exact/prefix urn-tail match and the hint names the selected node's TYPE.
-      const { hit, hint } = searchNodes(nodes, q);
+      const { hit, hint, matchUrns } = searchNodes(nodes, q);
       setSearchHint(hint);
+      setHighlightUrns(matchUrns);
       if (!hit) return;
       setSelectedUrn(hit.urn);
       setFocusUrn(hit.urn);
@@ -115,6 +119,13 @@ function Preview() {
     },
     [frame],
   );
+
+  // t337: an inspector relation row selects the other node AND centres the graph on it.
+  const handleNavigate = useCallback((urn: string) => {
+    setSelectedUrn(urn);
+    setFocusUrn(urn);
+    setFocusSignal((s) => s + 1);
+  }, []);
 
   const toggleType = useCallback((ty: string) => {
     setSpec((prev) => specToggleType(prev, ty));
@@ -219,12 +230,14 @@ function Preview() {
                 layout={layout}
                 focusUrn={focusUrn}
                 focusSignal={focusSignal}
+                highlightUrns={highlightUrns}
               />
             )}
             <NodeInspector
               frame={frame}
               node={selectedNode}
               onSelect={setSelectedUrn}
+              onNavigate={handleNavigate}
               collapsible
             />
             <ErrorBoundary>

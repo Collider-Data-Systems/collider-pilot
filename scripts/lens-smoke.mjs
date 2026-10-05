@@ -19,6 +19,12 @@
  *      mis-reads that as drift — the first version of this script did exactly that and
  *      false-positived on `identity`.
  *   C. No duplicate ids, and every lens is non-empty (except the `["*"]` sentinel).
+ *   D. (t337) The knowledge vocabulary has ONE source. `src/ui/kb-vocab.json` is the
+ *      Lean-emitted file, byte for byte as PROVENANCE.md records it; only
+ *      `src/ui/kb-vocab.js` imports it; and no port name or colour it declares is written
+ *      as a string literal anywhere else in `src/` or `scripts/`. The knowledge lens and
+ *      port group above are built from it, so a restated name would be a second copy that
+ *      can drift — the failure this script exists for.
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -32,10 +38,12 @@
  * Run:  npm run smoke:lens     (exit 0 iff every assertion holds)
  */
 
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import { KB_CLAIM_KINDS, KB_RELATIONS } from "../src/ui/kb-vocab.js";
 
 const SRC = resolve(process.cwd(), "src/components/GraphControls.tsx");
 
@@ -58,9 +66,21 @@ async function loadModule() {
   }).outputText;
 
   // Emit beside the source so its relative imports (react/jsx-runtime, ./…) still resolve.
+  // The copy sits ONE directory deeper than the source, so every relative specifier gains
+  // a `../` — parent-relative ones FIRST, or the sibling rewrite would apply to them twice.
+  // t337: GraphControls imports the knowledge vocabulary (`../ui/kb-vocab.js`, shared JS
+  // that Node loads as-is), so the knowledge lens and port group are checked against the
+  // SAME Lean-emitted vocabulary the panel reads — nothing is restated here.
   const dir = mkdtempSync(join(resolve(process.cwd(), "src/components"), ".lens-smoke-"));
   const out = join(dir, "GraphControls.mjs");
-  writeFileSync(out, js.replaceAll('from "./', 'from "../').replaceAll("from './", "from '../"));
+  writeFileSync(
+    out,
+    js
+      .replaceAll('from "../', 'from "../../')
+      .replaceAll("from '../", "from '../../")
+      .replaceAll('from "./', 'from "../')
+      .replaceAll("from './", "from '../"),
+  );
   try {
     return await import(pathToFileURL(out).href);
   } finally {
@@ -126,6 +146,91 @@ for (const l of LENSES) {
   if (!l.title?.trim()) fail(`lens '${l.id}' has no tooltip`);
 }
 if (!failures) pass(`${ids.length} unique ids, all non-empty`);
+
+// D — the knowledge vocabulary has one source (t337).
+console.log("\nD. the knowledge vocabulary is read from one file, never restated");
+const VOCAB_JSON = "src/ui/kb-vocab.json";
+const VOCAB_READER = "src/ui/kb-vocab.js";
+const before = failures;
+
+// D1. The vendored file is the emitted one: PROVENANCE.md records its size and sha256.
+const vocabBytes = readFileSync(resolve(process.cwd(), VOCAB_JSON));
+const recorded = readFileSync(resolve(process.cwd(), "PROVENANCE.md"), "utf8").match(
+  /(\d+) bytes, sha256 `([0-9a-f]{64})`/,
+);
+const sha = createHash("sha256").update(vocabBytes).digest("hex");
+if (!recorded) {
+  fail("PROVENANCE.md no longer records the size and sha256 of the vendored vocabulary");
+} else if (Number(recorded[1]) !== vocabBytes.length || recorded[2] !== sha) {
+  fail(
+    `${VOCAB_JSON} is ${vocabBytes.length} bytes, sha256 ${sha} — PROVENANCE.md records ` +
+      `${recorded[1]} bytes, sha256 ${recorded[2]}. The file is never edited here: re-emit it ` +
+      "from Vocab.lean, replace it whole, and record the new size and sha256."
+  );
+}
+
+// D2 + D3. Walk every code file (parsed, so a name in a comment or inside prose is not a
+// hit): who imports the file, and every string literal. A port name counts when a literal
+// IS that name; a colour when a literal contains it.
+const portNames = new Set(KB_RELATIONS.flatMap((r) => [r.src_port, r.tgt_port]));
+const colours = [...KB_RELATIONS, ...KB_CLAIM_KINDS].map((x) => x.display.toLowerCase());
+const codeFiles = [];
+const walk = (dir) => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) walk(full);
+    else if (/\.(ts|tsx|js|mjs)$/.test(entry.name)) codeFiles.push(full);
+  }
+};
+walk(resolve(process.cwd(), "src"));
+walk(resolve(process.cwd(), "scripts"));
+const kindOf = (file) =>
+  file.endsWith(".tsx")
+    ? ts.ScriptKind.TSX
+    : file.endsWith(".ts")
+      ? ts.ScriptKind.TS
+      : ts.ScriptKind.JS;
+/** The module a node imports (static, re-export or dynamic import), or null. */
+const importedModule = (node) => {
+  if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) {
+    return node.moduleSpecifier.text ?? null;
+  }
+  if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+    return node.arguments[0]?.text ?? null;
+  }
+  return null;
+};
+let literals = 0;
+for (const file of codeFiles) {
+  const rel = relative(process.cwd(), file).replaceAll("\\", "/");
+  const text = readFileSync(file, "utf8");
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, false, kindOf(file));
+  const visit = (node) => {
+    const at = `${rel}:${sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1}`;
+    if (importedModule(node)?.endsWith("kb-vocab.json") && rel !== VOCAB_READER) {
+      fail(`${at} imports ${VOCAB_JSON} itself — only ${VOCAB_READER} may`);
+    }
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      literals++;
+      if (portNames.has(node.text)) {
+        fail(`${at} restates the knowledge port "${node.text}" — read it from ${VOCAB_READER}`);
+      }
+      const colour = colours.find((c) => node.text.toLowerCase().includes(c));
+      if (colour) {
+        fail(`${at} restates the vocabulary colour ${colour} — read it from ${VOCAB_READER}`);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+}
+if (failures === before) {
+  pass(
+    `${VOCAB_JSON} is the recorded file (${vocabBytes.length} bytes); its ${portNames.size} port ` +
+      `names and ${colours.length} colours are in none of the ${literals} string literals of ` +
+      `${codeFiles.length} code files`
+  );
+}
 
 console.log(
   failures === 0

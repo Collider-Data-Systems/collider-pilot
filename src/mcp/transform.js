@@ -63,6 +63,35 @@ export const DEFAULT_ENGINE_URN = "urn:moos:kernel:hp-z440.primary";
 export const DEFAULT_MCP_BASE_URL = "http://localhost:8080";
 export const DEFAULT_ENGINE_URL = "http://localhost:8000";
 
+/**
+ * t337: the identity a frame is stamped with when NOBODY named the engine — the caller
+ * gave no urn and the engine's /healthz carries no `kernel_urn`.
+ *
+ * On the build-time default endpoints that is the historical default urn, unchanged. On
+ * any OTHER endpoint (a custom engine set in Settings, the harness's `?engine=`) it is an
+ * explicit "unidentified engine at <host:port>" derived from the REST endpoint. The t336
+ * scratch kernel on :8899 reports no kernel_urn and was stamped
+ * `urn:moos:kernel:hp-z440.primary` — the default engine's identity on a frame that engine
+ * never served, with no mismatch warning because the warning needs a reported urn.
+ *
+ * Deliberately NOT a urn: the pilot owns no graph identity and must not mint one.
+ * @param {string} engineUrl
+ * @param {string} [mcpBaseUrl]
+ * @returns {string}
+ */
+export function unnamedEngineIdentity(engineUrl, mcpBaseUrl = DEFAULT_MCP_BASE_URL) {
+  if (engineUrl === DEFAULT_ENGINE_URL && mcpBaseUrl === DEFAULT_MCP_BASE_URL) {
+    return DEFAULT_ENGINE_URN;
+  }
+  let where = String(engineUrl);
+  try {
+    where = new URL(where).host || where;
+  } catch {
+    // not a parseable URL — show it as given
+  }
+  return `unidentified engine at ${where}`;
+}
+
 /** Node types the default frame retains (matches the Phase 1 mock's shape). */
 export const DEFAULT_FRAME_TYPES = [
   "knowledge_item",
@@ -120,7 +149,8 @@ export function unwrapProperties(raw) {
 }
 
 /**
- * Short human label for the graph: prefer a human property, else the last urn segment.
+ * Short human label for the graph: prefer a human property (label, title, name — then, for
+ * a claim, its text), else the last urn segment. Cut at MAX_LABEL_LEN either way.
  * @param {RawNode} raw
  * @returns {string}
  */
@@ -132,7 +162,15 @@ export function labelForNode(raw) {
     const v = bag ? bag.value : undefined;
     return typeof v === "string" && v.trim() ? v.trim() : null;
   };
-  const human = pick("label") || pick("title") || pick("name");
+  // t337: a claim carries its content in `text` and has no label/title/name, so it was
+  // labelled by its urn tail ("lens-t336.t10.standing.07") — 63 of 63 on the t336 fold.
+  // `text` comes LAST and for claims ONLY: channels, purposes and sessions also carry a
+  // `text` property (24 nodes on the primary fold) and keep their urn-tail label.
+  const human =
+    pick("label") ||
+    pick("title") ||
+    pick("name") ||
+    (raw.type_id === "claim" ? pick("text") : null);
   const chosen = human || raw.urn.split(":").pop() || raw.urn;
   return chosen.length > MAX_LABEL_LEN
     ? chosen.slice(0, MAX_LABEL_LEN - 1) + "…"

@@ -1,0 +1,4 @@
+# t337: the vendored Lean-emitted vocabulary is kept byte-identical on every checkout
+# (PROVENANCE.md records its size and sha256). With core.autocrlf=true git would otherwise
+# write it back with CRLF line ends, and it would no longer match the emitted file.
+src/ui/kb-vocab.json -text

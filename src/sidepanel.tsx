@@ -17,6 +17,9 @@
  *   - the inline graph is OFF by default (toggle in the controls): the PiP / pop-out /
  *     full-tab mirrors render it, and selection syncs both ways through the shared
  *     scratch, so panel-clicks (log feed, inspector, find) light up in the mirrors.
+ *   - t337: `find` also fades everything it did not match, and an inspector relation row
+ *     selects the other node and centres the graph on it. Fade and centring reach the
+ *     mirrors through the scratch view; the mirrors also draw the layout chosen in Settings.
  *
  * SAFETY: still no writes, no page access. EventSource is GET-only — it cannot POST and
  * has no apply path. Every mutating act stays behind the ActionsPanel modal, and urn-typed
@@ -33,7 +36,14 @@ import type {
   PilotResponse,
   RawMcpTool,
 } from "./mcp/types";
-import { loadScratch, saveScratch, scratchScopeParam, subscribeScratch } from "./state/scratch";
+import {
+  loadScratch,
+  saveScratch,
+  saveScratchView,
+  scratchScopeParam,
+  subscribeScratch,
+  type ScratchFocus,
+} from "./state/scratch";
 import {
   DEFAULT_GRAPH_LAYOUT,
   loadLayoutPref,
@@ -194,6 +204,10 @@ function SidePanel() {
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [focusUrn, setFocusUrn] = useState<string | null>(null);
   const [focusSignal, setFocusSignal] = useState(0);
+  // t337: the nodes `find` matched in the current frame — the graph fades the rest — and
+  // the latest centre request for the mirrors (see PilotScratchView).
+  const [highlightUrns, setHighlightUrns] = useState<string[]>([]);
+  const [mirrorFocus, setMirrorFocus] = useState<ScratchFocus | null>(null);
   // t264: the whole WHAT/WHEN selection is one SliceSpec (lens + types + ports + t + hops).
   const [spec, setSpec] = useState<SliceSpec>(() => defaultSliceSpec());
   // FOCUS (scope). "" = All permitted (the seat-grounded default; no literal urn pinned).
@@ -332,7 +346,24 @@ function SidePanel() {
     [frame],
   );
 
-  // Node search: match by urn/label, then select + center the first hit. Local only.
+  // t337: an inspector relation row selects the other node AND centres the graph on it —
+  // the inline graph when it is shown, and the mirrors either way (through the scratch
+  // view): they usually carry the picture. A find hit, below, centres the inline graph
+  // only, as before: a mirror keeps its view, so every lit match stays where it was.
+  const handleNavigate = useCallback(
+    (urn: string) => {
+      handleSelect(urn);
+      if (showGraph) {
+        setFocusUrn(urn);
+        setFocusSignal((s) => s + 1);
+      }
+      setMirrorFocus({ urn, at: Date.now() });
+    },
+    [handleSelect, showGraph],
+  );
+
+  // Node search: match by urn/label — then, since t337, inside the text properties — and
+  // select + center the best hit. Local only.
   //
   // The HINT is computed in the effect below, not here: it is a claim about the CURRENT
   // frame, so it must track the frame, not just keystrokes. Reproduced live (t266): a query
@@ -360,16 +391,29 @@ function SidePanel() {
     [frame, handleSelect, showGraph],
   );
 
-  // The hint tracks (frame, query) — see the comment above handleSearchChange.
+  // The hint tracks (frame, query) — see the comment above handleSearchChange. So does the
+  // fade (t337): which nodes match is a claim about the CURRENT frame too, and an empty
+  // box clears it. The array keeps its identity while the matches are the same, so a frame
+  // re-read does not re-write the mirrors' view.
   useEffect(() => {
     const q = search.trim().toLowerCase();
     if (!q || !frame) {
       setSearchHint(null);
+      setHighlightUrns((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     const nodes = Array.isArray(frame.nodes) ? frame.nodes : [];
-    setSearchHint(searchNodes(nodes, q).hint);
+    const { hint, matchUrns } = searchNodes(nodes, q);
+    setSearchHint(hint);
+    setHighlightUrns((prev) => (prev.join("\n") === matchUrns.join("\n") ? prev : matchUrns));
   }, [frame, search]);
+
+  // t337: the mirrors follow the fade and the centre request through the scratch view —
+  // one-way, a mirror never writes it. A freshly opened panel writes the empty view, which
+  // clears whatever an earlier panel left there.
+  useEffect(() => {
+    void saveScratchView({ highlightUrns, focus: mirrorFocus });
+  }, [highlightUrns, mirrorFocus]);
 
   const handleLayoutChange = useCallback((next: GraphLayoutName) => {
     setLayout(next);
@@ -687,6 +731,7 @@ function SidePanel() {
                 layout={layout}
                 focusUrn={focusUrn}
                 focusSignal={focusSignal}
+                highlightUrns={highlightUrns}
               />
             )}
             {/* t264: the engine jsonl, live. Self-hides on mock frames. */}
@@ -709,6 +754,7 @@ function SidePanel() {
               frame={frame}
               node={selectedNode}
               onSelect={handleSelect}
+              onNavigate={handleNavigate}
               collapsible
             />
             <ErrorBoundary>

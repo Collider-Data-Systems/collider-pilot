@@ -155,7 +155,13 @@ export interface ViewFilter {
  * log position, workspace/session, purpose, and view_filter it came from.
  */
 export interface FrameProvenance {
-  engine: string; // source engine urn, e.g. "urn:moos:kernel:hp-z440.primary"
+  /**
+   * Source engine urn, e.g. "urn:moos:kernel:hp-z440.primary". t337: for a CUSTOM endpoint
+   * nobody could name (no urn label, no /healthz kernel_urn) this is the non-urn string
+   * "unidentified engine at <host:port>" (transform.js `unnamedEngineIdentity`) — never
+   * the default engine's urn.
+   */
+  engine: string;
   /**
    * A16: the engine's SELF-REPORTED identity — /healthz `kernel_urn` (the A6 surface,
    * live fleet-wide since t274) read in the same breath as the frame. `engine` is what

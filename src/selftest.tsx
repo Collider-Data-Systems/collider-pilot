@@ -29,7 +29,15 @@ import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { FrameRequest, HgFrame, PilotResponse } from "./mcp/types";
 import { DEFAULT_ENGINE_URL } from "./mcp/transform.js";
-import { loadScratch, saveScratch, saveSelectedUrn, subscribeScratch } from "./state/scratch";
+import {
+  loadScratch,
+  loadScratchView,
+  saveScratch,
+  saveScratchView,
+  saveSelectedUrn,
+  subscribeScratch,
+  subscribeScratchView,
+} from "./state/scratch";
 import { runBrowserAct } from "./tools/browser-acts";
 import { loadInlineGraphPref, saveInlineGraphPref } from "./state/prefs";
 import { applyMountGuard, mountVerdict } from "./ui/mount-guard";
@@ -292,6 +300,26 @@ async function runChecks(push: (r: Row) => void): Promise<void> {
     return {
       ok: mid.selectedUrn === probe && mid.frame?.nodes.length === nodeCount,
       detail: `selection ${mid.selectedUrn === probe ? "written" : "LOST"} · frame ${mid.frame?.nodes.length === nodeCount ? `preserved (${nodeCount} nodes)` : "CLOBBERED"}`,
+    };
+  });
+
+  // t337: the second mirror channel — the panel's search fade and centre request.
+  await extCheck("scratch VIEW: the search fade + centre request reach a subscriber", async () => {
+    const before = await loadScratchView();
+    const probe = `urn:moos:selftest:view-${Date.now()}`;
+    const seen: string[] = [];
+    const unsub = subscribeScratchView((v) => seen.push(`${v.highlightUrns.join(",")}|${v.focus?.urn}`));
+    await saveScratchView({ highlightUrns: [probe], focus: { urn: probe, at: Date.now() } });
+    await new Promise((r) => setTimeout(r, 250)); // storage.onChanged is async
+    unsub();
+    const mid = await loadScratchView();
+    await saveScratchView(before);
+    const ok = seen.includes(`${probe}|${probe}`) && mid.highlightUrns[0] === probe;
+    return {
+      ok,
+      detail: ok
+        ? `subscriber saw the fade + centre request (${seen.length} event(s)), restored — the mirrors follow the panel's find`
+        : `subscriber never saw it (${seen.length} event(s)) — the mirrors would not fade or centre`,
     };
   });
 

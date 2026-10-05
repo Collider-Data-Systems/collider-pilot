@@ -13,33 +13,50 @@
  * touches the append-only log.
  */
 
-/** The graph layouts the picker offers (all ship in cytoscape core; no new dep). */
-export type GraphLayoutName = "concentric" | "breadthfirst" | "grid";
+/**
+ * The graph layouts the picker offers (cytoscape core only; no new dep). t337 adds two:
+ *   - `nested` — the packed layout that draws a nesting relation as boxes (FrameGraph);
+ *   - `auto`   — NO explicit choice: FrameGraph draws `nested` on a frame that has nesting
+ *                relations and `concentric` on every other frame.
+ */
+export type GraphLayoutName = "auto" | "concentric" | "breadthfirst" | "grid" | "nested";
 
 export const GRAPH_LAYOUTS: GraphLayoutName[] = [
+  "auto",
   "concentric",
   "breadthfirst",
   "grid",
+  "nested",
 ];
 
-/** The default layout — a deterministic, DAG-ish read that kills cose label overlap. */
-export const DEFAULT_GRAPH_LAYOUT: GraphLayoutName = "concentric";
+/**
+ * The default — `auto` (t337). On a frame without nesting relations it IS the previous
+ * default, `concentric` (a deterministic, DAG-ish read that kills cose label overlap), so
+ * those frames lay out exactly as before. Nothing is stored until the user picks a layout
+ * in Settings; a stored layout is an explicit choice and is always honoured.
+ */
+export const DEFAULT_GRAPH_LAYOUT: GraphLayoutName = "auto";
 
-const LAYOUT_KEY = "pilot.graphLayout";
+// t337: the choice is stored under a new key. Under the old one `concentric` was both the
+// default and a pickable value, so a stored `concentric` says nothing about a choice — it
+// is read as none (`auto`); a stored `breadthfirst` or `grid` still is one. Without this
+// an install that ever touched the picker would draw the knowledge lens flat.
+const LAYOUT_KEY = "pilot.graphLayout.v2";
+const LEGACY_LAYOUT_KEY = "pilot.graphLayout";
 
 function normalizeLayout(value: unknown): GraphLayoutName | null {
-  return value === "concentric" || value === "breadthfirst" || value === "grid"
-    ? value
-    : null;
+  return GRAPH_LAYOUTS.includes(value as GraphLayoutName) ? (value as GraphLayoutName) : null;
 }
 
 /** Read the persisted layout choice, or the default. Never throws. */
 export async function loadLayoutPref(): Promise<GraphLayoutName> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const got = await chrome.storage.local.get(LAYOUT_KEY);
+      const got = await chrome.storage.local.get([LAYOUT_KEY, LEGACY_LAYOUT_KEY]);
       const stored = normalizeLayout(got?.[LAYOUT_KEY]);
       if (stored) return stored;
+      const legacy = normalizeLayout(got?.[LEGACY_LAYOUT_KEY]);
+      if (legacy && legacy !== "concentric") return legacy;
     }
   } catch {
     // storage unavailable — fall back to the default
@@ -55,6 +72,35 @@ export async function saveLayoutPref(layout: GraphLayoutName): Promise<void> {
     }
   } catch {
     // best-effort — ignore
+  }
+}
+
+/**
+ * Follow the layout choice (t337): a mirror window draws the layout picked in the panel's
+ * Settings and keeps following it while open. Event-driven (`chrome.storage.onChanged`),
+ * no polling; outside an extension it never fires. Returns an unsubscribe function.
+ */
+export function subscribeLayoutPref(cb: (layout: GraphLayoutName) => void): () => void {
+  try {
+    const onChanged = typeof chrome !== "undefined" ? chrome.storage?.onChanged : undefined;
+    if (!onChanged) return () => {};
+    const listener = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string,
+    ): void => {
+      if (areaName !== "local" || !(LAYOUT_KEY in changes)) return;
+      cb(normalizeLayout(changes[LAYOUT_KEY].newValue) ?? DEFAULT_GRAPH_LAYOUT);
+    };
+    onChanged.addListener(listener);
+    return () => {
+      try {
+        onChanged.removeListener(listener);
+      } catch {
+        // context already torn down — nothing to remove
+      }
+    };
+  } catch {
+    return () => {};
   }
 }
 

@@ -13,6 +13,7 @@
  *   2. urn contains the query
  *   3. label starts with the query
  *   4. label contains the query
+ *   5. a text property contains the query (t337 — see SEARCH_PROPERTIES)
  *
  * (*) ranks 0 and 1 are each tried twice: once against the raw tail, once after stripping a
  * leading owner segment (`sam.`), because the fold's urn tails are conventionally
@@ -37,6 +38,29 @@ function stripOwner(tail: string): string {
   return dot > 0 ? tail.slice(dot + 1) : tail;
 }
 
+/**
+ * t337: the properties whose TEXT is searched when neither the urn nor the label matches.
+ * A claim carries its content in `text` and where it was found in `pointer`, and a label is
+ * cut at 60 characters — so a word past the cut matched nothing: on the t336 fold, 352 of
+ * the 544 distinct words of 7+ letters in the claim texts were in no urn and no label.
+ * `label`, `title` and `name` are the label's own sources, searched uncut.
+ */
+export const SEARCH_PROPERTIES = ["label", "title", "name", "text", "pointer"] as const;
+
+/** The rank of a property-text match: below every urn / label match. */
+const PROPERTY_RANK = 5;
+
+/** The first searched property whose text contains the query, or null. */
+export function matchedProperty(node: HgNode, query: string): string | null {
+  const q = query.trim().toLowerCase();
+  if (!q) return null;
+  for (const key of SEARCH_PROPERTIES) {
+    const value = node.properties?.[key];
+    if (typeof value === "string" && value.toLowerCase().includes(q)) return key;
+  }
+  return null;
+}
+
 /** Lower rank = better match. Infinity = not a match at all. */
 export function matchRank(node: HgNode, query: string): number {
   const q = query.trim().toLowerCase();
@@ -50,6 +74,7 @@ export function matchRank(node: HgNode, query: string): number {
   if (urn.includes(q)) return 2;
   if (label.startsWith(q)) return 3;
   if (label.includes(q)) return 4;
+  if (matchedProperty(node, q)) return PROPERTY_RANK;
   return Infinity;
 }
 
@@ -60,28 +85,39 @@ export interface SearchOutcome {
   count: number;
   /** Hint for the controls strip — states WHAT was selected, not just how many matched. */
   hint: string | null;
+  /**
+   * t337: every matching node's urn, best first. The graph keeps these lit and fades the
+   * rest (FrameGraph `highlightUrns`); empty when nothing matched or the query is blank.
+   */
+  matchUrns: string[];
 }
 
 /**
  * Rank the frame's nodes against a query and pick the best. The hint names the selected
  * node's type, because "3 matches — first shown" never told the user they had landed on a
- * proposal instead of the program they searched for.
+ * proposal instead of the program they searched for. For the same reason it names the
+ * property when the selected node matched only inside one (t337): the query is then not
+ * visible in the node's urn or label.
  */
 export function searchNodes(nodes: HgNode[], query: string): SearchOutcome {
   const q = query.trim();
-  if (!q) return { hit: null, count: 0, hint: null };
+  if (!q) return { hit: null, count: 0, hint: null, matchUrns: [] };
 
   const ranked = nodes
     .map((node, index) => ({ node, rank: matchRank(node, q), index }))
     .filter((r) => r.rank !== Infinity)
     .sort((a, b) => a.rank - b.rank || a.index - b.index); // ties keep fold order
 
-  if (ranked.length === 0) return { hit: null, count: 0, hint: "no match" };
+  if (ranked.length === 0) return { hit: null, count: 0, hint: "no match", matchUrns: [] };
 
   const hit = ranked[0].node;
+  const what =
+    ranked[0].rank === PROPERTY_RANK
+      ? `${hit.type_id} · in ${matchedProperty(hit, q)}`
+      : hit.type_id;
   const hint =
     ranked.length === 1
-      ? `1 match · ${hit.type_id}`
-      : `${ranked.length} matches · showing ${hit.type_id}`;
-  return { hit, count: ranked.length, hint };
+      ? `1 match · ${what}`
+      : `${ranked.length} matches · showing ${what}`;
+  return { hit, count: ranked.length, hint, matchUrns: ranked.map((r) => r.node.urn) };
 }
