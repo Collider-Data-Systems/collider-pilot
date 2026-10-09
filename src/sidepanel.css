@@ -213,6 +213,34 @@ body {
 .prov-toggle .prov-badge + .prov-badge {
   margin-left: 4px;
 }
+/* t342: the posture strip's summary needs 240px; where the badges leave less (a docked side
+   panel is 380px) it takes its own line under them instead of shrinking to a few letters.
+   Inside it the counts never shrink; the tail after them (engine · seq · T · ontology) only
+   takes the room left over (basis 0), so an ellipsis cuts it first and who/where only when
+   who/where and the counts alone do not fit. */
+.posture-strip .prov-toggle {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.posture-strip .prov-toggle .prov-summary {
+  display: flex;
+  flex: 1 1 240px;
+}
+.prov-summary > .prov-who {
+  flex: 0 1 auto;
+  min-width: 3ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prov-summary > .prov-counts {
+  flex: none;
+}
+.prov-summary > .prov-rest {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .prov-badge {
   font-size: 9px;
   font-weight: 700;
@@ -322,45 +350,143 @@ body {
   cursor: pointer;
 }
 
-/* Graph */
+/* Graph. t337: the canvas on top; the bar (legend toggle · fit · re-layout) and the open
+   legend sit UNDER it, in flow — nothing overlays the canvas, so no row of the graph is
+   covered (the old legend was an overlay on its last row). */
 .graph-wrap {
   position: relative;
   flex: 1 1 55%;
   min-height: 180px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+/* An open legend takes its rows from the panel, not from the canvas. */
+.graph-wrap.legend-open {
+  min-height: 290px;
 }
 .graph-canvas {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   background:
     radial-gradient(circle at 1px 1px, #1c1c24 1px, transparent 0) 0 0 / 22px
       22px;
 }
-.graph-legend {
+/* t337: the one line an empty canvas shows (no nodes in the slice). */
+.graph-empty {
   position: absolute;
-  left: 8px;
-  bottom: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  padding: 6px 8px;
-  background: rgba(15, 15, 18, 0.82);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 9px;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 20px;
+  text-align: center;
+  font-size: 11px;
   color: var(--text-secondary);
   pointer-events: none;
+}
+.graph-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+}
+.graph-bar .mini-btn {
+  flex: none;
+  white-space: nowrap;
+}
+/* t342: the `unlinked N` chip while the band is shown (aria-pressed). */
+.graph-bar .mini-btn.is-on {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+.graph-legend-toggle {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.graph-legend-toggle:hover {
+  color: var(--text-primary);
+}
+.graph-legend-toggle::before {
+  content: "▸ ";
+}
+.graph-legend-toggle[aria-expanded="true"]::before {
+  content: "▾ ";
+}
+.graph-legend {
+  flex: 0 1 auto;
+  max-height: 110px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 8px 6px;
+  background: var(--bg-secondary);
+  font-size: 9px;
+  color: var(--text-secondary);
+}
+.legend-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+}
+.legend-title {
+  flex: none;
+  width: 52px;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
 }
 .legend-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  font-family: var(--mono);
+  cursor: pointer;
+  user-select: none;
 }
-.legend-item i {
+.legend-item input {
+  width: 10px;
+  height: 10px;
+  margin: 0;
+  cursor: pointer;
+}
+.legend-dot {
+  flex: none;
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  display: inline-block;
+}
+.legend-box {
+  flex: none;
+  width: 10px;
+  height: 9px;
+  border: 2px solid;
+  border-radius: 2px;
+}
+.legend-line {
+  flex: none;
+  width: 16px;
+  border-radius: 1px;
+}
+.legend-count {
+  color: var(--text-muted);
 }
 .legend-note {
   color: var(--text-muted);
@@ -419,6 +545,23 @@ body {
   padding: 6px 8px;
   word-break: break-all;
 }
+/* t337: a node's `text` (a claim's content), read as prose rather than a table cell —
+   in lines of a readable length where the pane is wide (the full-tab mirror). */
+.insp-text {
+  max-width: 80ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* t337: in the side panel the pane is squeezed to its 120px minimum by its neighbours, and
+   a claim's text was a paragraph nobody could see without scrolling inside it. A node that
+   carries a text gets the room to read it; the page scrolls, as it already did. The
+   mirrors keep their split (the full tab's pane is tall as it is). */
+.pilot-container:not(.pip-container) .inspector:has(.insp-text) {
+  min-height: 45vh;
+}
 .insp-props {
   width: 100%;
   border-collapse: collapse;
@@ -457,6 +600,10 @@ body {
 }
 .insp-rel-label {
   color: var(--text-primary);
+  /* t337: a port name stays whole on one line; the other node's label — now often a
+     claim's text — is what gives way (it already ends in an ellipsis). */
+  flex: none;
+  white-space: nowrap;
 }
 .insp-rel-kind {
   font-family: var(--mono);

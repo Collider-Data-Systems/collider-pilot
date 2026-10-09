@@ -10,9 +10,10 @@
  *   WHO    — access posture ("Stay anon" / "Bring me in"; identity set in Settings)
  *   WHERE  — focus: All permitted, or one spine node (manifold / group / workspace /
  *            channel / the current selection), expanded scope_hops BFS steps out
- *   WHAT   — a LENS preset (identity · topology · content · everything) that sets the
- *            node types + relation ports together; the raw checkboxes live in the
- *            advanced drawer and flip the lens to "custom" when they deviate
+ *   WHAT   — a LENS preset (identity · topology · content · knowledge · substrate ·
+ *            everything) that sets the node types + relation ports together; the raw
+ *            checkboxes live in the advanced drawer and flip the lens to "custom" when
+ *            they deviate
  *   WHEN   — the optional t bound
  *
  * The inline graph is OFF by default (t264: the PiP / pop-out / full-tab mirrors carry
@@ -27,6 +28,7 @@
 import { useState } from "react";
 import type { AccessPosture } from "../state/prefs";
 import type { AccessScope, FrameRequest, HgFrame, ViewFilter } from "../mcp/types";
+import { KB_NODE_TYPES, KB_ONTOLOGY_VERSION, KB_PORTS } from "../ui/kb-vocab.js";
 
 /* -------------------------------------------------------------------------- */
 /* Lens presets — named (types × ports) slices matching the doctrine strata   */
@@ -105,12 +107,32 @@ export const LENSES: Lens[] = [
       "session",
       "domain_tag",
     ],
-    // ALL ports (t264 review major): this is the DEFAULT lens, and main's default
-    // frame showed every relation between the retained nodes. Narrowing relations is
-    // the spine lenses' job; the content lens narrows TYPES only.
+    // ALL ports (t264 review major): this was the DEFAULT lens until t342, and main's
+    // default frame showed every relation between the retained nodes. Narrowing relations
+    // is the spine lenses' job; the content lens narrows TYPES only.
     ports: [],
     title:
       "Knowledge and work products: knowledge items, derivations, applied programs, grammar fragments — with every relation between them.",
+  },
+  {
+    id: "knowledge",
+    label: "knowledge",
+    // t337: the knowledge graph on its own — claims, the sources they derive from, and the
+    // field > topic > module hierarchy they sit in (ontology 4.0.8, all WF12). The port names
+    // are READ from the Lean-emitted vocabulary (src/ui/kb-vocab.json through its accessor),
+    // never restated here; the tooltip is built from the same lists so it cannot drift.
+    //
+    // Only `claim` is selected by type. The relation closure (transform.js applyViewFilter)
+    // carries in whatever a retained knowledge relation points at, so the sources, tags,
+    // scheme and modules that are IN the knowledge graph arrive with their relations —
+    // while naming those types here would add every unrelated node of the same type.
+    // Measured on the t336 scratch fold (447n/420r): 122 nodes / 178 relations this way,
+    // 219 nodes with all five types listed.
+    //
+    // Declared ahead of the data on any engine below 4.0.8, like the kinship ports above.
+    types: ["claim"],
+    ports: [...KB_PORTS],
+    title: `The knowledge graph on its own: claims, the sources they were taken from, and the field / topic / module hierarchy they belong to (${KB_NODE_TYPES.join(" · ")} + ${KB_PORTS.join(" / ")}). Only claim is selected by type — every claim node of the engine is shown, also one that no knowledge relation touches. What the knowledge relations point AT comes along, so sources, tags and modules that are not part of the knowledge graph stay out. These ports are ontology ${KB_ONTOLOGY_VERSION}: on an engine with no knowledge relations this lens shows only its claim nodes, if it has any.`,
   },
   {
     id: "substrate",
@@ -164,8 +186,14 @@ export const LENSES: Lens[] = [
 /** The lens id used when the advanced checkboxes deviate from every preset. */
 export const CUSTOM_LENS_ID = "custom";
 
-/** Default lens on open — continuity with the classic four-type content slice. */
-export const DEFAULT_LENS_ID = "content";
+/**
+ * Default lens on open — `everything` (t342, Sam: "I need the view not narrowed at
+ * opening"). The panel opens on the whole permitted fold; every narrower lens is one tap
+ * away and Reset comes back here. It was `content` (the classic four-type slice), which hid
+ * every principal, place and claim until a lens was tapped. This widens WHAT is selected,
+ * never WHO: the access posture still gates the frame exactly as before.
+ */
+export const DEFAULT_LENS_ID = "everything";
 
 export function lensById(id: string): Lens | null {
   return LENSES.find((l) => l.id === id) ?? null;
@@ -282,6 +310,11 @@ export const PORT_GROUPS: { label: string; ports: string[] }[] = [
       "guards",
     ],
   },
+  // t337: the WF12 knowledge relations (ontology 4.0.8), READ from the Lean-emitted
+  // vocabulary — never restated here. Before this group they had no checkbox, and unticking
+  // ANY other port expanded from an ALL_PORTS that lacked them, silently dropping every
+  // knowledge relation from the frame (measured: 178 -> 0).
+  { label: "knowledge", ports: [...KB_PORTS] },
 ];
 
 /**
@@ -546,9 +579,12 @@ export function GraphControls({
   const scopeValue = displayOptions.some((o) => o.urn === activeScope) ? activeScope : "";
   const groups = [...new Set(displayOptions.map((o) => o.group))];
 
-  const stateEcho = `${allTypes ? "all" : spec.types.length} types · ${
-    allPorts ? "all" : spec.ports.length
-  } ports · t ${spec.t.trim() === "" ? "latest" : spec.t.trim()} · ${spec.hops} hop${spec.hops > 1 ? "s" : ""}`;
+  // t337: the knowledge lens selects ONE type — "1 type", not "1 types".
+  const stateEcho = `${allTypes ? "all" : spec.types.length} type${
+    !allTypes && spec.types.length === 1 ? "" : "s"
+  } · ${allPorts ? "all" : spec.ports.length} port${
+    !allPorts && spec.ports.length === 1 ? "" : "s"
+  } · t ${spec.t.trim() === "" ? "latest" : spec.t.trim()} · ${spec.hops} hop${spec.hops > 1 ? "s" : ""}`;
 
   return (
     <div className="graph-controls" aria-label="Slice controls">
@@ -683,9 +719,13 @@ export function GraphControls({
             className="gc-input"
             type="search"
             value={search}
-            placeholder="urn or label…"
+            placeholder="urn, label or text…"
             onChange={(e) => onSearchChange(e.target.value)}
-            title="Select + center the first node matching this urn or label"
+            title={
+              "Select + center the best node matching this urn or label — or, failing those, " +
+              "its text (label / title / name / text / pointer). Every node that does not " +
+              "match fades in the graph; clear the box to bring them back."
+            }
           />
         </label>
         <label className="gc-field">
@@ -721,7 +761,7 @@ export function GraphControls({
           type="button"
           className="gc-btn gc-btn-ghost gc-reset"
           onClick={onResetFilter}
-          title="Back to the default content lens, no focus, 1 hop, latest t"
+          title="Back to the opening view: the everything lens, no focus, 1 hop, latest t"
         >
           Reset
         </button>

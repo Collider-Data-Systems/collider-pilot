@@ -31,6 +31,7 @@
  * @typedef {import("./types").FrameProvenance} FrameProvenance
  * @typedef {import("./types").AccessScope} AccessScope
  * @typedef {import("./types").AccessResolution} AccessResolution
+ * @typedef {import("./types").FoldCounts} FoldCounts
  */
 
 import { resolveAccess, accessKeepSet } from "./access.js";
@@ -62,6 +63,69 @@ import { resolveAccess, accessKeepSet } from "./access.js";
 export const DEFAULT_ENGINE_URN = "urn:moos:kernel:hp-z440.primary";
 export const DEFAULT_MCP_BASE_URL = "http://localhost:8080";
 export const DEFAULT_ENGINE_URL = "http://localhost:8000";
+
+/**
+ * t342: a kernel urn the pilot will stamp into provenance or use as an actor — the
+ * `urn:moos:kernel:` prefix followed by a non-empty id without spaces. A prefix check alone
+ * let `urn:moos:kernel:` and `urn:moos:kernel:bad label` through (Copilot, #45).
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isKernelUrn(value) {
+  return typeof value === "string" && /^urn:moos:kernel:[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+}
+
+/**
+ * t342: an engine base URL the pilot can append `/healthz`, `/fold` or `/sse` to — http(s),
+ * a host, no credentials, no query, no fragment — returned without trailing slashes, or
+ * null. The earlier regex accepted `http://?` and `http://host?x=1`, which then produced
+ * `http://host?x=1/fold` (Copilot, #45). Used by the stored engine, the Settings form and
+ * the harness's `?engine=`, so the three cannot disagree.
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+export function normalizeBaseUrl(value) {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!/^https?:\/\//i.test(raw) || /[\s?#]/.test(raw)) return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (!url.hostname || url.username || url.password) return null;
+  return (url.origin + url.pathname).replace(/\/+$/, "");
+}
+
+/**
+ * t337: the identity a frame is stamped with when NOBODY named the engine — the caller
+ * gave no urn and the engine's /healthz carries no `kernel_urn`.
+ *
+ * On the build-time default endpoints that is the historical default urn, unchanged. On
+ * any OTHER endpoint (a custom engine set in Settings, the harness's `?engine=`) it is an
+ * explicit "unidentified engine at <host:port>" derived from the REST endpoint. The t336
+ * scratch kernel on :8899 reports no kernel_urn and was stamped
+ * `urn:moos:kernel:hp-z440.primary` — the default engine's identity on a frame that engine
+ * never served, with no mismatch warning because the warning needs a reported urn.
+ *
+ * Deliberately NOT a urn: the pilot owns no graph identity and must not mint one.
+ * @param {string} engineUrl
+ * @param {string} [mcpBaseUrl]
+ * @returns {string}
+ */
+export function unnamedEngineIdentity(engineUrl, mcpBaseUrl = DEFAULT_MCP_BASE_URL) {
+  if (engineUrl === DEFAULT_ENGINE_URL && mcpBaseUrl === DEFAULT_MCP_BASE_URL) {
+    return DEFAULT_ENGINE_URN;
+  }
+  let where = String(engineUrl);
+  try {
+    where = new URL(where).host || where;
+  } catch {
+    // not a parseable URL — show it as given
+  }
+  return `unidentified engine at ${where}`;
+}
 
 /** Node types the default frame retains (matches the Phase 1 mock's shape). */
 export const DEFAULT_FRAME_TYPES = [
@@ -120,7 +184,8 @@ export function unwrapProperties(raw) {
 }
 
 /**
- * Short human label for the graph: prefer a human property, else the last urn segment.
+ * Short human label for the graph: prefer a human property (label, title, name — then, for
+ * a claim, its text), else the last urn segment. Cut at MAX_LABEL_LEN either way.
  * @param {RawNode} raw
  * @returns {string}
  */
@@ -132,7 +197,15 @@ export function labelForNode(raw) {
     const v = bag ? bag.value : undefined;
     return typeof v === "string" && v.trim() ? v.trim() : null;
   };
-  const human = pick("label") || pick("title") || pick("name");
+  // t337: a claim carries its content in `text` and has no label/title/name, so it was
+  // labelled by its urn tail ("lens-t336.t10.standing.07") — 63 of 63 on the t336 fold.
+  // `text` comes LAST and for claims ONLY: channels, purposes and sessions also carry a
+  // `text` property (24 nodes on the primary fold) and keep their urn-tail label.
+  const human =
+    pick("label") ||
+    pick("title") ||
+    pick("name") ||
+    (raw.type_id === "claim" ? pick("text") : null);
   const chosen = human || raw.urn.split(":").pop() || raw.urn;
   return chosen.length > MAX_LABEL_LEN
     ? chosen.slice(0, MAX_LABEL_LEN - 1) + "…"
@@ -426,6 +499,27 @@ export function selectFrame(fold, opts) {
     accessKeep,
   );
 
+  // t342 HONEST COUNTS (Sam: "I need the view not narrowed at opening"): what the access
+  // keep-set alone left out, counted over the WHOLE fold — so the lens, focus and t, which
+  // narrow by choice, never read as access. A relation is withheld when one of its ends is.
+  // Counting only: the keep-set and what it keeps are untouched.
+  const withheld = new Set(
+    accessKeep ? allNodes.filter((n) => !accessKeep.has(n.urn)).map((n) => n.urn) : [],
+  );
+  /** @type {FoldCounts} */
+  const foldCounts = {
+    total: allNodes.length,
+    in_frame: nodes.length,
+    withheld_by_access: withheld.size,
+    relations: {
+      total: allRelations.length,
+      in_frame: relations.length,
+      withheld_by_access: allRelations.filter(
+        (r) => withheld.has(r.source_urn) || withheld.has(r.target_urn),
+      ).length,
+    },
+  };
+
   // workspace = first in-scope node that is a session; else first scope urn.
   const sessionScope = viewFilter.scope_urns.find(
     (u) => fold.nodes?.[u]?.type_id === "session",
@@ -457,6 +551,7 @@ export function selectFrame(fold, opts) {
     mock: false,
     // Stamp the derived access fiber (or leave undefined when no access scope was requested).
     ...(accessResolution ? { access: accessResolution } : {}),
+    fold_counts: foldCounts,
   };
 
   return { provenance, nodes, relations };

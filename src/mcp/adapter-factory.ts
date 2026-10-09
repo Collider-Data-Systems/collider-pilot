@@ -17,13 +17,14 @@
  */
 
 import type { AccessEnforcement, McpAdapter } from "./types";
-import { cfAccessHeadersFor, loadCfAccess } from "../state/cf-access";
+import { cfAccessHeadersFor, isCloudHost, loadCfAccess } from "../state/cf-access";
 import { MockMcpAdapter } from "./mock-adapter";
 import {
   StreamableHttpMcpAdapter,
   type StreamableHttpAdapterConfig,
 } from "./streamable-http-adapter";
 import { resolveSurfaceEngine } from "./surface-resolver.js";
+import { isKernelUrn, normalizeBaseUrl } from "./transform.js";
 
 export type AdapterMode = "mock" | "live";
 
@@ -37,6 +38,10 @@ export const STORAGE_ENGINE_KEY = "pilot.engine";
  * the build-time localhost default. READ-ONLY like everything here — it changes which
  * engine is read, never what can be written (nothing can). A `?surface=` window's own
  * resolution still wins over this default.
+ *
+ * t337: the pair need not be a fleet engine — Settings "custom engine" stores any http(s)
+ * REST + MCP pair here, with `engineUrn` as an OPTIONAL label. Without the label the
+ * frame is stamped with what the engine itself reports, or as an unidentified engine.
  */
 export interface PilotEngineConfig {
   engineUrl?: string;
@@ -44,19 +49,21 @@ export interface PilotEngineConfig {
   engineUrn?: string;
 }
 
-function isHttpUrl(value: unknown): value is string {
-  return typeof value === "string" && /^https?:\/\/[^\s]+$/.test(value);
-}
-
-function normalizeEngineConfig(value: unknown): PilotEngineConfig | null {
+/**
+ * The stored shape, or null when the value is not an actionable override. Exported (t337)
+ * so the Settings custom-engine inputs are validated by the SAME rule storage is read
+ * with — the form cannot offer to save something this would then drop. t342: URLs and the
+ * urn label go through transform.js `normalizeBaseUrl` / `isKernelUrn`.
+ */
+export function normalizeEngineConfig(value: unknown): PilotEngineConfig | null {
   if (!value || typeof value !== "object") return null;
   const cfg = value as Record<string, unknown>;
   const out: PilotEngineConfig = {};
-  if (isHttpUrl(cfg.engineUrl)) out.engineUrl = cfg.engineUrl;
-  if (isHttpUrl(cfg.mcpBaseUrl)) out.mcpBaseUrl = cfg.mcpBaseUrl;
-  if (typeof cfg.engineUrn === "string" && cfg.engineUrn.startsWith("urn:moos:kernel:")) {
-    out.engineUrn = cfg.engineUrn;
-  }
+  const engineUrl = normalizeBaseUrl(cfg.engineUrl);
+  const mcpBaseUrl = normalizeBaseUrl(cfg.mcpBaseUrl);
+  if (engineUrl) out.engineUrl = engineUrl;
+  if (mcpBaseUrl) out.mcpBaseUrl = mcpBaseUrl;
+  if (isKernelUrn(cfg.engineUrn)) out.engineUrn = cfg.engineUrn as string;
   // An override without BOTH transports is not actionable — treat as unset.
   return out.engineUrl && out.mcpBaseUrl ? out : null;
 }
@@ -198,10 +205,17 @@ export async function resolveAdapterConfig(
   // tunnel. cfAccessHeadersFor() returns {} for localhost/Tailscale, so a LAN engine is
   // byte-identical to before and the credential never leaves the machine for a host that
   // is not behind Access. Single injection point — every caller resolves through here.
+  //
+  // t337: the adapter sends these headers to BOTH endpoints, and a Settings "custom engine"
+  // pair can name two different hosts (a fleet pair never did). The pair is therefore
+  // attached only when the MCP host is behind Access as well; a mixed pair gets none, and
+  // its tunnel-side read fails at the edge instead of the secret reaching the other host.
   try {
     const cf = await loadCfAccess();
     const headers = cfAccessHeadersFor(config.engineUrl ?? "", cf);
-    if (Object.keys(headers).length > 0) config.accessHeaders = headers;
+    if (Object.keys(headers).length > 0 && isCloudHost(config.mcpBaseUrl ?? "")) {
+      config.accessHeaders = headers;
+    }
   } catch {
     // no token / no storage -> unauthenticated, exactly as before
   }

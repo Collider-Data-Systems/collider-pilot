@@ -12,7 +12,8 @@
  * for the current frame + selection, subscribes to `storage.onChanged` for both-way
  * sync with the side panel, and writes selection back via `saveSelectedUrn`. It renders
  * the SAME `PipContent` mirror the Document-PiP path mounts, so the two open paths are
- * visually and behaviourally identical.
+ * visually and behaviourally identical. Since t337 it also follows the layout chosen in
+ * Settings and the panel's search fade / centre requests (`useMirrorView`), read-only.
  *
  * DEFENSIVE RENDER + ErrorBoundary preserved: every frame is Array.isArray-guarded before
  * it reaches PipContent, and the whole tree is ErrorBoundary-wrapped so a partial/stale
@@ -33,6 +34,7 @@ import {
   frameSignature,
   type PilotScratch,
 } from "./state/scratch";
+import { useMirrorView } from "./state/use-mirror-view";
 import "./sidepanel.css";
 
 /**
@@ -43,6 +45,8 @@ import "./sidepanel.css";
 function PipWindowApp() {
   const [frame, setFrame] = useState<HgFrame | null>(null);
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
+  // t337: the layout choice + the panel's search fade and centre requests.
+  const view = useMirrorView();
 
   const applyScratch = useCallback((s: PilotScratch) => {
     const safe =
@@ -103,6 +107,9 @@ function PipWindowApp() {
       onSelect={handleSelect}
       connected={frame != null}
       variant={isTab ? "tab" : "pip"}
+      layout={view.layout}
+      highlightUrns={view.highlightUrns}
+      focus={view.focus}
     />
   );
 }

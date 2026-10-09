@@ -17,6 +17,13 @@
  *   identical in shape to the adapter's, and the live-SSE mechanics under test are the
  *   real ones. In the loaded extension both :8000 and :8080 are host-permitted.
  *
+ * WHICH ENGINE (t337): `?engine=<REST base URL>` points every read this harness makes —
+ *   the fold snapshot, /healthz, the fold stream and the log feed — at that REST origin
+ *   (e.g. `preview-live.html?engine=http://localhost:8899`). Without it the default is
+ *   unchanged (:8000). The built harness can therefore be served from any origin and read
+ *   any CORS-open engine. The Settings "engine" picker does NOT steer this page: it writes
+ *   the shimmed `pilot.engine`, which only the extension's worker reads.
+ *
  * READ-ONLY: only GET requests (the REST snapshot + the GET-only EventSource). No apply.
  */
 
@@ -24,7 +31,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { AccessScope, FrameRequest, HgFrame } from "./mcp/types";
-import { selectFrame, DEFAULT_ENGINE_URL } from "./mcp/transform.js";
+import {
+  selectFrame,
+  unnamedEngineIdentity,
+  normalizeBaseUrl,
+  DEFAULT_ENGINE_URL,
+} from "./mcp/transform.js";
 import { readRequestedMode, ANON_USER_URN } from "./mcp/access.js";
 import { PILOT_ACCESS_KEY, type PilotAccessConfig } from "./state/access-identity";
 import { PostureStrip } from "./components/PostureStrip";
@@ -46,6 +58,8 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import {
   DEFAULT_GRAPH_LAYOUT,
   DEFAULT_ACCESS_POSTURE,
+  loadAccessPosturePref,
+  saveAccessPosturePref,
   type GraphLayoutName,
   type AccessPosture,
 } from "./state/prefs";
@@ -53,6 +67,23 @@ import { useFoldStream } from "./state/use-fold-stream";
 import "./sidepanel.css";
 
 type Status = "loading" | "ready" | "error";
+
+/**
+ * The REST base this harness reads (t337): `?engine=<http(s) URL>` when present and
+ * well-formed, else the build-time default. Read once — the page reloads to change it.
+ */
+function harnessEngineUrl(): string {
+  try {
+    const raw = new URLSearchParams(window.location.search).get("engine") ?? "";
+    // t342: the same base-URL rule as the stored engine (transform.js normalizeBaseUrl).
+    const base = normalizeBaseUrl(raw);
+    if (base) return base;
+  } catch {
+    // no location -> the default engine
+  }
+  return DEFAULT_ENGINE_URL;
+}
+const ENGINE_URL = harnessEngineUrl();
 
 /**
  * PREVIEW-ONLY chrome.storage.local shim.
@@ -169,18 +200,30 @@ async function fetchLiveFrame(request?: FrameRequest): Promise<HgFrame> {
   // Strip inbound access + re-inject the trusted identity, exactly as the worker does.
   const sanitized = await simulateWorkerSeam(request);
   const [foldRes, healthRes] = await Promise.all([
-    fetch(`${DEFAULT_ENGINE_URL}/fold`),
-    fetch(`${DEFAULT_ENGINE_URL}/healthz`),
+    fetch(`${ENGINE_URL}/fold`),
+    fetch(`${ENGINE_URL}/healthz`),
   ]);
   if (!foldRes.ok) throw new Error(`GET /fold -> HTTP ${foldRes.status}`);
   const foldJson = await foldRes.json();
   const health = healthRes.ok ? await healthRes.json() : {};
   // /fold returns { nodes:[…], relations:[…] }; selectFrame's Object.values handles arrays.
   const fold = { nodes: foldJson.nodes ?? {}, relations: foldJson.relations ?? {} };
+  // t337: on the default engine the stamp is unchanged. A `?engine=` target is named by
+  // what it reports on /healthz, or — when it reports nothing — as an unidentified engine;
+  // never as the default engine it is not.
+  const reported = (health as { kernel_urn?: unknown })?.kernel_urn;
   return selectFrame(fold, {
     healthz: health,
     request: sanitized,
-    engineEndpoint: `${DEFAULT_ENGINE_URL} (HTTP /fold · served-page harness)`,
+    ...(ENGINE_URL === DEFAULT_ENGINE_URL
+      ? {}
+      : {
+          engine:
+            typeof reported === "string" && reported.length > 0
+              ? reported
+              : unnamedEngineIdentity(ENGINE_URL),
+        }),
+    engineEndpoint: `${ENGINE_URL} (HTTP /fold · served-page harness)`,
     foldedAt: new Date().toISOString(),
   });
 }
@@ -204,6 +247,8 @@ function PreviewLive() {
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [focusUrn, setFocusUrn] = useState<string | null>(null);
   const [focusSignal, setFocusSignal] = useState(0);
+  // t337: the nodes `find` matched in the current frame — the graph fades the rest.
+  const [highlightUrns, setHighlightUrns] = useState<string[]>([]);
   const [spec, setSpec] = useState<SliceSpec>(() => defaultSliceSpec());
   const [accessMode, setAccessMode] = useState<AccessPosture>(DEFAULT_ACCESS_POSTURE);
   const [identitySet, setIdentitySet] = useState(false);
@@ -243,8 +288,21 @@ function PreviewLive() {
     }
   }, []);
 
+  // t342: open under the SAVED posture, as the side panel does (sidepanel.tsx mount effect,
+  // loadAccessPosturePref) — read through the storage shim, never from the URL. This harness
+  // always opened anon (1 node on the scratch fold), whatever "Bring me in" had saved.
   useEffect(() => {
-    void loadFrame();
+    let cancelled = false;
+    void (async () => {
+      const savedPosture = await loadAccessPosturePref();
+      if (!cancelled) setAccessMode(savedPosture);
+      const initialReq = buildFrameRequest(defaultSliceSpec(), savedPosture);
+      frameRequestRef.current = initialReq;
+      await loadFrame(initialReq);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [loadFrame]);
 
   // (d) WORKER-STRIP PROOF (dev console). A page-forged access.user/workstation is DROPPED by
@@ -286,6 +344,14 @@ function PreviewLive() {
     setSelectedUrn(urn);
   }, []);
 
+  // t337: an inspector relation row selects the other node AND centres the graph on it
+  // (sidepanel.tsx does the same, and also tells its mirrors — this harness has none).
+  const handleNavigate = useCallback((urn: string) => {
+    setSelectedUrn(urn);
+    setFocusUrn(urn);
+    setFocusSignal((s) => s + 1);
+  }, []);
+
   // Hint-vs-selection split mirrors sidepanel.tsx exactly (t266): the hint is a claim
   // about the CURRENT frame and tracks it in the effect below; selection stays a
   // keystroke act so a frame refresh never steals it.
@@ -307,15 +373,19 @@ function PreviewLive() {
     [frame],
   );
 
-  // The hint tracks (frame, query) — see the comment above handleSearchChange.
+  // The hint tracks (frame, query) — see the comment above handleSearchChange. So does the
+  // fade (t337), and an empty box clears it.
   useEffect(() => {
     const q = search.trim().toLowerCase();
     if (!q || !frame) {
       setSearchHint(null);
+      setHighlightUrns((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     const nodes = Array.isArray(frame.nodes) ? frame.nodes : [];
-    setSearchHint(searchNodes(nodes, q).hint);
+    const { hint, matchUrns } = searchNodes(nodes, q);
+    setSearchHint(hint);
+    setHighlightUrns((prev) => (prev.join("\n") === matchUrns.join("\n") ? prev : matchUrns));
   }, [frame, search]);
 
   const commitSlice = useCallback(
@@ -378,6 +448,7 @@ function PreviewLive() {
   const handleAccessModeChange = useCallback(
     (mode: AccessPosture) => {
       setAccessMode(mode);
+      void saveAccessPosturePref(mode); // t342: persisted as the panel does, so a reload keeps it
       setViewScope(""); // posture change ⇒ permitted set changes; reset focus to All permitted
       commitSlice(spec, mode, "");
     },
@@ -389,6 +460,7 @@ function PreviewLive() {
   const reloadForStream = useCallback(() => void loadFrame(), [loadFrame]);
   const { status: streamStatus, pulseKey } = useFoldStream({
     active: isLive,
+    url: `${ENGINE_URL}/fold/stream`,
     onReload: reloadForStream,
   });
 
@@ -435,12 +507,14 @@ function PreviewLive() {
           streamStatus={isLive ? streamStatus : "off"}
           pulseKey={pulseKey}
           stale={stale}
+          requestedMode={accessMode}
         />
       )}
       {stale && (
         <div className="stale-banner" role="status">
           <span className="stale-banner-text">
-            refresh failed — showing the last good frame (seq {frame?.provenance?.log_seq}):{" "}
+            refresh failed — showing the last good frame (seq {frame?.provenance?.log_seq},{" "}
+            {frame?.provenance?.view_filter?.lens ?? "custom"} lens):{" "}
             {error}
           </span>
           <button className="mini-btn" onClick={() => void loadFrame()}>
@@ -466,7 +540,7 @@ function PreviewLive() {
             Live read failed: {error}
             <div style={{ fontSize: 11, opacity: 0.75, maxWidth: 320 }}>
               This harness reads the CORS-open <code>GET /fold</code> REST snapshot. If it
-              fails, the kernel is likely not running on {DEFAULT_ENGINE_URL}.
+              fails, the kernel is likely not running on {ENGINE_URL}.
             </div>
             <button className="retry-btn" onClick={() => void loadFrame()}>
               Retry
@@ -521,15 +595,23 @@ function PreviewLive() {
                 layout={layout}
                 focusUrn={focusUrn}
                 focusSignal={focusSignal}
+                highlightUrns={highlightUrns}
               />
             )}
             <ErrorBoundary>
-              <LogFeed live={isLive} frame={frame} accessMode={accessMode} onSelect={handleSelect} />
+              <LogFeed
+                live={isLive}
+                frame={frame}
+                accessMode={accessMode}
+                onSelect={handleSelect}
+                engineUrl={ENGINE_URL}
+              />
             </ErrorBoundary>
             <NodeInspector
               frame={frame}
               node={selectedNode}
               onSelect={handleSelect}
+              onNavigate={handleNavigate}
               collapsible
             />
           </>

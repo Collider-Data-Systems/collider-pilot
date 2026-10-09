@@ -8,6 +8,8 @@
  *                via PICKERS fed from the fold (user / workstation nodes and urn-shaped
  *                property values in the current frame) with a raw-URN escape hatch
  *                (item 3 — no more freehand-typing urns as the only path).
+ *   engine     — which engine surfaceless windows read (t278): this box, a fleet engine,
+ *                or a custom REST + MCP pair with an optional urn label (t337),
  *   provider   — the LLM provider + model (moved out of the Actions section),
  *   LLM bearer — the scope-split /llm/* token with set/clear (t263, #63),
  *   layout     — the graph layout pref (moved out of the graph toolbar).
@@ -42,20 +44,28 @@ import {
   saveLLMToken,
 } from "../tools/model-providers";
 import { evaluateEgress } from "../tools/llm-provider";
-import { loadPilotEngine, savePilotEngine } from "../mcp/adapter-factory";
+import {
+  loadPilotEngine,
+  normalizeEngineConfig,
+  savePilotEngine,
+  type PilotEngineConfig,
+} from "../mcp/adapter-factory";
 import { FLEET_ENGINES } from "../mcp/surface-resolver.js";
+import { resolveGraphLayout } from "./FrameGraph";
 
 const LAYOUT_LABEL: Record<GraphLayoutName, string> = {
+  auto: "Auto",
   concentric: "Concentric",
   breadthfirst: "Breadth-first",
   grid: "Grid",
+  nested: "Nested",
 };
 
 const USER_URN_PATTERN = /^urn:moos:user:\S+$/;
 const WORKSTATION_URN_PATTERN = /^urn:moos:workstation:\S+$/;
 const ANON_URN = "urn:moos:user:anon";
 
-/** The sentinel <option> value that reveals the raw-URN escape hatch. */
+/** The sentinel <option> value that reveals the raw escape hatch (a urn, or engine URLs). */
 const CUSTOM = "__custom__";
 
 /**
@@ -90,6 +100,22 @@ export function collectIdentityCandidates(frame: HgFrame | null): {
 
 /** Short urn tail for option labels; the full urn stays in the option title. */
 const urnTail = (urn: string) => urn.split(":").pop() || urn;
+
+/**
+ * The fleet entry a stored engine config IS — same transport pair AND urn — or undefined
+ * (t337). Anything else stored under `pilot.engine` is a custom engine and must be shown
+ * as one, with its URLs.
+ */
+const fleetEngineFor = (cfg: PilotEngineConfig) =>
+  FLEET_ENGINES.find(
+    (e) =>
+      e.engineUrl === cfg.engineUrl &&
+      e.mcpBaseUrl === cfg.mcpBaseUrl &&
+      e.engineUrn === cfg.engineUrn,
+  );
+
+/** A typed engine URL as it is stored: trimmed, no trailing slash (`${url}/healthz`). */
+const trimEngineUrl = (value: string) => value.trim().replace(/\/+$/, "");
 
 export interface SettingsProviderProps {
   providerId: string;
@@ -126,6 +152,9 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [current, setCurrent] = useState<PilotAccessConfig | null>(null);
   const identitySet = isIdentitySet(current);
+  // t342: stored, but not a user urn — "Bring me in" then permits the public workspaces only:
+  // the frame keeps those and the unattributed nodes, and every other seat is hidden.
+  const identityMalformed = identitySet && !USER_URN_PATTERN.test(current?.user ?? "");
   const [open, setOpen] = useState(false);
   // Whether the stored identity has actually been READ yet. The auto-expand below must
   // wait for it: before the async chrome.storage read resolves, identitySet is a
@@ -137,10 +166,19 @@ export function SettingsPanel({
   // stuck-at-anon state this block exists to fix. Only once the stored identity has
   // resolved (see above). A manual collapse sticks.
   useEffect(() => {
-    if (identityLoaded && accessMode === "identified" && !identitySet) setOpen(true);
-  }, [identityLoaded, accessMode, identitySet]);
+    if (identityLoaded && accessMode === "identified" && (!identitySet || identityMalformed)) {
+      setOpen(true);
+    }
+  }, [identityLoaded, accessMode, identitySet, identityMalformed]);
 
   const activeProvider = provider ? getProvider(provider.providerId) : null;
+
+  // t337: the layout DRAWN for the current frame — `auto` (no explicit choice) is nested
+  // on a frame with nesting relations and concentric otherwise.
+  const drawnLayoutLabel = useMemo(
+    () => LAYOUT_LABEL[resolveGraphLayout(layout, frame)].toLowerCase(),
+    [layout, frame],
+  );
 
   const summary = useMemo(() => {
     const parts: string[] = [
@@ -153,9 +191,9 @@ export function SettingsPanel({
           : `${activeProvider.id} · ${provider.modelName}`,
       );
     }
-    parts.push(LAYOUT_LABEL[layout].toLowerCase());
+    parts.push(drawnLayoutLabel);
     return parts.join(" · ");
-  }, [identitySet, current, provider, activeProvider, layout]);
+  }, [identitySet, current, provider, activeProvider, drawnLayoutLabel]);
 
   return (
     <details
@@ -189,11 +227,11 @@ export function SettingsPanel({
             className="gc-select"
             value={layout}
             onChange={(e) => onLayoutChange(e.target.value as GraphLayoutName)}
-            title="Graph layout (all ship in cytoscape core)"
+            title="Graph layout (cytoscape core only). Auto: nested boxes when the frame has nesting relations, concentric otherwise. Any other choice is drawn as chosen."
           >
             {GRAPH_LAYOUTS.map((l) => (
               <option key={l} value={l}>
-                {LAYOUT_LABEL[l]}
+                {l === "auto" ? `${LAYOUT_LABEL[l]} (${drawnLayoutLabel})` : LAYOUT_LABEL[l]}
               </option>
             ))}
           </select>
@@ -278,7 +316,13 @@ function IdentitySection({
 
   const effectiveUser = userPick === CUSTOM ? userText.trim() : userPick;
   const effectiveWs = wsPick === CUSTOM ? wsText.trim() : wsPick;
-  const canSave = effectiveUser.length > 0;
+  // t342: only a user urn can be saved. A bare "sam" used to save: it resolves no governs
+  // closure and owns no session, so "Bring me in" drew public + unattributed nodes only
+  // (431 of 447 on the scratch fold, every seat hidden) while the strip still read "sam".
+  const userValid = USER_URN_PATTERN.test(effectiveUser) && effectiveUser !== ANON_URN;
+  const wsValid = effectiveWs === "" || WORKSTATION_URN_PATTERN.test(effectiveWs);
+  const canSave = userValid && wsValid;
+  const storedMalformed = identitySet && !USER_URN_PATTERN.test(current?.user ?? "");
 
   const handleSave = useCallback(async () => {
     if (!canSave) return;
@@ -313,6 +357,13 @@ function IdentitySection({
         <div className="gc-identity-hint" role="note">
           "Bring me in" is on but no identity is set — pick one below to load your
           workspaces
+        </div>
+      )}
+      {storedMalformed && (
+        <div className="gc-identity-hint" role="alert">
+          the stored user "{current?.user}" is not a user urn — it owns no workspace, so
+          "Bring me in" draws the public workspaces and unattributed nodes only — every other
+          seat is hidden. Pick urn:moos:user:… below and save.
         </div>
       )}
       <label className="gc-field">
@@ -353,6 +404,9 @@ function IdentitySection({
           />
         </label>
       )}
+      {userPick === CUSTOM && userText.trim() !== "" && !userValid && (
+        <div className="gc-note">not a user urn — write urn:moos:user:&lt;name&gt;</div>
+      )}
       <label className="gc-field">
         <span className="gc-label">workstation (optional)</span>
         <select
@@ -383,6 +437,12 @@ function IdentitySection({
             autoComplete="off"
           />
         </label>
+      )}
+      {/* t342: Save is disabled for this too, so say why, as for the user urn above. */}
+      {wsPick === CUSTOM && wsText.trim() !== "" && !wsValid && (
+        <div className="gc-note">
+          not a workstation urn — write urn:moos:workstation:&lt;name&gt;, or pick none
+        </div>
       )}
       <div className="gc-identity-actions">
         <button
@@ -419,16 +479,37 @@ function IdentitySection({
  * whole seat: this changes which engine is READ, never what can be written (nothing
  * can). A `?surface=` window's own verified engine resolution still wins. WHAT a user
  * sees on any engine stays the A3 access posture's decision, not this picker's.
+ *
+ * t337: "custom engine…" reads an engine the fleet directory does not list — two URLs
+ * (REST + MCP) and an optional urn label, stored through the SAME `pilot.engine` key. The
+ * picker also tells the truth about what is stored: a stored pair that is not a fleet
+ * entry shows as custom WITH its URLs. It used to fall through to "This box" while the
+ * frame was read from somewhere else.
  */
 function EngineSection({ onReloadFrame }: { onReloadFrame: () => void }) {
-  // "" = the build-time localhost default (this box); otherwise a fleet engine urn.
+  // "" = the build-time localhost default (this box); a fleet engine urn; or CUSTOM.
   const [pick, setPick] = useState<string>("");
+  // What is actually stored, and the custom drafts compared against it (t337).
+  const [stored, setStored] = useState<PilotEngineConfig | null>(null);
+  const [restText, setRestText] = useState("");
+  const [mcpText, setMcpText] = useState("");
+  const [urnText, setUrnText] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     void loadPilotEngine().then((cfg) => {
       if (cancelled) return;
-      if (cfg?.engineUrn) setPick(cfg.engineUrn);
+      setStored(cfg);
+      if (!cfg) return;
+      const fleet = fleetEngineFor(cfg);
+      if (fleet) {
+        setPick(fleet.engineUrn);
+        return;
+      }
+      setPick(CUSTOM);
+      setRestText(cfg.engineUrl ?? "");
+      setMcpText(cfg.mcpBaseUrl ?? "");
+      setUrnText(cfg.engineUrn ?? "");
     });
     return () => {
       cancelled = true;
@@ -438,20 +519,48 @@ function EngineSection({ onReloadFrame }: { onReloadFrame: () => void }) {
   const handlePick = useCallback(
     async (urn: string) => {
       setPick(urn);
+      // Choosing "custom engine…" only reveals the inputs — nothing is written, and the
+      // stored engine keeps being read, until the pair below is explicitly stored.
+      if (urn === CUSTOM) return;
       const engine = FLEET_ENGINES.find((e) => e.engineUrn === urn);
-      await savePilotEngine(
-        engine
-          ? {
-              engineUrl: engine.engineUrl,
-              mcpBaseUrl: engine.mcpBaseUrl,
-              engineUrn: engine.engineUrn,
-            }
-          : null,
-      );
+      const next = engine
+        ? {
+            engineUrl: engine.engineUrl,
+            mcpBaseUrl: engine.mcpBaseUrl,
+            engineUrn: engine.engineUrn,
+          }
+        : null;
+      await savePilotEngine(next);
+      setStored(next);
       onReloadFrame(); // the worker rebuilt its adapters on the storage change
     },
     [onReloadFrame],
   );
+
+  // The custom draft, validated by the same normalizer storage is read with: null until
+  // BOTH URLs are http(s). A urn label the normalizer would drop blocks the save instead
+  // of being discarded silently.
+  const urnLabel = urnText.trim();
+  const draft = normalizeEngineConfig({
+    engineUrl: trimEngineUrl(restText),
+    mcpBaseUrl: trimEngineUrl(mcpText),
+    ...(urnLabel ? { engineUrn: urnLabel } : {}),
+  });
+  const urnRejected = urnLabel !== "" && draft !== null && draft.engineUrn !== urnLabel;
+  const customApplied =
+    draft !== null &&
+    stored !== null &&
+    draft.engineUrl === stored.engineUrl &&
+    draft.mcpBaseUrl === stored.mcpBaseUrl &&
+    draft.engineUrn === stored.engineUrn;
+  const canApplyCustom = draft !== null && !urnRejected && !customApplied;
+
+  const handleApplyCustom = async () => {
+    if (!draft || urnRejected) return;
+    await savePilotEngine(draft);
+    setStored(draft);
+    onReloadFrame(); // the worker rebuilt its adapters on the storage change
+  };
 
   return (
     <div className="settings-section">
@@ -468,7 +577,74 @@ function EngineSection({ onReloadFrame }: { onReloadFrame: () => void }) {
             {e.label} · {urnTail(e.engineUrn)}
           </option>
         ))}
+        <option value={CUSTOM}>custom engine…</option>
       </select>
+      {pick === CUSTOM && (
+        <>
+          <label className="gc-field">
+            <span className="gc-label">engine REST URL</span>
+            <input
+              className="gc-input"
+              type="text"
+              value={restText}
+              placeholder="http://localhost:8000"
+              onChange={(e) => setRestText(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+              title="REST base of the engine — /healthz, the log feed and the fold stream are read from it."
+            />
+          </label>
+          <label className="gc-field">
+            <span className="gc-label">MCP base URL</span>
+            <input
+              className="gc-input"
+              type="text"
+              value={mcpText}
+              placeholder="http://localhost:8080"
+              onChange={(e) => setMcpText(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+              title="MCP Streamable HTTP base — the frame is read with POST {this}/sse. Its origin must be listed in the extension manifest's host_permissions, or the browser blocks the read."
+            />
+          </label>
+          <label className="gc-field">
+            <span className="gc-label">engine urn (optional label)</span>
+            <input
+              className="gc-input"
+              type="text"
+              value={urnText}
+              placeholder="urn:moos:kernel:…"
+              onChange={(e) => setUrnText(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+              title="Optional. Stamped into provenance as the engine this pair is EXPECTED to be. Left empty, the frame is stamped with what the engine reports on /healthz — or as an unidentified engine when it reports nothing."
+            />
+          </label>
+          {urnRejected && (
+            <div className="gc-identity-hint" role="note">
+              the label must be a kernel urn (urn:moos:kernel:…) — or leave it empty
+            </div>
+          )}
+          <div className="gc-identity-actions">
+            <button
+              type="button"
+              className="gc-btn"
+              onClick={() => void handleApplyCustom()}
+              disabled={!canApplyCustom}
+              title="Write this pair to chrome.storage.local['pilot.engine'] and reload the frame"
+            >
+              Use custom engine
+            </button>
+          </div>
+          <div className="gc-note">
+            {customApplied
+              ? "stored — surfaceless windows read this pair"
+              : stored
+                ? `not stored yet — the default engine is still ${stored.engineUrl}`
+                : "not stored yet — the default engine is still this box (localhost)"}
+          </div>
+        </>
+      )}
       <div className="gc-note">
         writes only <code>chrome.storage.local['pilot.engine']</code> — a read target,
         never a write path. Access posture decides what is visible on any engine.

@@ -14,13 +14,21 @@
  * node-detail surface from every pip.html context. Selection still mirrors both ways
  * through the shared scratch on every variant.
  *
+ * t337 — SAME DRAWING AS THE PANEL: the mount passes the layout chosen in Settings and the
+ * view the panel's search / inspector put on the frame (matches lit, the rest faded, a node
+ * to centre on) straight through to FrameGraph, which already brings the nesting, the
+ * vocabulary colours and the legend. Still no store and no I/O here — the mounts read them
+ * (`useMirrorView`).
+ *
  * DEFENSIVE RENDER (Phase 1-fix discipline, preserved): frame arrays are guarded before
  * any lookup, and this whole subtree is wrapped by an ErrorBoundary at each mount root.
  * A partial/stale frame must never blank the mirror.
  */
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { HgFrame, HgNode } from "../mcp/types";
+import type { GraphLayoutName } from "../state/prefs";
+import type { ScratchFocus } from "../state/scratch";
 import { PostureStrip } from "../components/PostureStrip";
 import { FrameGraph } from "../components/FrameGraph";
 import { NodeInspector } from "../components/NodeInspector";
@@ -36,6 +44,12 @@ export interface PipContentProps {
   connected?: boolean;
   /** Surface variant: lean PiP mirror, full-tab mirror (keeps inspector), or preview. */
   variant?: "pip" | "tab" | "preview";
+  /** t337: the layout CHOICE from Settings. Absent = `auto`, as FrameGraph defaults. */
+  layout?: GraphLayoutName;
+  /** t337: urns the panel's search matched — every other node fades. Empty = no fade. */
+  highlightUrns?: readonly string[];
+  /** t337: the panel's centre request (an inspector relation row clicked there). */
+  focus?: ScratchFocus | null;
 }
 
 export function PipContent({
@@ -44,6 +58,9 @@ export function PipContent({
   onSelect,
   connected,
   variant = "pip",
+  layout,
+  highlightUrns,
+  focus = null,
 }: PipContentProps) {
   const isConnected = connected ?? frame != null;
   // Only the full-tab mirror has the space for node detail; the PiP stays lean.
@@ -55,6 +72,19 @@ export function PipContent({
     () => nodes.find((n) => n.urn === selectedUrn) ?? null,
     [nodes, selectedUrn],
   );
+
+  // t337: a relation row in THIS mirror's inspector selects the other node and centres the
+  // graph on it. Centring is therefore asked for from two places — here and the panel —
+  // and the later request wins.
+  const [ownFocus, setOwnFocus] = useState<ScratchFocus | null>(null);
+  const handleNavigate = useCallback(
+    (urn: string) => {
+      onSelect(urn);
+      setOwnFocus({ urn, at: Date.now() });
+    },
+    [onSelect],
+  );
+  const centre = ownFocus && (!focus || ownFocus.at > focus.at) ? ownFocus : focus;
 
   return (
     <div className="pilot-container pip-container">
@@ -102,12 +132,17 @@ export function PipContent({
               frame={frame}
               selectedUrn={selectedUrn}
               onSelect={onSelect}
+              layout={layout}
+              focusUrn={centre?.urn ?? null}
+              focusSignal={centre?.at ?? 0}
+              highlightUrns={highlightUrns}
             />
             {showInspector && (
               <NodeInspector
                 frame={frame}
                 node={selectedNode}
                 onSelect={onSelect}
+                onNavigate={handleNavigate}
               />
             )}
           </>

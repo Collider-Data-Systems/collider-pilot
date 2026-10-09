@@ -48,6 +48,7 @@ import {
   frameSignature,
   type PilotScratch,
 } from "../state/scratch";
+import { useMirrorView } from "../state/use-mirror-view";
 
 /** Default PiP window size. Position is UA-owned and NOT set here (criterion 5). */
 const DEFAULT_WIDTH = 400;
@@ -368,6 +369,8 @@ function copyStyles(from: Document, to: Document): void {
 function PipMirrorApp({ pipWindow: win }: { pipWindow: Window }) {
   const [frame, setFrame] = useState<HgFrame | null>(null);
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
+  // t337: the layout choice + the panel's search fade and centre requests.
+  const view = useMirrorView();
 
   const applyScratch = useCallback((s: PilotScratch) => {
     const safe =
@@ -423,6 +426,9 @@ function PipMirrorApp({ pipWindow: win }: { pipWindow: Window }) {
       onSelect={handleSelect}
       connected={frame != null}
       variant="pip"
+      layout={view.layout}
+      highlightUrns={view.highlightUrns}
+      focus={view.focus}
     />
   );
 }

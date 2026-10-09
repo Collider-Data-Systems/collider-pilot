@@ -17,6 +17,9 @@
  *   - the inline graph is OFF by default (toggle in the controls): the PiP / pop-out /
  *     full-tab mirrors render it, and selection syncs both ways through the shared
  *     scratch, so panel-clicks (log feed, inspector, find) light up in the mirrors.
+ *   - t337: `find` also fades everything it did not match, and an inspector relation row
+ *     selects the other node and centres the graph on it. Fade and centring reach the
+ *     mirrors through the scratch view; the mirrors also draw the layout chosen in Settings.
  *
  * SAFETY: still no writes, no page access. EventSource is GET-only — it cannot POST and
  * has no apply path. Every mutating act stays behind the ActionsPanel modal, and urn-typed
@@ -33,7 +36,14 @@ import type {
   PilotResponse,
   RawMcpTool,
 } from "./mcp/types";
-import { loadScratch, saveScratch, scratchScopeParam, subscribeScratch } from "./state/scratch";
+import {
+  loadScratch,
+  saveScratch,
+  saveScratchView,
+  scratchScopeParam,
+  subscribeScratch,
+  type ScratchFocus,
+} from "./state/scratch";
 import {
   DEFAULT_GRAPH_LAYOUT,
   loadLayoutPref,
@@ -183,6 +193,10 @@ function SidePanel() {
    * (Copilot #26). It clears only when a frame actually lands.
    */
   const [readFailed, setReadFailed] = useState(false);
+  // t342: the frame on screen was restored from session scratch and the opening read has not
+  // landed — it may be a narrower slice than the `everything` lens row above says (Sam: "I
+  // need the view not narrowed at opening"). The strip calls it CACHED, not LIVE.
+  const [restored, setRestored] = useState(false);
   const [popOutSupported] = useState(() => isPopOutSupported());
   const [fullTabSupported] = useState(() => isFullTabSupported());
   const [pipOpen, setPipOpen] = useState(false);
@@ -194,6 +208,10 @@ function SidePanel() {
   const [searchHint, setSearchHint] = useState<string | null>(null);
   const [focusUrn, setFocusUrn] = useState<string | null>(null);
   const [focusSignal, setFocusSignal] = useState(0);
+  // t337: the nodes `find` matched in the current frame — the graph fades the rest — and
+  // the latest centre request for the mirrors (see PilotScratchView).
+  const [highlightUrns, setHighlightUrns] = useState<string[]>([]);
+  const [mirrorFocus, setMirrorFocus] = useState<ScratchFocus | null>(null);
   // t264: the whole WHAT/WHEN selection is one SliceSpec (lens + types + ports + t + hops).
   const [spec, setSpec] = useState<SliceSpec>(() => defaultSliceSpec());
   // FOCUS (scope). "" = All permitted (the seat-grounded default; no literal urn pinned).
@@ -238,6 +256,7 @@ function SidePanel() {
         setFrame(safeFrame);
         setStatus("ready");
         setReadFailed(false); // a good frame landed — the posture is current again
+        setRestored(false); // t342: and it is no longer the restored one
         setSelectedUrn((prev) => {
           const stillThere =
             prev && safeFrame.nodes.some((n) => n.urn === prev) ? prev : null;
@@ -309,6 +328,7 @@ function SidePanel() {
         setFrame(scratch.frame);
         setSelectedUrn(scratch.selectedUrn);
         setStatus("ready");
+        setRestored(true);
       }
       // Seed the first read under the restored posture so an "identified" toggle survives a
       // reopen (default anon on a fresh profile). The worker still resolves the identity.
@@ -332,7 +352,24 @@ function SidePanel() {
     [frame],
   );
 
-  // Node search: match by urn/label, then select + center the first hit. Local only.
+  // t337: an inspector relation row selects the other node AND centres the graph on it —
+  // the inline graph when it is shown, and the mirrors either way (through the scratch
+  // view): they usually carry the picture. A find hit, below, centres the inline graph
+  // only, as before: a mirror keeps its view, so every lit match stays where it was.
+  const handleNavigate = useCallback(
+    (urn: string) => {
+      handleSelect(urn);
+      if (showGraph) {
+        setFocusUrn(urn);
+        setFocusSignal((s) => s + 1);
+      }
+      setMirrorFocus({ urn, at: Date.now() });
+    },
+    [handleSelect, showGraph],
+  );
+
+  // Node search: match by urn/label — then, since t337, inside the text properties — and
+  // select + center the best hit. Local only.
   //
   // The HINT is computed in the effect below, not here: it is a claim about the CURRENT
   // frame, so it must track the frame, not just keystrokes. Reproduced live (t266): a query
@@ -360,16 +397,29 @@ function SidePanel() {
     [frame, handleSelect, showGraph],
   );
 
-  // The hint tracks (frame, query) — see the comment above handleSearchChange.
+  // The hint tracks (frame, query) — see the comment above handleSearchChange. So does the
+  // fade (t337): which nodes match is a claim about the CURRENT frame too, and an empty
+  // box clears it. The array keeps its identity while the matches are the same, so a frame
+  // re-read does not re-write the mirrors' view.
   useEffect(() => {
     const q = search.trim().toLowerCase();
     if (!q || !frame) {
       setSearchHint(null);
+      setHighlightUrns((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     const nodes = Array.isArray(frame.nodes) ? frame.nodes : [];
-    setSearchHint(searchNodes(nodes, q).hint);
+    const { hint, matchUrns } = searchNodes(nodes, q);
+    setSearchHint(hint);
+    setHighlightUrns((prev) => (prev.join("\n") === matchUrns.join("\n") ? prev : matchUrns));
   }, [frame, search]);
+
+  // t337: the mirrors follow the fade and the centre request through the scratch view —
+  // one-way, a mirror never writes it. A freshly opened panel writes the empty view, which
+  // clears whatever an earlier panel left there.
+  useEffect(() => {
+    void saveScratchView({ highlightUrns, focus: mirrorFocus });
+  }, [highlightUrns, mirrorFocus]);
 
   const handleLayoutChange = useCallback((next: GraphLayoutName) => {
     setLayout(next);
@@ -605,6 +655,8 @@ function SidePanel() {
           streamStatus={isLive ? streamStatus : "off"}
           pulseKey={pulseKey}
           stale={stale}
+          cached={restored}
+          requestedMode={accessMode}
         />
       )}
       {/* A failed refresh WITH a frame already loaded used to be invisible: the frame was
@@ -615,7 +667,8 @@ function SidePanel() {
       {stale && (
         <div className="stale-banner" role="status">
           <span className="stale-banner-text">
-            refresh failed — showing the last good frame (seq {frame?.provenance?.log_seq}):{" "}
+            refresh failed — showing the last good frame (seq {frame?.provenance?.log_seq},{" "}
+            {frame?.provenance?.view_filter?.lens ?? "custom"} lens{restored ? ", restored" : ""}):{" "}
             {error}
           </span>
           <button className="mini-btn" onClick={() => void loadFrame()}>
@@ -687,6 +740,7 @@ function SidePanel() {
                 layout={layout}
                 focusUrn={focusUrn}
                 focusSignal={focusSignal}
+                highlightUrns={highlightUrns}
               />
             )}
             {/* t264: the engine jsonl, live. Self-hides on mock frames. */}
@@ -709,6 +763,7 @@ function SidePanel() {
               frame={frame}
               node={selectedNode}
               onSelect={handleSelect}
+              onNavigate={handleNavigate}
               collapsible
             />
             <ErrorBoundary>

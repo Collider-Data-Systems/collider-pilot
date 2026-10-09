@@ -102,6 +102,98 @@ rather than letting the window silently render the wrong fold. Unknown keys, eng
 rooms (the manifold/collective desktops), and a down directory all degrade to the default
 engine with no warning suppressed and no window dead.
 
+### Custom engine and the knowledge lens (t337)
+
+**Settings → engine → custom engine…** reads an engine the fleet directory does not list:
+an engine REST URL, an MCP base URL and an optional urn label, stored under the same
+`chrome.storage.local['pilot.engine']` key the fleet picker writes. The MCP origin has to
+be in `public/manifest.json` `host_permissions` — the kernel's MCP endpoint answers a CORS
+preflight with 405, so an unlisted origin fails with `Failed to fetch`. A stored pair that
+is not a fleet entry shows in the picker as custom, with its URLs. The Cloudflare Access
+token pair is attached only when BOTH URLs are behind Access: a pair that mixes a tunnel
+host with any other host gets none, so the secret cannot reach the other host.
+
+Provenance stays honest about such an engine: with no label the frame is stamped with the
+`kernel_urn` the engine reports on `/healthz`; when it reports none, `provenance.engine`
+reads `unidentified engine at <host:port>` — never the default engine's urn
+(`unnamedEngineIdentity` in `src/mcp/transform.js`). The review-only pin preview is not
+built on such an engine — its actor would not be a urn — and says so; a urn label on the
+custom engine brings it back.
+
+The **`knowledge`** lens shows the knowledge graph on its own: claims, the sources they
+were taken from, and the field / topic / module hierarchy they belong to. It selects type
+`claim` plus the eight WF12 knowledge ports of ontology 4.0.8; the relation closure brings
+in what those relations point at. Every claim node of the engine is shown, also one that
+no knowledge relation touches. Port names, converse names, colours and the nesting
+relation are read from `src/ui/kb-vocab.json` — emitted by Lean, copied verbatim, never
+edited here (see [PROVENANCE.md](PROVENANCE.md)) — through `src/ui/kb-vocab.js`, and are
+restated nowhere else in `src/` or `scripts/` (`npm run smoke:lens` checks both, and that
+the file still is the recorded one). A claim is labelled by its text.
+
+**How it is drawn.** The graph layout defaults to **Auto**: on a frame where the
+vocabulary's nesting relation puts at least one node in a box it draws `nested`, on every
+other frame `concentric`, as before. A layout picked in Settings is always drawn as
+picked. (The choice is stored under a new key: a `concentric` stored before t337, when it
+was the default, is read as no choice; a stored `breadthfirst` or `grid` still counts.)
+Under `nested` a claim sits inside its field, a field inside its topic, a topic
+inside its module — one box per node, a field or topic before a module, and a
+classification scheme is never a box. The boxes are packed deterministically from the
+measured label sizes, so no label overlaps another, and the sources stand in one column
+beside them. Every other knowledge relation is a line in the vocabulary's colour — dashed
+or thick as the vocabulary says, with no port text on it and no arrowhead when it is
+self-converse — and a claim takes the colour of its kind. Under any other layout the
+graph is flat and the nesting relation is a line like the rest.
+
+Under the graph a bar holds the legend toggle — it states the frame's node and relation
+totals — zoom `−` / `+`, `fit` and `re-layout`. `fit` always shows everything: the zoom
+floor of 0.2 drops to what the fit needs, on every layout. The legend lists every relation
+port and node kind in the frame with its count and a checkbox that hides it without
+re-reading the frame. It opens by itself only in a window at least 640 px wide and on a
+frame that draws knowledge relations (their lines carry no port text); everywhere else it
+starts closed and the canvas keeps its height. An unticked row stays unticked on the other
+lenses — the bar counts them and `show all` ticks every row back — and ticking back a node
+kind the layout last ran without runs the layout again, so its nodes get a place.
+
+**The whole fold (t342).** Every surface opens on `everything` (Sam, t342: "I need the view
+not narrowed at opening"). Node and relation labels are not drawn below a zoom step — 0.5
+at 100 % and 200 % display scaling, 0.8 at 125 %, 0.67 at 150 % — box titles always are,
+and the selection, `find` matches and the hovered node keep a label enlarged to stay
+readable, without moving anything. The nodes no relation of the frame touches sit in one
+band under the linked drawing, on every layout; the bar's `unlinked N` chip hides or shows
+it, counts as one of the legend's hidden rows (`1 hidden`) and comes back with `show all`.
+The strip's `444/447 · access −3` counts what is in the frame and what the access posture
+alone left out — not what is on the canvas, and not protection (see TESTING.md, "Drawing
+the whole fold").
+
+A frame re-read that brings the same node and relation ids updates the drawing in place
+and keeps the zoom and pan. When the canvas changes size — the legend opens, the window is
+resized — the picture is fitted again, unless the user has zoomed or panned since the last
+fit. In a drawing with boxes a drag that starts on a box or on a relation line pans the
+view (a node is still dragged), and a double-click on a box brings that box into view. An
+empty canvas says so, and names the anon posture when that is why.
+
+**Finding and reading.** `find` matches urn and label first and then a node's text
+(`label` / `title` / `name` / `text` / `pointer`): the best hit is selected, the hint says
+when it matched inside a property (`2 matches · showing claim · in text`), and every node
+that did not match fades until the box is cleared — the boxes a match sits in stay lit.
+The inspector shows a node's `text` as a paragraph above its property table, names an
+incoming relation by its converse port (`← has-part`), colours a knowledge port as the
+graph draws it, and a click on a relation row selects the other node, centres the graph on
+it and shows it from the top of the inspector. In a drawing with boxes, centring — a find
+hit, a relation row — also zooms in to where the node can be read (zoom 1; a box: as far
+as the whole box fits); a drawing without boxes centres at the current zoom, as before. In
+the side panel the inspector pane grows to 45 % of the panel height for a node that carries
+a text, so a claim can be read there without scrolling inside a 120 px pane.
+
+**Mirrors.** The full-tab, pop-out and PiP mirrors draw the layout chosen in Settings and
+follow a change while open, with the same nesting, colours and legend. The panel's search
+fade and the centre request of an inspector row reach them through a second session-store
+key beside the scratch, `pilot.scratchView.v1` (same per-surface scope; panel to mirrors
+only). A find hit does not move a mirror's view.
+
+The live harness takes `preview-live.html?engine=<REST base URL>` to read a different
+engine. [TESTING.md](TESTING.md) has the measured numbers and the limits.
+
 ### Layout
 
 ```
@@ -116,7 +208,10 @@ src/mcp/transform.js               SHARED pure fold -> HgFrame transform + view_
 src/mcp/streamable-http-client.js  SHARED read-only MCP/REST transport (Phase 2)
 src/mcp/streamable-http-adapter.ts StreamableHttpMcpAdapter — live read (Phase 2)
 src/mcp/adapter-factory.ts         mode switch: 'mock' | 'live' (extension defaults live)
-src/state/scratch.ts               chrome.storage.session helpers (selection + frame cache; onChanged subscription — per-surface store since A17)
+src/state/scratch.ts               chrome.storage.session helpers (selection + frame cache; onChanged subscription — per-surface store since A17; t337: the scratch VIEW — search fade + centre request, panel to mirrors)
+src/state/use-mirror-view.ts       what a mirror follows besides frame + selection: the stored layout choice and the scratch view (t337)
+src/ui/kb-vocab.json               knowledge vocabulary (ontology 4.0.8) — Lean-emitted, copied verbatim, never edited here (t337)
+src/ui/kb-vocab.js                 SHARED typed accessor over it: knowledge ports, per-port style, converse names, nesting port, claim kinds (t337)
 src/components/                    PostureStrip (strip + audit drawer) · SettingsPanel · GraphControls · FrameGraph (Cytoscape) · NodeInspector · ActionsPanel + ConfirmActionModal
 src/tools/types.ts                 controlled-tools contract: ToolKind/ToolChannel, ToolSpec, AffordancePack, ToolCall, PendingAction (Phase 4)
 src/tools/tool-call.ts             structured ToolCall validator (args_schema JSON-shape check; NO text parsing) (Phase 4)

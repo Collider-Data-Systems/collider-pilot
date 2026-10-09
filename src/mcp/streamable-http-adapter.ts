@@ -37,7 +37,7 @@ import {
   parseGraphStateResult,
   parseNodeLookupResult,
   mapRelation,
-  DEFAULT_ENGINE_URN,
+  unnamedEngineIdentity,
   DEFAULT_MCP_BASE_URL,
   DEFAULT_ENGINE_URL,
 } from "./transform.js";
@@ -53,7 +53,11 @@ export interface StreamableHttpAdapterConfig {
   mcpBaseUrl?: string;
   /** Engine REST base (/healthz, /state/*). Default http://localhost:8000. */
   engineUrl?: string;
-  /** Engine urn stamped into provenance. Default urn:moos:kernel:hp-z440.primary. */
+  /**
+   * Engine urn stamped into provenance. Default urn:moos:kernel:hp-z440.primary — on the
+   * default endpoints only; a custom endpoint pair with no urn is never given that name
+   * (t337, see `unnamedEngineIdentity`).
+   */
   engineUrn?: string;
   /** Origin header posture (DNS-rebinding guard). Default: the mcpBaseUrl origin. */
   origin?: string;
@@ -86,6 +90,11 @@ export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapte
    * mismatch warning can render. The defaulted urn is a fiction on any seat that is not
    * hp-z440 ("localhost" simply means THIS box's engine), so provenance prefers the
    * engine's own /healthz kernel_urn there — no spurious mismatch on other seats (t278).
+   *
+   * t337: the defaulted urn is the default engine's ONLY on the default endpoints. A
+   * custom endpoint pair with no urn label (Settings "custom engine") that also reports no
+   * kernel_urn is stamped as an explicit unidentified engine, derived from its endpoint —
+   * it used to be stamped hp-z440.primary, with no mismatch warning to contradict it.
    */
   private readonly engineUrnExplicit: boolean;
   private readonly engineUrl: string;
@@ -96,7 +105,7 @@ export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapte
     const mcpBaseUrl = config.mcpBaseUrl ?? DEFAULT_MCP_BASE_URL;
     const engineUrl = config.engineUrl ?? DEFAULT_ENGINE_URL;
     this.engineUrnExplicit = config.engineUrn != null;
-    this.engineUrn = config.engineUrn ?? DEFAULT_ENGINE_URN;
+    this.engineUrn = config.engineUrn ?? unnamedEngineIdentity(engineUrl, mcpBaseUrl);
     this.engineUrl = engineUrl;
     this.engineEndpoint = `${engineUrl} (HTTP) · ${mcpBaseUrl} (MCP)`;
     this.client = createStreamableHttpClient({
@@ -130,7 +139,8 @@ export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapte
         healthz: health,
         request,
         // Explicit urn = the caller's EXPECTATION (mismatch warning material); defaulted
-        // urn = no expectation, so the engine's own self-report is the honest identity.
+        // urn = no expectation, so the engine's own self-report is the honest identity —
+        // and when it reports none, `this.engineUrn` already says so for a custom endpoint.
         engine:
           this.engineUrnExplicit || typeof reported !== "string" || reported.length === 0
             ? this.engineUrn

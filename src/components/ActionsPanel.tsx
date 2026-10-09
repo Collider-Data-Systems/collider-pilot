@@ -47,6 +47,7 @@ import {
   type ToolCallContext,
 } from "../tools/tool-call";
 import { runBrowserAct } from "../tools/browser-acts";
+import { isKernelUrn } from "../mcp/transform.js";
 import {
   buildPinPreview,
   previewToJson,
@@ -205,6 +206,19 @@ export function ActionsPanel({
         setResult(r);
         setPreview(null);
       } else if (pending.tool.channel === "hg") {
+        // t337: the pin is kernel-authored, so its actor is the engine urn. A custom engine
+        // nobody named is stamped "unidentified engine at <host:port>" — not a urn — and an
+        // envelope with that actor must not be built, let alone downloaded.
+        if (!isKernelUrn(engineUrn)) {
+          setPreview(null);
+          setResult({
+            ok: false,
+            message:
+              `No preview built: the frame's engine is "${engineUrn}", which is not a kernel ` +
+              "urn, so the pin would have no actor. Give the custom engine a urn label in Settings.",
+          });
+          return;
+        }
         // REVIEW-ONLY: build + reveal the envelope preview. No post, ever.
         const built = buildPinPreview({
           kiUrn: String(pending.call.args.ki_urn ?? ""),

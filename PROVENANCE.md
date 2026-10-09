@@ -139,3 +139,17 @@ security rewrite listed in #158: no page-provided secrets, no ad hoc tool parser
 documentation-only (pilot: README/ARCHITECTURE describe entrypoints the tree never had;
 manifest not installable), and what is secret-bearing (GCP service-account key at
 my-tiny-data-collider root; nothing in the imported lineage).
+
+## Vendored vocabulary — `src/ui/kb-vocab.json` (t337)
+
+Not legacy code: a data file added at t337, recorded here because it is the one file under
+`src/` that is not authored in this repo.
+
+| | |
+|---|---|
+| What | The knowledge-relation vocabulary `kb-0.2.0` for ontology 4.0.8: 8 WF12 relations (port pair, allowed node types, display colour / dashed / emphasis, which relation nests) and the 5 claim kinds with their colours. |
+| Emitted by | Lean — `lake exe emit-kb` from `Kb/Vocab.lean` (the file's own `generated_by`: `lens/t336/kb-hg/lean`), a local workspace on Z440 outside every repo. The vocabulary's laws (distinct port names, converse is an involution, exactly one hierarchy relation) are checked by `decide` at build, so a vocabulary that breaks one does not compile. |
+| Copied | Verbatim: 3747 bytes, sha256 `be1e02abce138a21900eed35a02b38b7bed208749d73d4d5f1b2f455aaf952cb`, identical to the emitted file at copy time. |
+| Rule | **Never edited here.** A change is made in `Vocab.lean`, re-emitted, and this file is replaced whole — and the size and sha256 in the row above are replaced with it. |
+| Read through | `src/ui/kb-vocab.js`, the only module that imports it. Port names and colours are restated nowhere else in `src/` or `scripts/`. |
+| Kept so by | `.gitattributes` (`src/ui/kb-vocab.json -text`): with `core.autocrlf=true` a checkout would otherwise write the file back with CRLF line ends, 3860 bytes, and it would no longer match the emitted file. `npm run smoke:lens` (check D) compares the file with the size and sha256 recorded above, and fails on a second importer or on a port name or colour written as a string literal anywhere in `src/` or `scripts/`. |

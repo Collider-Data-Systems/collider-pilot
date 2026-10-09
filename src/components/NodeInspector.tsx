@@ -3,13 +3,33 @@
  * =======================================
  * The panel beside the graph. Shows the selected node's urn / type_id / properties.
  * Also lists the node's incident **relations** (never "edges") for orientation.
+ *
+ * t337: a node's `text` (a claim's content) is shown as a paragraph above the property
+ * table, and a relation row reads from the selected node's own end — the converse port
+ * name on an incoming relation, in the vocabulary's colour when it has one.
  */
 
-import { useState } from "react";
-import type { HgFrame, HgNode, HgProperties } from "../mcp/types";
+import { useRef, useState } from "react";
+import type { HgFrame, HgNode, HgProperties, HgRelation } from "../mcp/types";
+import { kbConversePort, kbPortStyle } from "../ui/kb-vocab.js";
 
-function PropertyRows({ properties }: { properties: HgProperties }) {
-  const keys = Object.keys(properties);
+/** The property shown as a paragraph instead of a table row (t337). */
+const TEXT_PROPERTY = "text";
+
+/**
+ * t337: what a relation is called read from its TARGET end — the converse port. The
+ * knowledge vocabulary declares it; every other relation carries it as `tgt_port`
+ * (transform.js mapRelation). Without either, the relation keeps its label.
+ */
+function conversePortOf(relation: HgRelation): string {
+  const declared = kbConversePort(relation.label);
+  if (declared) return declared;
+  const carried = relation.properties?.tgt_port;
+  return typeof carried === "string" && carried ? carried : relation.label;
+}
+
+function PropertyRows({ properties, omit }: { properties: HgProperties; omit?: string }) {
+  const keys = Object.keys(properties).filter((k) => k !== omit);
   if (keys.length === 0) {
     return <div className="insp-empty">no properties</div>;
   }
@@ -31,11 +51,17 @@ export function NodeInspector({
   frame,
   node,
   onSelect,
+  onNavigate,
   collapsible = false,
 }: {
   frame: HgFrame;
   node: HgNode | null;
   onSelect: (urn: string | null) => void;
+  /**
+   * t337: a relation row was clicked — select the other node AND centre the graph on it.
+   * Absent, a row only selects (`onSelect`).
+   */
+  onNavigate?: (urn: string) => void;
   /**
    * t264: in the side panel the detail view is collapsible, because a mirror (PiP /
    * pop-out / full tab) usually shows the same node — collapsing reclaims the panel's
@@ -45,6 +71,7 @@ export function NodeInspector({
   collapsible?: boolean;
 }) {
   const [open, setOpen] = useState(true);
+  const paneRef = useRef<HTMLElement | null>(null);
 
   if (collapsible && !open) {
     return (
@@ -78,8 +105,12 @@ export function NodeInspector({
     (r) => r.source_urn === node.urn || r.target_urn === node.urn,
   );
 
+  // t337: shown once, in full, as a paragraph — and so left out of the table below.
+  const rawText = node.properties[TEXT_PROPERTY];
+  const text = typeof rawText === "string" && rawText.trim() ? rawText : null;
+
   return (
-    <aside className="inspector" aria-label="Node inspector">
+    <aside className="inspector" aria-label="Node inspector" ref={paneRef}>
       <div className="insp-head">
         {collapsible && (
           <button
@@ -100,9 +131,16 @@ export function NodeInspector({
         <code className="insp-urn">{node.urn}</code>
       </div>
 
+      {text && (
+        <div className="insp-section">
+          <div className="insp-section-title">{TEXT_PROPERTY}</div>
+          <p className="insp-text">{text}</p>
+        </div>
+      )}
+
       <div className="insp-section">
         <div className="insp-section-title">properties</div>
-        <PropertyRows properties={node.properties} />
+        <PropertyRows properties={node.properties} omit={text ? TEXT_PROPERTY : undefined} />
       </div>
 
       <div className="insp-section">
@@ -125,15 +163,30 @@ export function NodeInspector({
             {incident.map((r) => {
               const outgoing = r.source_urn === node.urn;
               const otherUrn = outgoing ? r.target_urn : r.source_urn;
+              // t337: an incoming relation is named from THIS node's end (its converse
+              // port); a knowledge port takes the colour the graph draws it in.
+              const port = outgoing ? r.label : conversePortOf(r);
+              const color = kbPortStyle(r.label)?.color;
               return (
                 <li key={r.urn}>
                   <span className="insp-rel-dir">{outgoing ? "→" : "←"}</span>
-                  <span className="insp-rel-label">{r.label}</span>
+                  <span
+                    className="insp-rel-label"
+                    style={color ? { color } : undefined}
+                    title={port === r.label ? undefined : `${port} — the converse of ${r.label}`}
+                  >
+                    {port}
+                  </span>
                   <span className="insp-rel-kind">{r.type_id}</span>
                   <button
                     className="insp-rel-target"
                     title={otherUrn}
-                    onClick={() => onSelect(otherUrn)}
+                    onClick={() => {
+                      (onNavigate ?? onSelect)(otherUrn);
+                      // t337: the rows sit at the bottom of a scrolling pane — show the node
+                      // this row leads to from its top (type, label, text), not from here.
+                      paneRef.current?.scrollTo({ top: 0 });
+                    }}
                   >
                     {labelOf(otherUrn)}
                   </button>

@@ -24,7 +24,10 @@
  * Exit code 0 iff a live frame with a NON-ZERO node count was read; 1 otherwise.
  */
 
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import ts from "typescript";
 
 import { createStreamableHttpClient } from "../src/mcp/streamable-http-client.js";
 import {
@@ -34,7 +37,12 @@ import {
   summarizeFrame,
   applyViewFilter,
   resolveViewFilter,
+  unnamedEngineIdentity,
+  isKernelUrn,
+  normalizeBaseUrl,
   DEFAULT_ENGINE_URN,
+  DEFAULT_ENGINE_URL,
+  DEFAULT_MCP_BASE_URL,
   DEFAULT_SCOPE_URN,
 } from "../src/mcp/transform.js";
 import {
@@ -50,6 +58,16 @@ import {
   resolutionFromChannelNode,
   resolveSurfaceEngine,
 } from "../src/mcp/surface-resolver.js";
+// t337: the knowledge ports are READ from the Lean-emitted vocabulary — the same module
+// GraphControls.tsx builds its "knowledge" port group and lens from. Never restated here.
+import {
+  KB_NESTING_PORT,
+  KB_NODE_TYPES,
+  KB_ONTOLOGY_VERSION,
+  KB_PORTS,
+  KB_RELATIONS,
+  KB_REWRITE_CATEGORY,
+} from "../src/ui/kb-vocab.js";
 
 /** Tiny assert — prints and exits non-zero on failure so this is a real gate. */
 function assert(cond, msg) {
@@ -478,9 +496,15 @@ async function main() {
   );
 
   // 3. pure transform + default view_filter selection (the REAL adapter transform)
+  // t337: stamped the way the adapter stamps an engine nobody named — what the engine
+  // itself reports, else `unnamedEngineIdentity` (the default urn on the default endpoints
+  // only). A non-default engine with no kernel_urn used to print the default engine's urn.
   const frame = selectFrame(fold, {
     healthz: health,
-    engine: DEFAULT_ENGINE_URN,
+    engine:
+      typeof health.kernel_urn === "string" && health.kernel_urn.length > 0
+        ? health.kernel_urn
+        : unnamedEngineIdentity(engineUrl, mcpBaseUrl),
     engineEndpoint: `${engineUrl} (HTTP) · ${mcpBaseUrl} (MCP)`,
     foldedAt: new Date().toISOString(),
   });
@@ -525,9 +549,22 @@ async function main() {
   // t264 search ranking on the LIVE fold: the obvious query must reach the obvious node.
   searchRankingChecks(fold, health);
 
+  // t337: the find box also matches inside text properties — on the real node-search.ts.
+  await textSearchChecks(fold, health);
+
   // t264 axes over the LIVE fold read through the REAL MCP transport (not a fixture):
   // this is the coverage the extension's own self-test provides in the browser realm.
   liveAxisChecks(fold, health);
+
+  // t337: the identity stamped on an engine nobody named (pure — no engine needed).
+  engineIdentityChecks();
+
+  // t337: the 4.0.8 knowledge VOCAB renders BEFORE the fleet carries any knowledge data.
+  knowledgeVocabChecks();
+
+  // t337: what the knowledge drawing is ASKED to draw — which node sits in which box, and
+  // which layout `auto` resolves to — on the real FrameGraph.tsx rules.
+  await nestingRuleChecks(fold, health);
 
   // A16: the engine self-identifies (healthz kernel_urn, the A6 surface) and the
   // transform stamps it beside the claimed engine — the mismatch warning's raw material.
@@ -555,6 +592,310 @@ async function main() {
 
   // T7: the 4.0.5 kinship VOCAB renders BEFORE any kinship data reaches a fold.
   kinshipVocabChecks();
+}
+
+/**
+ * t337 — which identity a frame is stamped with when NOBODY named the engine (no urn from
+ * the caller, no kernel_urn on /healthz). The rule is transform.js `unnamedEngineIdentity`,
+ * the one the adapter and the live harness call. Measured before it existed: the t336
+ * scratch kernel (:8899, started without a kernel urn) rendered as
+ * urn:moos:kernel:hp-z440.primary, and no ENGINE MISMATCH could contradict it because the
+ * warning needs a reported urn.
+ */
+function engineIdentityChecks() {
+  console.log("\n=== t337 identity of an engine nobody named ===");
+  assert(
+    unnamedEngineIdentity(DEFAULT_ENGINE_URL, DEFAULT_MCP_BASE_URL) === DEFAULT_ENGINE_URN,
+    "the default endpoints keep the default engine urn (unchanged)",
+  );
+  const custom = unnamedEngineIdentity("http://127.0.0.1:18999", "http://127.0.0.1:18998");
+  assert(
+    custom === "unidentified engine at 127.0.0.1:18999",
+    `a custom pair is named by its REST endpoint (${custom})`,
+  );
+  assert(
+    custom !== DEFAULT_ENGINE_URN && !custom.startsWith("urn:"),
+    "…never as the default engine, and not as a urn (the pilot mints no graph identity)",
+  );
+  assert(
+    unnamedEngineIdentity(DEFAULT_ENGINE_URL, "http://127.0.0.1:18998") !== DEFAULT_ENGINE_URN,
+    "a non-default MCP base alone already makes the pair custom",
+  );
+  // The stamp reaches provenance verbatim, and with nothing reported there is nothing for
+  // the mismatch warning to compare — the unidentified name is the whole statement.
+  const stamped = selectFrame({ nodes: {}, relations: {} }, { healthz: {}, engine: custom });
+  assert(
+    stamped.provenance.engine === custom && stamped.provenance.engine_reported === null,
+    "provenance carries the unidentified name with engine_reported null",
+  );
+
+  // t342 (Copilot, #45): the engine URL and urn label rules shared by storage, the Settings
+  // form, the harness's ?engine= and the review-only pin preview.
+  for (const [raw, want] of [
+    ["http://127.0.0.1:8899", "http://127.0.0.1:8899"],
+    ["  https://Host.example:8443/base/ ", "https://host.example:8443/base"],
+    ["http://?", null],
+    ["http://host?x=1", null],
+    ["http://host#frag", null],
+    ["http://user:pw@host", null],
+    ["ftp://host", null],
+    ["http://host name", null],
+  ]) {
+    const got = normalizeBaseUrl(raw);
+    assert(got === want, `normalizeBaseUrl(${JSON.stringify(raw)}) -> ${JSON.stringify(got)}`);
+  }
+  assert(
+    isKernelUrn("urn:moos:kernel:hp-z440.scratch-kb") &&
+      !isKernelUrn("urn:moos:kernel:") &&
+      !isKernelUrn("urn:moos:kernel:bad label") &&
+      !isKernelUrn("urn:moos:user:sam"),
+    "isKernelUrn: a non-empty id without spaces after urn:moos:kernel:",
+  );
+}
+
+/**
+ * t337 — the WF12 knowledge ports (ontology 4.0.8: part-of, derived-from, … read from the
+ * Lean-emitted vocabulary, never restated). The fleet primary is below 4.0.8 and carries
+ * none of these relations, so check (g) above skips every one of them there. Exactly as
+ * with kinship below, the lens is therefore asserted on a SYNTHETIC knowledge graph
+ * (synthetic urns only; the repo is public): one relation per vocabulary port, between
+ * node types the vocabulary allows on its ends.
+ */
+function knowledgeVocabChecks() {
+  console.log(
+    `\n=== t337 knowledge VOCAB (ontology ${KB_ONTOLOGY_VERSION}, ahead of the fleet's data) ===`,
+  );
+
+  // The knowledge lens declares the vocabulary's ports (parsed from GraphControls.tsx).
+  const lens = parseLensTable().find((l) => l.id === "knowledge");
+  assert(lens !== undefined, "the knowledge lens exists");
+  assert(
+    lens.ports.length === KB_PORTS.length && KB_PORTS.every((p) => lens.ports.includes(p)),
+    `the knowledge lens declares exactly the vocabulary's ${KB_PORTS.length} ports`,
+  );
+
+  const node = (type, n) => ({ urn: `urn:moos:${type}:${n}`, type_id: type, label: n, properties: {} });
+  const nodes = [];
+  const relations = [];
+  KB_RELATIONS.forEach((r, i) => {
+    const src = node(r.src_types[0], `kb-src-${i}`);
+    const tgt = node(r.tgt_types[0], `kb-tgt-${i}`);
+    nodes.push(src, tgt);
+    relations.push({
+      urn: `kb${i}`,
+      type_id: KB_REWRITE_CATEGORY,
+      label: r.src_port,
+      source_urn: src.urn,
+      target_urn: tgt.urn,
+    });
+  });
+  // A node of a type the knowledge graph also uses, but on NO knowledge relation.
+  const outsider = node(KB_NODE_TYPES.find((t) => !lens.types.includes(t)), "kb-outsider");
+  nodes.push(outsider);
+
+  const slice = applyViewFilter(
+    nodes,
+    relations,
+    resolveViewFilter(
+      { view_filter: { types: lens.types, ports: lens.ports, lens: "knowledge" } },
+      { t_day: 337 },
+    ),
+    false,
+  );
+  assert(
+    slice.relations.length === KB_RELATIONS.length,
+    `the knowledge lens renders all ${KB_RELATIONS.length} knowledge relations (got ${slice.relations.length})`,
+  );
+  // The lens selects only its listed type(s); the relation closure brings in what the
+  // knowledge relations point at — and nothing else of those types.
+  assert(
+    slice.nodes.length === nodes.length - 1 && !slice.nodes.some((n) => n.urn === outsider.urn),
+    `what the relations point at comes along; an unrelated ${outsider.type_id} stays out (${slice.nodes.length} of ${nodes.length} nodes)`,
+  );
+  // Knowledge ports narrow like any other port family.
+  const nestOnly = applyViewFilter(
+    nodes,
+    relations,
+    resolveViewFilter({ view_filter: { types: ["*"], ports: [KB_NESTING_PORT] } }, { t_day: 337 }),
+    false,
+  );
+  assert(
+    nestOnly.relations.length === 1 && nestOnly.relations[0].label === KB_NESTING_PORT,
+    `ports ['${KB_NESTING_PORT}'] narrows to exactly the nesting relation`,
+  );
+
+  console.log("\nPASS: t337 knowledge VOCAB present and renderable ahead of the fleet's 4.0.8 data.");
+}
+
+/**
+ * Load `src/components/FrameGraph.tsx` for its two PURE exports. Type-stripped with
+ * `ts.transpileModule` and written one directory below the source (so `../` specifiers
+ * gain a level), next to the one TypeScript module it imports a VALUE from
+ * (`state/prefs.ts`). React and Cytoscape resolve from node_modules and are only loaded:
+ * nothing here mounts a component or draws.
+ */
+async function loadFrameGraphRules() {
+  const strip = (file) =>
+    ts.transpileModule(readFileSync(new URL(file, import.meta.url), "utf8"), {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+        jsx: ts.JsxEmit.ReactJSX,
+      },
+    }).outputText;
+  const components = fileURLToPath(new URL("../src/components/", import.meta.url));
+  const dir = mkdtempSync(join(components, ".live-smoke-"));
+  try {
+    writeFileSync(join(dir, "prefs.mjs"), strip("../src/state/prefs.ts"));
+    writeFileSync(
+      join(dir, "FrameGraph.mjs"),
+      strip("../src/components/FrameGraph.tsx")
+        .replaceAll('from "../state/prefs"', 'from "./prefs.mjs"')
+        .replaceAll('from "../', 'from "../../'),
+    );
+    return await import(pathToFileURL(join(dir, "FrameGraph.mjs")).href);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * t337 — the two rules that decide what the knowledge drawing is asked to draw, on the
+ * REAL code (`nestingParents`, `resolveGraphLayout`, exported by FrameGraph.tsx):
+ *   - the vocabulary's nesting relation puts its source INSIDE its target, one box per
+ *     node, a domain_tag before a program, and never inside any other type;
+ *   - `auto` (no layout picked) is `nested` exactly when that draws a box, and
+ *     `concentric` — the layout from before t337 — on every other frame.
+ * No gate renders Cytoscape, so the picture itself is looked at, not asserted; these two
+ * rules are pure, and the fleet carries no nesting relation yet, so they are asserted on a
+ * synthetic hierarchy (synthetic urns only; the repo is public) and then on the live fold.
+ * Types and the port come from the vocabulary — nothing is restated.
+ * @param {any} fold
+ * @param {any} health
+ */
+async function nestingRuleChecks(fold, health) {
+  console.log("\n=== t337 nesting + auto layout (the real src/components/FrameGraph.tsx) ===");
+  const { nestingParents, resolveGraphLayout } = await loadFrameGraphRules();
+  const nesting = KB_RELATIONS.find((r) => r.src_port === KB_NESTING_PORT);
+  assert(
+    nesting !== undefined,
+    `the vocabulary declares one nesting relation (${KB_NESTING_PORT})`,
+  );
+
+  // The box types, in the order the rule prefers them, and a target type that is no box.
+  const [TAG, MODULE] = ["domain_tag", "program"];
+  const OTHER = nesting.tgt_types.find((t) => t !== TAG && t !== MODULE);
+  const LEAF = nesting.src_types.find((t) => !nesting.tgt_types.includes(t));
+  assert(
+    nesting.tgt_types.includes(TAG) && nesting.tgt_types.includes(MODULE) && OTHER && LEAF,
+    `the nesting relation targets ${TAG}, ${MODULE} and one more type (${OTHER}); ${LEAF} only nests`,
+  );
+  const node = (type, n) => ({
+    urn: `urn:moos:${type}:nest-${n}`,
+    type_id: type,
+    label: n,
+    properties: {},
+  });
+  let seq = 0;
+  const rel = (label, src, tgt) => ({
+    urn: `nest${seq++}`,
+    type_id: KB_REWRITE_CATEGORY,
+    label,
+    source_urn: src.urn,
+    target_urn: tgt.urn,
+  });
+  const frameOf = (nodes, relations) => ({ provenance: {}, nodes, relations });
+
+  const leaf = node(LEAF, "leaf");
+  const both = node(LEAF, "both");
+  const field = node(TAG, "field");
+  const topic = node(TAG, "topic");
+  const module = node(MODULE, "module");
+  const other = node(OTHER, "other");
+  const nodes = [leaf, both, field, topic, module, other];
+  const relations = [
+    rel(KB_NESTING_PORT, leaf, field),
+    rel(KB_NESTING_PORT, field, topic),
+    rel(KB_NESTING_PORT, topic, module),
+    rel(KB_NESTING_PORT, topic, other), // a target that is never a box
+    rel(KB_NESTING_PORT, both, module), // two targets: the tag wins over the module
+    rel(KB_NESTING_PORT, both, field),
+    rel(KB_PORTS.find((p) => p !== KB_NESTING_PORT), leaf, both), // not a nesting port
+    rel(KB_NESTING_PORT, leaf, leaf), // a node is never its own box
+  ];
+  const hierarchy = frameOf(nodes, relations);
+  const parents = nestingParents(hierarchy);
+  const want = [
+    [leaf, field],
+    [field, topic],
+    [topic, module],
+    [both, field],
+  ];
+  assert(
+    parents.size === want.length && want.every(([n, box]) => parents.get(n.urn) === box.urn),
+    `each node sits in ONE box: leaf in field, field in topic, topic in module (${parents.size} nested)`,
+  );
+  assert(parents.get(both.urn) === field.urn, `two targets: the ${TAG} is the box, not the ${MODULE}`);
+  assert(
+    ![...parents.values()].includes(other.urn),
+    `a ${OTHER} target is never a box — that relation stays a line`,
+  );
+  const reversed = nestingParents(frameOf([...nodes].reverse(), [...relations].reverse()));
+  assert(
+    reversed.size === parents.size && [...parents].every(([n, box]) => reversed.get(n) === box),
+    "the boxes do not depend on the order the engine returns nodes and relations in",
+  );
+  const a = node(TAG, "cycle-a");
+  const b = node(TAG, "cycle-b");
+  const cut = nestingParents(
+    frameOf([a, b], [rel(KB_NESTING_PORT, a, b), rel(KB_NESTING_PORT, b, a)]),
+  );
+  assert(
+    cut.size === 1,
+    `a cycle (a in b in a) is cut: one box, the other relation stays a line (${cut.size})`,
+  );
+
+  // `auto` — nested exactly when a box is drawn; an explicit choice is drawn as chosen.
+  const flat = frameOf([leaf, both], [relations[6]]);
+  const noBox = frameOf([topic, other], [rel(KB_NESTING_PORT, topic, other)]);
+  assert(
+    resolveGraphLayout("auto", hierarchy) === "nested",
+    "auto on a frame that draws a box is nested",
+  );
+  assert(
+    resolveGraphLayout("auto", flat) === "concentric",
+    "auto on a frame without the nesting relation is concentric (as before t337)",
+  );
+  assert(
+    resolveGraphLayout("auto", noBox) === "concentric",
+    "auto on a frame whose nesting relation draws no box is concentric",
+  );
+  const picked = ["concentric", "breadthfirst", "grid", "nested"];
+  assert(
+    picked.every((l) => resolveGraphLayout(l, hierarchy) === l && resolveGraphLayout(l, flat) === l),
+    `a picked layout is drawn as picked on every frame (${picked.join(", ")})`,
+  );
+
+  // The LIVE fold, lens by lens (the table parsed from GraphControls.tsx).
+  const whole = selectFrame(fold, { healthz: health, request: { view_filter: { types: ["*"] } } });
+  const liveNesting = whole.relations.filter((r) => r.label === KB_NESTING_PORT).length;
+  for (const lens of parseLensTable()) {
+    const slice = selectFrame(fold, {
+      healthz: health,
+      request: { view_filter: { types: lens.types, ports: lens.ports, lens: lens.id } },
+    });
+    const boxed = nestingParents(slice);
+    const auto = resolveGraphLayout("auto", slice);
+    assert(
+      (auto === "nested") === (boxed.size > 0) && (liveNesting > 0 || auto === "concentric"),
+      `lens '${lens.id}' on the live fold: auto -> ${auto} ` +
+        `(${boxed.size} of ${slice.nodes.length} nodes in ${new Set(boxed.values()).size} boxes)`,
+    );
+  }
+  console.log(
+    `\nPASS: t337 nesting rules hold; this fold has ${liveNesting} nesting relations` +
+      (liveNesting > 0 ? "." : " — every lens draws concentric, as before."),
+  );
 }
 
 /**
@@ -824,6 +1165,123 @@ function searchRankingChecks(fold, health) {
 }
 
 /**
+ * t337 text search, on the REAL ranking. `searchRankingChecks` above mirrors ranks 0-4 by
+ * hand; the rank added at t337 — a match inside a text property — is exercised on
+ * `src/ui/node-search.ts` itself, type-stripped in memory with `ts.transpileModule` the way
+ * lens-smoke reads GraphControls.tsx. The file has only a type import, so it loads as a
+ * data module and nothing is written to disk.
+ *
+ * Asserted: a word found only inside a text property selects a node that carries it, and
+ * the hint says where; a urn / label match always outranks a text-only match; every match
+ * is listed, best first (the graph fades the rest); and on the live fold the real ranking
+ * gives the same answers the mirror above asserts.
+ * @param {any} fold
+ * @param {any} health
+ */
+async function textSearchChecks(fold, health) {
+  console.log("\n=== t337 text search (the real src/ui/node-search.ts) ===");
+  const source = readFileSync(new URL("../src/ui/node-search.ts", import.meta.url), "utf8");
+  const js = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  }).outputText;
+  const { searchNodes, matchRank, SEARCH_PROPERTIES } = await import(
+    `data:text/javascript;base64,${Buffer.from(js).toString("base64")}`
+  );
+  const tail = (u) => u.split(":").pop();
+
+  // (a) Synthetic: three nodes, one word that sits in a label AND in another node's text.
+  const one = {
+    urn: "urn:moos:claim:x.one",
+    type_id: "claim",
+    label: "Merge is a join",
+    properties: {
+      text: "Merge is a join; the colimit reading is a conjecture.",
+      pointer: "ledger item 12, first pointer",
+    },
+  };
+  const tag = { urn: "urn:moos:tag:x.colimit", type_id: "domain_tag", label: "Colimit", properties: {} };
+  const two = {
+    urn: "urn:moos:claim:x.two",
+    type_id: "claim",
+    label: "A second claim",
+    properties: { text: "Nothing about the other word here." },
+  };
+  const nodes = [one, tag, two];
+
+  const inText = searchNodes(nodes, "Conjecture");
+  assert(
+    inText.hit?.urn === one.urn && inText.count === 1 && inText.hint === "1 match · claim · in text",
+    `a word found only in a claim's text selects that claim and the hint says where ("${inText.hint}")`,
+  );
+  const inPointer = searchNodes(nodes, "ledger item");
+  assert(
+    inPointer.hit?.urn === one.urn && inPointer.hint === "1 match · claim · in pointer",
+    `a pointer is searched too ("${inPointer.hint}")`,
+  );
+  const both = searchNodes(nodes, "colimit");
+  assert(
+    both.hit?.urn === tag.urn && both.hint === "2 matches · showing domain_tag",
+    `a urn / label match outranks a text-only match ("${both.hint}")`,
+  );
+  assert(
+    JSON.stringify(both.matchUrns) === JSON.stringify([tag.urn, one.urn]),
+    `every match is listed, best first — the graph keeps these lit (${both.matchUrns.map(tail)})`,
+  );
+  assert(
+    matchRank(one, "colimit") > matchRank(tag, "colimit") && matchRank(one, "colimit") > 4,
+    `the text rank (${matchRank(one, "colimit")}) is below every urn / label rank (0-4)`,
+  );
+  const miss = searchNodes(nodes, "zzz-not-a-node-anywhere");
+  const blank = searchNodes(nodes, "   ");
+  assert(
+    miss.hit === null && miss.matchUrns.length === 0 && blank.hit === null && blank.matchUrns.length === 0,
+    "a miss and a blank query match nothing, so nothing fades",
+  );
+
+  // (b) The live fold: the real ranking gives the answers the mirror above asserts ...
+  const frame = selectFrame(fold, { healthz: health, request: { view_filter: { types: ["*"] } } });
+  const stripOwner = (t) => (t.indexOf(".") > 0 ? t.slice(t.indexOf(".") + 1) : t);
+  const prog = frame.nodes.find((n) => n.type_id === "program");
+  if (prog) {
+    const slug = stripOwner(tail(prog.urn));
+    const got = searchNodes(frame.nodes, slug).hit;
+    assert(got?.urn === prog.urn, `real ranking: program slug "${slug}" selects the program itself`);
+  }
+  const sample = frame.nodes[Math.floor(frame.nodes.length / 2)];
+  assert(
+    searchNodes(frame.nodes, tail(sample.urn)).hit?.urn === sample.urn,
+    `real ranking: exact urn tail wins for ${tail(sample.urn)}`,
+  );
+
+  // ... and a word that is in a text property but in NO urn and NO label reaches a node
+  // carrying it. Before t337 such a word was "no match".
+  const haystack = frame.nodes.map((n) => `${n.urn} ${n.label ?? ""}`.toLowerCase()).join("\n");
+  let probe = null;
+  for (const n of frame.nodes) {
+    for (const key of SEARCH_PROPERTIES) {
+      const value = n.properties?.[key];
+      const word = typeof value === "string"
+        ? (value.toLowerCase().match(/[a-z]{7,}/g) ?? []).find((w) => !haystack.includes(w))
+        : undefined;
+      if (word) probe = probe ?? { word, key };
+    }
+  }
+  if (probe) {
+    const found = searchNodes(frame.nodes, probe.word);
+    const carries = SEARCH_PROPERTIES.some(
+      (key) => typeof found.hit?.properties?.[key] === "string" &&
+        found.hit.properties[key].toLowerCase().includes(probe.word),
+    );
+    assert(
+      found.hit && carries && / · in \w+$/.test(found.hint ?? ""),
+      `live fold: "${probe.word}" (in no urn, no label) reaches a node whose text carries it ("${found.hint}")`,
+    );
+  } else {
+    console.log("  (no word in this fold sits only inside a text property - live text search skipped)");
+  }
+}
+
+/**
  * t264 axes against the LIVE fold, through the same selectFrame the adapter uses. The
  * synthetic chain below proves the LAW; this proves the law holds on the real graph — the
  * default slice is a superset of the legacy one, ports actually narrow live relations,
@@ -880,6 +1338,9 @@ function liveAxisChecks(fold, health) {
     "opens-on", "has-occupant", "hosts", "routes-to", "spans", "realizes", "presents-as", "participates",
     "provides-kb", "classifies", "pins-urn", "cites", "depends-on", "composes", "produces",
     "causes", "triggers", "has-purpose", "curates", "scheduled-after", "focus", "guards",
+    // t337: the WF12 knowledge ports (ontology 4.0.8) — spread from the vocabulary the
+    // drawer's "knowledge" group is built from, so this check and the panel cannot disagree.
+    ...KB_PORTS,
   ]);
   const unreachable = liveLabels.filter((l) => !VOCAB.has(l));
   assert(
@@ -946,10 +1407,19 @@ function parseLensTable() {
   const block = src.match(/export const LENSES: Lens\[\] = \[([\s\S]*?)\n\s*\];/);
   if (!block) throw new Error("live-smoke: could not locate the LENSES table in GraphControls.tsx");
   const list = [];
+  // t337: a lens may SPREAD a list from the knowledge vocabulary (`[...KB_PORTS]`) instead
+  // of writing string literals. Resolve the spread to the imported list — read as literals
+  // only, it parses to [] and check (g) would test "all ports", a different slice than the
+  // lens selects. An unknown spread is an error, never a silent [].
+  const SPREADS = { KB_PORTS };
   const arrayOf = (body, key) => {
     const m = body.match(new RegExp(`${key}:\\s*\\[([\\s\\S]*?)\\]`));
     if (!m) return [];
-    return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
+    const spread = [...m[1].matchAll(/\.\.\.([A-Za-z_$][\w$]*)/g)].flatMap((x) => {
+      if (!SPREADS[x[1]]) throw new Error(`live-smoke: lens '${key}' spreads an unknown list '${x[1]}'`);
+      return SPREADS[x[1]];
+    });
+    return [...[...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]), ...spread];
   };
   for (const m of block[1].matchAll(/id:\s*"([^"]+)"([\s\S]*?)(?=\n\s*id:\s*"|$)/g)) {
     list.push({ id: m[1], types: arrayOf(m[2], "types"), ports: arrayOf(m[2], "ports") });
