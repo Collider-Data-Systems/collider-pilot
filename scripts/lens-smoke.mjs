@@ -55,6 +55,25 @@
  *      that is a declared `{placeholder}` source port is an engine port, not "undeclared pair".
  *      The live counterpart — every live label reachable, all declared types reachable, every
  *      lens port declared by the connected engine — is `smoke:live` (d), (h) and (i).
+ *   J. (t342 P2/P3) The `nested` drawing outside the boxes is laid out component by component,
+ *      not on a type/urn grid, and the knowledge sources sit in the box that cites them — on a
+ *      SYNTHETIC frame whose urns and types interleave its components, through the real
+ *      component-layout.js and FrameGraph's real drawingPlan, runLayout and STYLE in headless
+ *      Cytoscape: every linked node outside a box gets a position from exactly its connected
+ *      component, the components' rectangles are disjoint (a urn or type grid would mix them), only a
+ *      component above COSE_MIN_NODES is cose-refined, within its bound, and its overlapping label
+ *      boxes pushed apart (separateLabels, also on a synthetic crowd); each source goes into
+ *      the box that cites it most (then the first by urn; a box citing it directly counts, the
+ *      innermost box wins), the other citing boxes count it in their `↗N`, ids stay urns and no
+ *      relation is added; with the nesting relation unticked every source lays out with its
+ *      component; and the frame read in reverse order draws the same picture.
+ *      (t342 P2 review) And no grid INSIDE a component: the breadth-first layers are pinned
+ *      exactly (a chain, a star) and every component of COSE_MIN_NODES nodes or fewer is drawn
+ *      layer by layer, top-down, in both nesting modes; the components' rectangles are disjoint
+ *      with nesting off too, so no source stands in a column; the frame's components share ONE
+ *      cose budget, largest first (pure, and drawn on four 110-node components); and the canvas
+ *      size does not reshape a component (the frame laid out again at a panel's and a tab's
+ *      canvas), nor does a second run on the same instance move a node.
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -74,7 +93,20 @@ import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import cytoscape from "cytoscape";
-import { KB_CLAIM_KINDS, KB_RELATIONS, kbPortStyle } from "../src/ui/kb-vocab.js";
+import { KB_CLAIM_KINDS, KB_NESTING_PORT, KB_PORTS, KB_RELATIONS, kbPortStyle } from "../src/ui/kb-vocab.js";
+// t342 P2: the component layout, as FrameGraph runs it.
+import {
+  COSE_MAX_ITER,
+  COSE_MIN_ITER,
+  COSE_MIN_NODES,
+  COSE_PAIR_STEPS,
+  breadthFirstLayers,
+  coseBudget,
+  coseBudgets,
+  labelOverlaps,
+  linkedComponents,
+  separateLabels,
+} from "../src/ui/component-layout.js";
 import { selectFrame } from "../src/mcp/transform.js";
 // t342 P1/P6: the engine-grammar normaliser and the port-colour painter, as the panel runs them.
 import {
@@ -1014,6 +1046,317 @@ console.log("\nI. the drawer offers the static lists + the engine's declared nam
     `the legacy list (${m.LEGACY_PORTS.join(", ")}) is one group of its own and in no other`,
   );
   if (failures === before) pass("I holds");
+}
+
+// J — the component layout and the sources in their box (t342 P2, P3). Synthetic urns only.
+console.log("\nJ. nested: components, not a type/urn grid; sources inside the box that cites them (synthetic)");
+{
+  const before = failures;
+  const check = (cond, msg) => (cond ? pass(msg) : fail(msg));
+  const fg = await loadFrameGraph();
+  const N = (type, name) => ({
+    urn: `urn:moos:${type}:lens-smoke.p2-${name}`,
+    type_id: type,
+    label: name,
+    properties: {},
+  });
+  let seq = 0;
+  const R = (label, a, b) => ({
+    urn: `urn:moos:relation:lens-smoke.p2-${String(seq++).padStart(3, "0")}`,
+    type_id: "WF99",
+    label,
+    source_urn: a.urn,
+    target_urn: b.urn,
+    properties: {},
+  });
+  const LINK = "lens-smoke-p2-link";
+  const CITE = KB_PORTS.find((p) => p !== KB_NESTING_PORT); // any knowledge port but the nesting one
+  // Loose components whose urns AND types interleave: node i of every component is named
+  // n<i><component>, and the types rotate, so a grid by type or by urn would mix them.
+  const TYPES = ["agent", "session", "derivation"];
+  const comp = (tag, n) => Array.from({ length: n }, (_, i) => N(TYPES[(i + tag.length) % 3], `n${String(i).padStart(2, "0")}${tag}`));
+  const big = comp("big", 36); // above COSE_MIN_NODES: cose-refined
+  const star = comp("star", 6);
+  const chain = comp("chn", 5);
+  const rel = [
+    ...big.map((n, i) => R(LINK, n, big[(i + 1) % big.length])), // a ring
+    ...big.filter((_, i) => i % 6 === 0).map((n, i) => R(LINK, n, big[(i * 6 + 15) % big.length])), // chords
+    ...star.slice(1).map((n) => R(LINK, star[0], n)),
+    ...chain.slice(1).map((n, i) => R(LINK, chain[i], n)),
+  ];
+  // Boxes: box-a holds box-c; claims in each; seven sources.
+  const [boxA, boxB, boxC] = ["box-a", "box-b", "box-c"].map((n) => N("domain_tag", n));
+  const claims = ["a1", "a2", "b1", "c1"].map((n) => N("claim", n));
+  const [a1, a2, b1, c1] = claims;
+  const src = ["s1", "s2", "s3", "s4", "s5", "s6", "s7"].map((n) => N("knowledge_item", n));
+  const [s1, s2, s3, s4, s5, s6, s7] = src;
+  const lone = N("agent", "lone"); // its only relation runs into a box: a component of one
+  const pairAgent = N("agent", "pair");
+  const unlinked = [N("session", "u1"), N("agent", "u2"), N("knowledge_item", "u3")];
+  rel.push(
+    R(KB_NESTING_PORT, a1, boxA), R(KB_NESTING_PORT, a2, boxA), R(KB_NESTING_PORT, b1, boxB),
+    R(KB_NESTING_PORT, boxC, boxA), R(KB_NESTING_PORT, c1, boxC),
+    R(CITE, a1, s1), R(CITE, a2, s1), R(CITE, b1, s1), // s1: box-a 2, box-b 1 -> box-a
+    R(CITE, b1, s2), // s2 -> box-b
+    R(CITE, a1, s3), R(CITE, lone, s3), // s3: box-a; the loose citation does not count
+    R(CITE, pairAgent, s4), // s4: no box cites it -> laid out with its component
+    R(CITE, a2, s5), R(CITE, b1, s5), // s5: a tie -> the first box by urn, box-a
+    R(CITE, boxB, s6), // s6: the box itself cites it -> box-b
+    R(CITE, c1, s7), // s7: cited from inside box-c (inside box-a) -> the inner box, box-c
+  );
+  const nodes = [...big, ...star, ...chain, boxA, boxB, boxC, ...claims, ...src, lone, pairAgent, ...unlinked];
+  const frame = { provenance: {}, nodes, relations: rel };
+  const byUrn = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  const loose = [...big, ...star, ...chain, s4, pairAgent, lone].map((n) => n.urn);
+  const wantComponents = [big, star, chain, [pairAgent, s4], [lone]].map((c) => c.map((n) => n.urn).sort(byUrn));
+
+  // J1 — the pure rules.
+  check(
+    JSON.stringify(linkedComponents(loose, rel)) === JSON.stringify(wantComponents),
+    `linkedComponents splits ${loose.length} loose nodes into ${wantComponents.length} components (${wantComponents.map((c) => c.length).join(", ")}), largest first, a node whose relations all run into a box alone`,
+  );
+  // The breadth-first layers, exactly (t342 P2 review: "every node one relation from the layer
+  // before" also held for ONE urn-sorted layer). The chain n00-n01-n02-n03-n04: n01, n02 and n03
+  // have two neighbours each and n03's urn sorts first (its type, `agent`, is part of the urn),
+  // so n03 is the root, then n02 and n04 by urn, then n01, then n00. The star: its hub, then
+  // its five leaves by urn.
+  const urnsOf = (ns) => ns.map((n) => n.urn);
+  const chainLayers = breadthFirstLayers(urnsOf(chain), rel);
+  const wantChainLayers = [[chain[3]], [chain[2], chain[4]], [chain[1]], [chain[0]]].map(urnsOf);
+  const starLayers = breadthFirstLayers(urnsOf(star), rel);
+  const wantStarLayers = [[star[0].urn], urnsOf(star.slice(1)).sort(byUrn)];
+  check(
+    JSON.stringify(chainLayers) === JSON.stringify(wantChainLayers) &&
+      JSON.stringify(starLayers) === JSON.stringify(wantStarLayers),
+    `breadth-first layers, exactly: the chain n03 / n02, n04 / n01 / n00 (${chainLayers.map((l) => l.length).join("/")}), the star its hub / its leaves by urn (${starLayers.map((l) => l.length).join("/")})`,
+  );
+  const budgets = [COSE_MIN_NODES, COSE_MIN_NODES + 1, 157, 287, 2000].map((n) => [n, coseBudget(n, 200, 1)]);
+  check(
+    budgets[0][1].numIter === 0 && budgets[4][1].numIter === 0 &&
+      budgets.slice(1, 4).every(([n, b]) => b.numIter >= COSE_MIN_ITER && b.numIter <= COSE_MAX_ITER &&
+        (b.numIter * n * (n - 1)) / 2 <= COSE_PAIR_STEPS &&
+        Math.abs(200 * b.coolingFactor ** b.numIter - 1) < 1e-6),
+    `cose is bounded: none at ${COSE_MIN_NODES} nodes or at 2000; ${budgets.slice(1, 4).map(([n, b]) => `${n} -> ${b.numIter}`).join(", ")} iterations (≤ ${COSE_MAX_ITER}, pairs × iterations ≤ ${COSE_PAIR_STEPS}), each anneal ending at its floor`,
+  );
+  // t342 P2 review: ONE budget per frame, largest component first — per component, ten
+  // components of 170 nodes took 4.9 s. A component left fewer than COSE_MIN_ITER iterations
+  // stays breadth-first and spends nothing, so a smaller one after it may still be refined.
+  const pairSteps = (sizes, bs) => bs.reduce((t, b, i) => t + (b.numIter * sizes[i] * (sizes[i] - 1)) / 2, 0);
+  const ten = Array(10).fill(170);
+  const tenBudgets = coseBudgets(ten, 200, 1);
+  const mixed = [287, 158, 40, 31];
+  const mixedIter = coseBudgets(mixed, 200, 1).map((b) => b.numIter);
+  check(
+    pairSteps(ten, tenBudgets) <= COSE_PAIR_STEPS &&
+      tenBudgets[0].numIter === COSE_MAX_ITER && tenBudgets.slice(1).every((b) => b.numIter === 0) &&
+      JSON.stringify(mixedIter) === JSON.stringify([36, 0, 0, 48]),
+    `one cose budget per frame: ten components of 170 nodes -> ${tenBudgets.map((b) => b.numIter).join("/")} iterations (${pairSteps(ten, tenBudgets)} pair-steps ≤ ${COSE_PAIR_STEPS}); 287/158/40/31 nodes -> ${mixedIter.join("/")}`,
+  );
+
+  // Label boxes cose leaves overlapping are pushed apart: 24 label boxes (90 x 30) dropped on
+  // nearly one point end with none overlapping, the same way every time.
+  const crowd = Array.from({ length: 24 }, (_, i) => `urn:moos:agent:lens-smoke.p2-crowd${String(i).padStart(2, "0")}`);
+  const crowdAt = new Map(crowd.map((u, i) => [u, { x: (i % 5) * 3, y: Math.floor(i / 5) * 2 }]));
+  const label = () => ({ w: 90, h: 30, dx: 45, dy: 13 });
+  const spread = separateLabels(crowd, crowdAt, label, 6);
+  const again = separateLabels(crowd, crowdAt, label, 6);
+  check(
+    labelOverlaps(crowd, crowdAt, label) > 200 && labelOverlaps(crowd, spread, label) === 0 &&
+      crowd.every((u) => spread.get(u).x === again.get(u).x && spread.get(u).y === again.get(u).y) &&
+      crowd.every((u) => crowdAt.get(u).x === crowd.indexOf(u) % 5 * 3),
+    `separateLabels: ${labelOverlaps(crowd, crowdAt, label)} overlapping label pairs -> ${labelOverlaps(crowd, spread, label)}, the same positions on a second run, the input untouched`,
+  );
+
+  // J2 — where the sources go (sourcePlacement through drawingPlan), ids, no relation added.
+  const plan = fg.drawingPlan(frame, "nested", false);
+  const wantBox = [[s1, boxA], [s2, boxB], [s3, boxA], [s5, boxA], [s6, boxB], [s7, boxC]].map(([s, b]) => `${s.urn}>${b.urn}`).sort();
+  check(
+    JSON.stringify([...plan.sources.box].map(([s, b]) => `${s}>${b}`).sort()) === JSON.stringify(wantBox) &&
+      JSON.stringify([...plan.sources.elsewhere]) === JSON.stringify([[boxB.urn, 2]]),
+    "each source in the box that cites it most, a tie to the first by urn, a box's own citation counted, the inner box first; s4 (no box cites it) unplaced; box-b marks 2 sources drawn elsewhere (↗2)",
+  );
+  const elNodes = plan.elements.filter((e) => e.group === "nodes");
+  const elLines = plan.elements.filter((e) => e.group === "edges");
+  const relUrns = new Set(rel.map((r) => r.urn));
+  check(
+    JSON.stringify(elNodes.map((e) => e.data.id).sort()) === JSON.stringify(nodes.map((n) => n.urn).sort()) &&
+      elLines.every((e) => relUrns.has(e.data.id)) &&
+      [...plan.sources.box].every(([s, b]) => {
+        const el = elNodes.find((e) => e.data.id === s);
+        return el?.data.parent === b && /\bboxed-source\b/.test(el.classes ?? "");
+      }) &&
+      elNodes.find((e) => e.data.id === boxB.urn)?.data.elsewhere === 2,
+    "presentation only: every node id is a frame urn, every line a frame relation, a placed source's parent is its box (class boxed-source), box-b carries elsewhere 2",
+  );
+
+  // J3/J4 — the drawing itself: the real runLayout, headless, with the real STYLE. `canvas` gives
+  // the instance the size a mounted panel reports (headless Cytoscape is 1 × 1); `twice` runs the
+  // layout again on the same instance and counts the nodes that moved.
+  const layout = (fr, nestingHidden, { canvas = null, twice = false } = {}) => {
+    const p = fg.drawingPlan(fr, "nested", nestingHidden);
+    const cy = cytoscape({ headless: true, styleEnabled: true, elements: p.elements, style: fg.STYLE });
+    if (canvas) {
+      cy.width = () => canvas[0];
+      cy.height = () => canvas[1];
+    }
+    fg.runLayout(cy, "nested");
+    const at = new Map(cy.nodes().map((n) => [n.id(), { ...n.position() }]));
+    const report = cy.scratch("pilotLayout");
+    let rerun = null;
+    if (twice) {
+      fg.runLayout(cy, "nested");
+      rerun = cy.nodes().filter((n) => {
+        const a = at.get(n.id());
+        return Math.abs(a.x - n.position("x")) > 1e-6 || Math.abs(a.y - n.position("y")) > 1e-6;
+      }).length;
+    }
+    const parentOf = new Map(cy.nodes().map((n) => [n.id(), n.isChild() ? n.parent().id() : null]));
+    const boxBB = new Map(cy.nodes(":parent").map((b) => [b.id(), b.boundingBox()]));
+    cy.destroy();
+    return { at, report, parentOf, boxBB, rerun };
+  };
+  const on = layout(frame, false);
+  const comps = on.report?.components ?? [];
+  check(
+    JSON.stringify(comps) === JSON.stringify(wantComponents) &&
+      loose.every((u) => comps.filter((c) => c.includes(u)).length === 1 && Number.isFinite(on.at.get(u)?.x) && Number.isFinite(on.at.get(u)?.y)),
+    `every one of the ${loose.length} linked nodes outside a box gets a position from exactly its component (${comps.map((c) => c.length).join(", ")})`,
+  );
+  // Each component's own rectangle: its nodes' positions, grown by half a node (26 px + border).
+  const rect = (urns, pos) => {
+    const xs = urns.map((u) => pos.get(u).x);
+    const ys = urns.map((u) => pos.get(u).y);
+    return { x1: Math.min(...xs) - 14, x2: Math.max(...xs) + 14, y1: Math.min(...ys) - 14, y2: Math.max(...ys) + 14 };
+  };
+  const meet = (a, b) => a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2;
+  const rects = comps.map((c) => rect(c, on.at));
+  const topBoxes = [boxA, boxB].map((b) => on.boxBB.get(b.urn));
+  const clashes = rects.flatMap((r, i) => [...rects.slice(i + 1), ...topBoxes].filter((o) => o && meet(r, o)).map(() => i));
+  // How often urn order (and type, then urn order) steps from one component to another: a grid
+  // in that order would put those neighbours side by side.
+  const compOf = new Map(comps.flatMap((c, i) => c.map((u) => [u, i])));
+  const steps = (order) => order.slice(1).filter((u, i) => compOf.get(u) !== compOf.get(order[i])).length;
+  const urnOrder = [...loose].sort(byUrn);
+  const typeOrder = [...loose].sort((a, b) => byUrn(a.split(":")[2], b.split(":")[2]) || byUrn(a, b));
+  check(
+    clashes.length === 0 && steps(urnOrder) >= 20 && steps(typeOrder) >= 20,
+    `no type/urn grid: the ${comps.length} components and the 2 top-level boxes occupy disjoint rectangles (${clashes.length} overlapping), while urn order changes component ${steps(urnOrder)} times and type order ${steps(typeOrder)} times`,
+  );
+  // t342 P2 review: and none INSIDE a component. A component of COSE_MIN_NODES nodes or fewer
+  // is drawn breadth-first: each of its layers (breadthFirstLayers, pinned exactly in J1) lies
+  // strictly above the next — a urn or type grid inside it would put nodes of different depths
+  // side by side. Returns the components drawn otherwise.
+  const notLayered = (cs, at) =>
+    cs
+      .filter((c) => c.length > 1 && c.length <= COSE_MIN_NODES)
+      .filter((c) => {
+        const layers = breadthFirstLayers(c, rel);
+        return layers.some(
+          (layer, d) =>
+            d > 0 &&
+            Math.max(...layers[d - 1].map((u) => at.get(u).y)) >= Math.min(...layer.map((u) => at.get(u).y)),
+        );
+      });
+  const rowY = (layers) => layers.map((layer) => [...new Set(layer.map((u) => on.at.get(u).y))]);
+  const chainRows = rowY(wantChainLayers);
+  check(
+    notLayered(comps, on.at).length === 0 &&
+      chainRows.every((ys) => ys.length === 1) && chainRows.every((ys, d) => d === 0 || chainRows[d - 1][0] < ys[0]),
+    `the ${comps.filter((c) => c.length > 1 && c.length <= COSE_MIN_NODES).length} components of ${COSE_MIN_NODES} nodes or fewer are drawn layer by layer, top-down (${notLayered(comps, on.at).length} otherwise); the chain one row per layer, y ${chainRows.map((ys) => ys.map((y) => y.toFixed(0)).join("|")).join(" < ")}`,
+  );
+  const dist = (a, b) => Math.hypot(on.at.get(a).x - on.at.get(b).x, on.at.get(a).y - on.at.get(b).y);
+  const bigUrns = big.map((n) => n.urn);
+  const bigRel = rel.filter((r) => bigUrns.includes(r.source_urn) && bigUrns.includes(r.target_urn));
+  const meanRel = bigRel.reduce((t, r) => t + dist(r.source_urn, r.target_urn), 0) / bigRel.length;
+  const pairs = bigUrns.flatMap((a, i) => bigUrns.slice(i + 1).map((b) => dist(a, b)));
+  const meanPair = pairs.reduce((t, d) => t + d, 0) / pairs.length;
+  check(
+    JSON.stringify(on.report?.refined) === JSON.stringify([big.length]) &&
+      JSON.stringify(on.report?.iterations) === JSON.stringify([coseBudget(big.length, 200, 1).numIter]) &&
+      meanRel < 0.6 * meanPair && on.report?.overlaps === 0,
+    `only the component above ${COSE_MIN_NODES} nodes is cose-refined (${on.report?.refined}, ${on.report?.iterations} iterations), and there related nodes sit close: mean relation ${meanRel.toFixed(0)} px against ${meanPair.toFixed(0)} px between any two of its nodes; ${on.report?.overlaps} overlapping label boxes`,
+  );
+  const inside = (p, bb) => p.x >= bb.x1 && p.x <= bb.x2 && p.y >= bb.y1 && p.y <= bb.y2;
+  check(
+    [...plan.sources.box].every(([s, b]) => on.parentOf.get(s) === b && inside(on.at.get(s), on.boxBB.get(b))) &&
+      on.report?.sources === plan.sources.box.size &&
+      on.at.get(s4.urn) && comps.some((c) => c.includes(s4.urn)),
+    `nesting on: the ${plan.sources.box.size} cited sources are drawn inside their box, s4 with its component`,
+  );
+  // Nesting off (the nesting relation unticked, a36b0b3): no box; every source with its component
+  // — and, t342 P2 review, by geometry: the components' rectangles are disjoint here too, so no
+  // source stands in a column of its own (moved out of its component, its component's rectangle
+  // would reach over the others), and the small components are drawn layer by layer.
+  const off = layout(frame, true);
+  const linked = nodes.map((n) => n.urn).filter((u) => !unlinked.some((n) => n.urn === u));
+  const offComps = off.report?.components ?? [];
+  const offRects = offComps.map((c) => rect(c, off.at));
+  const offClashes = offRects.flatMap((r, i) => offRects.slice(i + 1).filter((o) => meet(r, o)).map(() => i));
+  check(
+    [...off.parentOf.values()].every((p) => p === null) &&
+      linked.every((u) => offComps.filter((c) => c.includes(u)).length === 1) &&
+      src.every((s) => offComps.some((c) => c.includes(s.urn) && c.length > 1)) &&
+      offClashes.length === 0 && notLayered(offComps, off.at).length === 0 &&
+      off.report?.band === unlinked.length,
+    `nesting off: no box; all ${linked.length} linked nodes — the ${src.length} sources among them — laid out in ${offComps.length} components (${offComps.map((c) => c.length).join(", ")}) on disjoint rectangles (${offClashes.length} overlapping), so no source column; the small ones layer by layer; ${unlinked.length} in the unlinked band`,
+  );
+  // The same frame read in reverse order draws the same picture.
+  const back = layout({ ...frame, nodes: [...nodes].reverse(), relations: [...rel].reverse() }, false);
+  const moved = nodes.filter((n) => {
+    const a = on.at.get(n.urn);
+    const b = back.at.get(n.urn);
+    return Math.abs(a.x - b.x) > 1e-6 || Math.abs(a.y - b.y) > 1e-6;
+  });
+  check(moved.length === 0, `the frame in reverse order: ${moved.length} of ${nodes.length} positions differ`);
+  // t342 P2 review: the canvas does not reshape a component. cose used to run on the panel's own
+  // instance and pull toward ITS middle, and with these options it is chaotic: J's 36-node
+  // component moved up to 131 px between canvases. Laid out again at the 380 px panel's canvas
+  // and at a full tab's, every component keeps its shape (its nodes at the same offsets from one
+  // another; only where the component is packed may differ), and a second run on the same
+  // instance moves nothing (a node's label box no longer carries rounding from where it stood).
+  const offsets = (c, at) => {
+    const x0 = Math.min(...c.map((u) => at.get(u).x));
+    const y0 = Math.min(...c.map((u) => at.get(u).y));
+    return c.map((u) => [at.get(u).x - x0, at.get(u).y - y0]);
+  };
+  const reshaped = (other) =>
+    Math.max(
+      0,
+      ...comps.flatMap((c) => {
+        const a = offsets(c, on.at);
+        const b = offsets(c, other.at);
+        return a.map((p, i) => Math.hypot(p[0] - b[i][0], p[1] - b[i][1]));
+      }),
+    );
+  const panel = layout(frame, false, { canvas: [380, 155], twice: true });
+  const tab = layout(frame, false, { canvas: [1600, 393] });
+  check(
+    reshaped(panel) < 1e-6 && reshaped(tab) < 1e-6 && panel.rerun === 0,
+    `the canvas does not reshape a component: at 380 × 155 and 1600 × 393 against 1 × 1 the largest change inside one is ${reshaped(panel).toFixed(6)} / ${reshaped(tab).toFixed(6)} px; a second run on the same instance moves ${panel.rerun} of ${nodes.length}`,
+  );
+  // t342 P2 review: the frame's one cose budget, in a drawing — four components of 110 nodes (a
+  // ring and chords each) want 4 × 100 iterations; they get 100, 100 and 50 and the fourth stays
+  // breadth-first, the frame within COSE_PAIR_STEPS.
+  const many = Array.from({ length: 4 }, (_, c) =>
+    Array.from({ length: 110 }, (_, i) => N("agent", `m${c}-${String(i).padStart(3, "0")}`)),
+  );
+  const manyRel = many.flatMap((cn) => [
+    ...cn.map((n, i) => R(LINK, n, cn[(i + 1) % cn.length])),
+    ...cn.filter((_, i) => i % 6 === 0).map((n, i) => R(LINK, n, cn[(i * 6 + 55) % cn.length])),
+  ]);
+  const multi = layout({ provenance: {}, nodes: many.flat(), relations: manyRel }, true);
+  const multiSteps = (multi.report?.iterations ?? []).reduce(
+    (t, it, i) => t + (it * multi.report.refined[i] * (multi.report.refined[i] - 1)) / 2,
+    0,
+  );
+  check(
+    JSON.stringify(multi.report?.components.map((c) => c.length)) === JSON.stringify([110, 110, 110, 110]) &&
+      JSON.stringify(multi.report?.refined) === JSON.stringify([110, 110, 110]) &&
+      JSON.stringify(multi.report?.iterations) === JSON.stringify([100, 100, 50]) &&
+      multiSteps <= COSE_PAIR_STEPS,
+    `one cose budget per frame, drawn: 4 components of 110 nodes -> ${multi.report?.refined.length} refined (${multi.report?.iterations?.join(", ")} iterations, ${multiSteps} pair-steps ≤ ${COSE_PAIR_STEPS}), the fourth breadth-first`,
+  );
+  if (failures === before) pass("J holds");
 }
 
 console.log(

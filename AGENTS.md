@@ -40,6 +40,15 @@ npm run smoke:lens       # GATE  the lens vocabulary invariant below (pure, offl
 Order matters and each catches a distinct class — `TESTING.md` says what each covers.
 `smoke:worker` reads `dist/`, not source, so `build` comes first.
 
+**A measure, not a gate (t342 P2):** `npm run bench:frame -- --layout [--user <urn>]`
+(`scripts/bench-frame-read.mjs`) times the road to the first drawing on the panel's own code —
+the read, `selectFrame`, FrameGraph's `drawingPlan` and `runLayout` (headless) — and exits 1
+when the pilot's share of it (the main thread's CPU time of transform + plan + layout, p95;
+headless, so no text measuring and no canvas paint) is over `FIRST_PAINT_BUDGET_MS`. The read is
+the engine's and the network's share: reported, not budgeted. Without `--layout` it is the
+Phase 5 read baseline. `TESTING.md` "First paint" has the budget's definition and the measured
+numbers.
+
 **CI is a subset, not the gate.** `.github/workflows/build-test.yml` runs what a GitHub runner can
 honestly execute: typecheck, build, a dist sanity check, `smoke:llm`, `smoke:lens`. `smoke:worker` and
 `smoke:live` need a live Z440 kernel and stay local. **CI green is not a substitute.** If you are
@@ -76,6 +85,13 @@ gate re-fires and passes. This has cost a red check at least once (`#42`).
   type name to this public repo by hand. A port a lens names must be declared by the
   connected engine or the knowledge vocabulary, or sit on the commented `LEGACY_PORTS` list:
   `npm run smoke:live` (h) enforces it, `smoke:lens` H and I hold the rules offline.
+- **The nested drawing is laid out by component, never by one `cose` (t342 P2, P3).** Outside
+  the boxes each connected component is placed breadth-first and a large one refined by a
+  bounded `cose` (`src/ui/component-layout.js`; one budget per frame, run on a detached
+  instance so the canvas size never reshapes a component) — a cose over the whole frame took
+  about 7 s. A knowledge source is drawn inside the box that cites it: a presentation-only
+  parent, node ids stay urns, nothing is written back. `smoke:lens` J holds both on a synthetic
+  frame; `bench:frame` holds the pilot's CPU share of the first paint to its budget.
 - **Verify slices through the real shared transform.** `applyViewFilter` lives in
   `src/mcp/transform.js` and the access law in `src/mcp/access.js`; both are imported by the
   smokes so they exercise the shipped law, not a copy. A hand-rolled check against a fixture of

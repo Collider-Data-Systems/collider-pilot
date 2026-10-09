@@ -35,6 +35,16 @@
  * goes back to the RELATION KIND palette — the knowledge vocabulary's colours and the default
  * line — which is also what a frame without an engine grammar draws, and the legend says so.
  * Node fills stay the type palette, which shares no colour with the eight κ hues.
+ *
+ * COMPONENTS AND SOURCES (t342 P2, P3): under `nested` the linked nodes outside any box no
+ * longer sit on one grid sorted by urn — each connected component is laid out on its own,
+ * breadth-first, and a large one is refined by a bounded `cose` (src/ui/component-layout.js),
+ * never a cose over the whole frame; the components are packed beside the boxes, the unlinked
+ * band stays under it all. A knowledge source a box cites is drawn INSIDE that box — the box is
+ * a presentation-only parent, node ids stay urns, nothing is written back — instead of in a
+ * column right of the drawing; a source several boxes cite sits in one (sourcePlacement says
+ * which) and the others carry a `↗N` marker on their title. With the nesting relation unticked
+ * no box is drawn, and the sources lay out with their components. The column is gone.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -64,6 +74,13 @@ import {
   paintRelation,
 } from "../ui/port-colour.js";
 import { grammarGap, grammarSummary } from "../mcp/engine-grammar.js";
+import {
+  breadthFirstPlacement,
+  coseBudgets,
+  labelOverlaps,
+  linkedComponents,
+  separateLabels,
+} from "../ui/component-layout.js";
 
 /** t342 P1 (decision 2): the relation palette — port colour (the default) or relation kind. */
 export type RelationPalette = "port" | "kind";
@@ -144,7 +161,6 @@ const NODE_FONT = 9;
 const BOX_FONT = 10;
 const RELATION_FONT = 8;
 const NODE_LABEL_WIDTH = 90;
-const SOURCE_LABEL_WIDTH = 230;
 
 /**
  * t342: the `min-zoomed-font-size` that hides a `fontPx` label at and under the cut (labelCut),
@@ -229,10 +245,8 @@ function withPlainLabels<T>(cy: cytoscape.Core, run: () => T): T {
 function labelBase(ele: cytoscape.NodeSingular | cytoscape.EdgeSingular): { font: number; width: number } {
   if (ele.isEdge()) return { font: RELATION_FONT, width: NODE_LABEL_WIDTH };
   if (ele.isParent()) return { font: BOX_FONT, width: NODE_LABEL_WIDTH };
-  return {
-    font: NODE_FONT,
-    width: ele.hasClass("source-column") ? SOURCE_LABEL_WIDTH : NODE_LABEL_WIDTH,
-  };
+  // t342 P3: no source column any more, so no 230 px source label either.
+  return { font: NODE_FONT, width: NODE_LABEL_WIDTH };
 }
 
 /**
@@ -340,6 +354,90 @@ export function unlinkedUrns(frame: HgFrame | null): Set<string> {
   return new Set([...urns].filter((urn) => !linked.has(urn)));
 }
 
+/** The node type a knowledge relation cites as its source (the target of provenance relations). */
+const SOURCE_TYPE = "knowledge_item";
+/** t342 P3: the marker on a box title, before the count of the sources it cites drawn elsewhere. */
+const SOURCES_ELSEWHERE = "↗";
+
+/** t342 P3: where the knowledge sources are drawn (sourcePlacement). */
+export interface SourcePlacement {
+  /** source urn -> the box it is drawn inside (a presentation-only parent, not a relation) */
+  box: Map<string, string>;
+  /** box urn -> how many sources it cites that are drawn in another box (its `↗N` marker) */
+  elsewhere: Map<string, number>;
+}
+
+/**
+ * t342 P3 SOURCES IN THEIR BOX. A knowledge source (a `knowledge_item` no box holds and that is
+ * no box itself) is drawn inside the box that cites it: the box of a node one of its knowledge
+ * relations reaches — that node's own box, or the node itself when it is a box (so a source cited
+ * from a box inside a box goes into the inner one). Cited by several boxes, it goes into the
+ * FIRST of them: the box with the most knowledge relations to it, then the smaller urn — the
+ * same answer whatever order the engine returned relations in. Each other citing box counts it
+ * in `elsewhere` (the `↗N` marker on its title); its relation lines still run to the source.
+ * Presentation only: node ids stay urns, no relation is added and nothing is written back. A
+ * source no box cites, and every source when no box is drawn (nesting off, or a ring / tree /
+ * grid layout), is not placed: it lays out with its component (P2).
+ */
+export function sourcePlacement(frame: HgFrame | null, parents: Map<string, string>): SourcePlacement {
+  const box = new Map<string, string>();
+  const elsewhere = new Map<string, number>();
+  if (parents.size === 0) return { box, elsewhere };
+  const boxes = new Set(parents.values());
+  const typeOf = new Map(nodesOf(frame).map((n) => [n.urn, n.type_id]));
+  const isSource = (urn: string) =>
+    typeOf.get(urn) === SOURCE_TYPE && !parents.has(urn) && !boxes.has(urn);
+  const boxOf = (urn: string) => (boxes.has(urn) ? urn : parents.get(urn));
+  // source -> citing box -> the knowledge relations between them
+  const cites = new Map<string, Map<string, number>>();
+  for (const r of relationsOf(frame)) {
+    if (!isKbPort(r.label) || r.source_urn === r.target_urn) continue;
+    if (!typeOf.has(r.source_urn) || !typeOf.has(r.target_urn)) continue;
+    for (const [source, other] of [
+      [r.source_urn, r.target_urn],
+      [r.target_urn, r.source_urn],
+    ]) {
+      const citing = isSource(source) ? boxOf(other) : undefined;
+      if (!citing) continue;
+      const per = cites.get(source) ?? new Map<string, number>();
+      per.set(citing, (per.get(citing) ?? 0) + 1);
+      cites.set(source, per);
+    }
+  }
+  for (const [source, per] of cites) {
+    const [first, ...others] = [...per].sort(
+      (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0),
+    );
+    box.set(source, first[0]);
+    for (const [other] of others) elsewhere.set(other, (elsewhere.get(other) ?? 0) + 1);
+  }
+  return { box, elsewhere };
+}
+
+/** t342 P2/P3: what one frame is drawn as under one layout (drawingPlan). */
+export interface DrawingPlan {
+  /** the nesting relation's boxes (nestingParents) — empty unless `nested` with nesting on */
+  parents: Map<string, string>;
+  /** the knowledge sources drawn inside a box (sourcePlacement) */
+  sources: SourcePlacement;
+  /** the nodes no relation of the frame touches (unlinkedUrns) */
+  unlinked: Set<string>;
+  elements: cytoscape.ElementDefinition[];
+}
+
+/**
+ * t342 P2/P3: the elements FrameGraph draws for a frame — exported so `smoke:lens` J and
+ * `bench:frame` build exactly what the panel builds. Boxes only under `nested` with the
+ * nesting relation ticked (a ring / tree / grid layout cannot place them; a36b0b3).
+ */
+export function drawingPlan(frame: HgFrame, drawn: DrawnLayout, nestingHidden: boolean): DrawingPlan {
+  const parents =
+    drawn === "nested" && !nestingHidden ? nestingParents(frame) : new Map<string, string>();
+  const sources = sourcePlacement(frame, parents);
+  const unlinked = unlinkedUrns(frame);
+  return { parents, sources, unlinked, elements: toElements(frame, parents, unlinked, sources) };
+}
+
 /** A claim's `kind` when the vocabulary declares it (the only kinds that carry a colour). */
 function claimKind(node: HgNode): string | null {
   const kind = node.type_id === "claim" ? node.properties?.kind : null;
@@ -355,6 +453,8 @@ export function toElements(
   frame: HgFrame,
   parents: Map<string, string>,
   unlinked: ReadonlySet<string>,
+  // t342 P3: the knowledge sources drawn inside a box (drawingPlan passes sourcePlacement).
+  sources?: SourcePlacement,
 ): cytoscape.ElementDefinition[] {
   const frameNodes = nodesOf(frame);
   // t337: in a drawing with boxes, a drag that starts on a box or on a relation line pans
@@ -364,21 +464,31 @@ export function toElements(
   const boxes = new Set(parents.values());
   const nodes: cytoscape.ElementDefinition[] = frameNodes.map((n) => {
     const kind = claimKind(n);
-    const parent = parents.get(n.urn);
+    // t342 P3: a source's box is a presentation-only parent; the node id stays its urn.
+    const sourceBox = sources?.box.get(n.urn);
+    const parent = parents.get(n.urn) ?? sourceBox;
+    const elsewhere = sources?.elsewhere.get(n.urn) ?? 0;
+    const classes = [
+      // t342: a class, not data — it places the node in the unlinked band.
+      ...(unlinked.has(n.urn) ? ["unlinked"] : []),
+      // t342 P3: a source drawn in the box that cites it (STYLE `node.boxed-source`).
+      ...(sourceBox ? ["boxed-source"] : []),
+    ];
     return {
       group: "nodes",
       // Node id === URN (stable semantic id). Only semantic fields go in data — plus, since
-      // t337, the two things styling needs: a claim's vocabulary kind and the node's box.
+      // t337, the two things styling needs: a claim's vocabulary kind and the node's box;
+      // since t342 P3, a box's count of the sources it cites that sit in another box.
       data: {
         id: n.urn,
         label: n.label,
         type_id: n.type_id,
         ...(kind ? { kind } : {}),
         ...(parent ? { parent } : {}),
+        ...(elsewhere > 0 ? { elsewhere } : {}),
       },
       ...(boxes.has(n.urn) ? { grabbable: false, pannable: true } : {}),
-      // t342: a class, not data — it places the node in the unlinked band.
-      ...(unlinked.has(n.urn) ? { classes: "unlinked" } : {}),
+      ...(classes.length ? { classes: classes.join(" ") } : {}),
     };
   });
   // Cytoscape "edges" == mo:os relations. Guard against dangling endpoints.
@@ -429,7 +539,9 @@ function syncData(cy: cytoscape.Core, el: cytoscape.ElementDefinition): void {
   const ele = cy.getElementById(String(el.data.id));
   if (ele.empty()) return;
   // t342 P1: the κ data too — a re-read under another grammar recolours in place.
-  const keys = el.group === "nodes" ? ["label", "type_id", "kind"] : ["label", "type_id", ...KAPPA_KEYS];
+  // t342 P3: and a box's `elsewhere` count, which its title's marker shows.
+  const keys =
+    el.group === "nodes" ? ["label", "type_id", "kind", "elsewhere"] : ["label", "type_id", ...KAPPA_KEYS];
   for (const key of keys) {
     const next = el.data[key];
     if (ele.data(key) === next) continue;
@@ -570,17 +682,28 @@ const PACK = {
   title: 22, // room above a box's content for its title
   gap: 26, // between boxes, and between a box's own leaves and its sub-boxes
   minBox: 120,
-  columnGap: 140, // between the packed boxes and the source column
-  columnPitch: 4, // between two sources in the column
   bandGap: 60, // t342: between the linked drawing and the unlinked band under it
+  // t342 P2: inside a component laid out breadth-first — between two cells of a row, between
+  // two rows, and the extra room between two layers.
+  componentGapX: 18,
+  componentGapY: 14,
+  layerGap: 26,
+  labelGap: 6, // t342 P2: kept between two label boxes after a cose refinement (separateLabels)
 };
-/** The node type that stands in the source column (the target of provenance relations). */
-const SOURCE_TYPE = "knowledge_item";
+/**
+ * t342 P2: the cose refinement of a large component (src/ui/component-layout.js). Seeded from
+ * the breadth-first placement, so it starts cooler than Cytoscape's default (1000) and anneals to
+ * its floor within the iterations coseBudgets allows. Label boxes count as the node's size.
+ */
+const COSE = { initialTemp: 200, minTemp: 1, idealEdgeLength: 70, nodeRepulsion: 4096, gravity: 0.8 };
+/** t342 P2: the cy.scratch key under which a layout run leaves its report (LayoutReport). */
+const LAYOUT_REPORT = "pilotLayout";
 // Candidate shapes [shelf width, leaf-grid aspect]. The first is kb-view's own; the rest
-// let a narrow side panel and a wide tab each get the packing that fits them largest.
-const PACK_SHAPES: [number, number][] = [2000, 1600, 1300, 1000, 800, 600, 2500, 3200, 4200].flatMap(
-  (maxW) => [5, 8, 3, 1.8, 1].map((aspect): [number, number] => [maxW, aspect]),
-);
+// let a narrow side panel and a wide tab each get the packing that fits them largest. t342 P2:
+// two wider shelves, so a large component and the boxes can share one row on a wide canvas.
+const PACK_SHAPES: [number, number][] = [
+  2000, 1600, 1300, 1000, 800, 600, 2500, 3200, 4200, 5400, 7000,
+].flatMap((maxW) => [5, 8, 3, 1.8, 1].map((aspect): [number, number] => [maxW, aspect]));
 
 interface Packed {
   w: number;
@@ -596,10 +719,19 @@ interface LabelBox {
   dy: number;
 }
 
+/**
+ * t342 P2 review: a measure on a 1/4096 px grid. A bounding box is computed where the node
+ * stands, so its width and offset carry float rounding that depends on the position (up to
+ * about 1e-13 px), and a cose refinement amplifies any difference in its input into hundreds of
+ * px — on the grid, a node measures the same wherever the last layout left it, and the same
+ * frame lays out the same on every run. The grid is a power of two, so the rounding is exact.
+ */
+const onGrid = (v: number) => Math.round(v * 4096) / 4096;
+
 function labelBox(n: cytoscape.NodeSingular): LabelBox {
   const bb = n.boundingBox({ includeLabels: true, includeOverlays: false });
   const at = n.position();
-  return { w: bb.w, h: bb.h, dx: at.x - bb.x1, dy: at.y - bb.y1 };
+  return { w: onGrid(bb.w), h: onGrid(bb.h), dx: onGrid(at.x - bb.x1), dy: onGrid(at.y - bb.y1) };
 }
 
 /**
@@ -662,17 +794,231 @@ function bandGrid(
 }
 
 /**
- * t337 NESTED layout — deterministic and packed, never simulated (ported from
- * kb-view.html's pack()/layout()). Each box lays its own leaves on a grid and its
- * sub-boxes below them in shelf rows; un-nested sources (knowledge_item) that a knowledge
- * relation ties to the packed nodes form a separate column, each at the mean height of
- * what it supports, so provenance lines run roughly level.
- *
- * Cells are sized from the MEASURED label boxes, so labels do not overlap inside a box,
- * and nodes are taken in urn order, so the same frame always packs the same way. Only
- * what is shown is packed: a re-layout after a legend untick closes the gaps.
+ * t342 P2: what a layout run did, left in cy.scratch(LAYOUT_REPORT) for `smoke:lens` J and
+ * `bench:frame` — never read by the panel itself.
  */
-function runNestedLayout(cy: cytoscape.Core): void {
+export interface LayoutReport {
+  drawn: DrawnLayout;
+  /** the linked nodes outside any box, one list per connected component (component-layout.js) */
+  components: string[][];
+  /** the sizes of the components a bounded cose refined */
+  refined: number[];
+  /** t342 P2 review: the cose iterations each of them got, from the frame's one budget */
+  iterations: number[];
+  /** pairs of label boxes still overlapping inside a component (separateLabels ran after cose) */
+  overlaps: number;
+  /** the knowledge sources packed inside a box (P3) */
+  sources: number;
+  /** the nodes in the unlinked band */
+  band: number;
+}
+
+/**
+ * t342 P2 COMPONENTS: the linked nodes outside any box, one Packed per connected component —
+ * breadth-first (component-layout.js), and a component of more than COSE_MIN_NODES nodes refined
+ * by a bounded `cose` over just that component (coseBudgets: the frame's components share one
+ * budget, largest first), then its overlapping label boxes pushed apart (separateLabels). A
+ * component joins on every relation of the frame between two of these nodes, ticked or not.
+ */
+function componentPacks(
+  cy: cytoscape.Core,
+  loose: cytoscape.NodeSingular[],
+  measure: (n: cytoscape.NodeSingular) => LabelBox,
+): { packs: Packed[]; components: string[][]; refined: number[]; iterations: number[]; overlaps: number } {
+  const ids = new Set(loose.map((n) => n.id()));
+  const links = cy
+    .edges()
+    .toArray()
+    .map((e) => ({ id: e.id(), source_urn: String(e.data("source")), target_urn: String(e.data("target")) }))
+    .filter((l) => ids.has(l.source_urn) && ids.has(l.target_urn));
+  const components = linkedComponents(ids, links);
+  const sizeOf = (urn: string) => measure(cy.getElementById(urn));
+  // t342 P2 review: one cose budget for the whole frame, drawn from largest component first.
+  const budgets = coseBudgets(
+    components.map((urns) => urns.length),
+    COSE.initialTemp,
+    COSE.minTemp,
+  );
+  const refined: number[] = [];
+  const iterations: number[] = [];
+  let overlaps = 0;
+  const packs = components.map((urns, i) => {
+    const bfs = breadthFirstPlacement(urns, links, sizeOf, {
+      gapX: PACK.componentGapX,
+      gapY: PACK.componentGapY,
+      layerGap: PACK.layerGap,
+    });
+    let at = bfs.at;
+    const { numIter, coolingFactor } = budgets[i];
+    if (numIter > 0) {
+      const refinedAt = refineWithCose(urns, links, sizeOf, bfs, numIter, coolingFactor);
+      at = separateLabels(urns, refinedAt, sizeOf, PACK.labelGap);
+      refined.push(urns.length);
+      iterations.push(numIter);
+    }
+    overlaps += labelOverlaps(urns, at, sizeOf);
+    return packAt(urns, at, sizeOf);
+  });
+  return { packs, components, refined, iterations, overlaps };
+}
+
+/**
+ * t342 P2: a bounded cose over ONE component, seeded from its breadth-first placement.
+ *
+ * t342 P2 review: it runs in a detached headless Cytoscape of its own, never on the panel's
+ * instance. cose pulls toward the middle of its canvas, and with these options it is chaotic:
+ * one seed coordinate moved by 1e-12 px moved nodes by up to 390 px. On the panel's instance
+ * its canvas size (380 × 227 at the first paint, 380 × 155 once the legend settles, 1600 × 393
+ * in a tab) reshaped the component on every re-layout. The detached instance always has the
+ * same size (headless: 1 × 1), each node is a box of its measured label box (labelBox, on its
+ * grid) instead of a size Cytoscape measures where the node stands, and the seed is centred on
+ * that instance's gravity centre (cose takes it as height/2, width/2) — so the component's
+ * shape depends on the frame alone: the same at every canvas size, in the panel, the popup and
+ * the tab, and on every run. Nodes and relations go in urn order, so cose sums its forces in
+ * the same order whatever order the frame came in. cose draws a random number only for two
+ * nodes on the very same point, which a breadth-first seed never has. Nothing of the frame is
+ * added to: the instance holds copies of this component's ids and is destroyed before returning.
+ */
+function refineWithCose(
+  urns: string[],
+  links: readonly { id: string; source_urn: string; target_urn: string }[],
+  sizeOf: (urn: string) => LabelBox,
+  seed: { w: number; h: number; at: Map<string, cytoscape.Position> },
+  numIter: number,
+  coolingFactor: number,
+): Map<string, cytoscape.Position> {
+  const inside = new Set(urns);
+  const relations = links
+    .filter((l) => inside.has(l.source_urn) && inside.has(l.target_urn))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const sandbox = cytoscape({
+    headless: true,
+    styleEnabled: true,
+    style: [
+      {
+        selector: "node",
+        style: { width: "data(w)", height: "data(h)", "border-width": 0, padding: "0px", label: "" },
+      },
+    ],
+  });
+  const ox = sandbox.height() / 2 - seed.w / 2;
+  const oy = sandbox.width() / 2 - seed.h / 2;
+  try {
+    sandbox.add([
+      ...urns.map((u) => {
+        const s = sizeOf(u);
+        const p = seed.at.get(u) ?? { x: 0, y: 0 };
+        return {
+          group: "nodes" as const,
+          data: { id: u, w: s.w, h: s.h },
+          position: { x: p.x + ox, y: p.y + oy },
+        };
+      }),
+      ...relations.map((l) => ({
+        group: "edges" as const,
+        data: { id: l.id, source: l.source_urn, target: l.target_urn },
+      })),
+    ]);
+    sandbox
+      .elements()
+      .layout({
+        name: "cose",
+        animate: false,
+        fit: false,
+        randomize: false,
+        nodeDimensionsIncludeLabels: false,
+        numIter,
+        coolingFactor,
+        initialTemp: COSE.initialTemp,
+        minTemp: COSE.minTemp,
+        idealEdgeLength: () => COSE.idealEdgeLength,
+        nodeRepulsion: () => COSE.nodeRepulsion,
+        gravity: COSE.gravity,
+      } as cytoscape.LayoutOptions)
+      .run();
+    return new Map(urns.map((u) => [u, { ...sandbox.getElementById(u).position() }]));
+  } finally {
+    sandbox.destroy();
+  }
+}
+
+/** t342 P2: nodes at given positions as one Packed, its top-left at the label boxes' corner. */
+function packAt(
+  urns: string[],
+  at: Map<string, cytoscape.Position>,
+  sizeOf: (urn: string) => LabelBox,
+): Packed {
+  let x1 = Infinity;
+  let y1 = Infinity;
+  let x2 = -Infinity;
+  let y2 = -Infinity;
+  for (const u of urns) {
+    const s = sizeOf(u);
+    const p = at.get(u) ?? { x: 0, y: 0 };
+    x1 = Math.min(x1, p.x - s.dx);
+    y1 = Math.min(y1, p.y - s.dy);
+    x2 = Math.max(x2, p.x - s.dx + s.w);
+    y2 = Math.max(y2, p.y - s.dy + s.h);
+  }
+  if (!urns.length) return { w: 0, h: 0, place() {} };
+  return {
+    w: x2 - x1,
+    h: y2 - y1,
+    place(x0, y0, out) {
+      for (const u of urns) {
+        const p = at.get(u) ?? { x: 0, y: 0 };
+        out.set(u, { x: p.x - x1 + x0, y: p.y - y1 + y0 });
+      }
+    },
+  };
+}
+
+/** Packed items in shelf rows, in the order given, a row no wider than `maxW` (t337). */
+function shelf(items: Packed[], maxW: number): Packed {
+  const rows: { w: number; h: number; items: Packed[] }[] = [];
+  let row: { w: number; h: number; items: Packed[] } = { w: 0, h: 0, items: [] };
+  for (const s of items) {
+    if (row.items.length && row.w + s.w > maxW) {
+      rows.push(row);
+      row = { w: 0, h: 0, items: [] };
+    }
+    row.items.push(s);
+    row.w += s.w + PACK.gap;
+    row.h = Math.max(row.h, s.h);
+  }
+  if (row.items.length) rows.push(row);
+  return {
+    w: Math.max(0, ...rows.map((r) => r.w - PACK.gap)),
+    h: rows.reduce((t, r) => t + r.h + PACK.gap, 0) - (rows.length ? PACK.gap : 0),
+    place(x0, y0, out) {
+      let y = y0;
+      for (const r of rows) {
+        let x = x0;
+        for (const s of r.items) {
+          s.place(x, y, out);
+          x += s.w + PACK.gap;
+        }
+        y += r.h + PACK.gap;
+      }
+    },
+  };
+}
+
+/**
+ * t337 NESTED layout — deterministic and packed (ported from kb-view.html's pack()/layout()).
+ * Each box lays its own leaves on a grid, then (t342 P3) the knowledge sources it cites on a
+ * grid of their own, then its sub-boxes in shelf rows.
+ *
+ * t342 P2: outside the boxes nothing is a grid any more. The linked nodes no box holds are laid
+ * out component by component (componentPacks), and the components and the top-level boxes share
+ * the shelf rows, tallest first; the unlinked band goes under it all. The source column is gone
+ * (P3): a source a box cites is inside that box, any other source lays out with its component.
+ *
+ * Cells are sized from the MEASURED label boxes, so labels do not overlap inside a box, and
+ * nodes are taken in urn order, so the same frame always packs the same way. Only what is shown
+ * is packed: a re-layout after a legend untick closes the gaps.
+ */
+function runNestedLayout(cy: cytoscape.Core): LayoutReport {
   type Node = cytoscape.NodeSingular;
   const byId = (a: Node, b: Node) => (a.id() < b.id() ? -1 : a.id() > b.id() ? 1 : 0);
   // Shown nodes of a collection, in urn order.
@@ -681,25 +1027,20 @@ function runNestedLayout(cy: cytoscape.Core): void {
       .toArray()
       .filter((n) => n.visible())
       .sort(byId);
-  const isBox = (n: Node) => n.isParent() && shownOf(n.children()).length > 0;
-  const loose = (n: Node) => n.data("type_id") === SOURCE_TYPE && n.isOrphan() && !n.isParent();
-  // What a loose source supports: the packed nodes a knowledge relation ties it to.
-  const supports = new Map<string, Node[]>();
-  for (const n of shownOf(cy.nodes()).filter(loose)) {
-    const tied = new Map<string, Node>();
-    for (const e of n.connectedEdges().toArray()) {
-      if (!e.visible() || !isKbPort(e.data("label"))) continue;
-      for (const m of [e.source(), e.target()]) if (!loose(m)) tied.set(m.id(), m);
+  // t342 P2: each box's shown children, read once per run — the shapes below pack the same
+  // boxes many times over.
+  const kidsOf = new Map<string, Node[]>();
+  const shownKids = (box: Node): Node[] => {
+    let kids = kidsOf.get(box.id());
+    if (!kids) {
+      kids = shownOf(box.children());
+      kidsOf.set(box.id(), kids);
     }
-    if (tied.size > 0) supports.set(n.id(), [...tied.values()]);
-  }
-  const column = shownOf(cy.nodes()).filter((n) => supports.has(n.id()));
-  cy.batch(() => {
-    cy.nodes().removeClass("source-column");
-    for (const n of column) n.addClass("source-column");
-  });
+    return kids;
+  };
+  const isBox = (n: Node) => n.isParent() && shownKids(n).length > 0;
 
-  applyStyles(cy); // the class just set changes the label box measured below
+  applyStyles(cy);
 
   // A node's drawn box INCLUDING its label, measured once per layout run.
   const sizes = new Map<string, LabelBox>();
@@ -711,63 +1052,61 @@ function runNestedLayout(cy: cytoscape.Core): void {
     }
     return size;
   };
-  const titleWidth = (box: Node) =>
-    box.boundingBox({ includeNodes: false, includeLabels: true, includeOverlays: false }).w;
+  const titles = new Map<string, number>();
+  const titleWidth = (box: Node) => {
+    let w = titles.get(box.id());
+    if (w === undefined) {
+      w = box.boundingBox({ includeNodes: false, includeLabels: true, includeOverlays: false }).w;
+      titles.set(box.id(), w);
+    }
+    return w;
+  };
   // t342: the unlinked nodes are not packed with the rest — they form the band under it.
   const unlinked = shownUnlinked(cy);
+  // t342 P2: the top level — the boxes no box holds, and the linked nodes outside every box.
+  const top = shownOf(cy.nodes().orphans()).filter((n) => !n.hasClass("unlinked"));
+  const topBoxes = top.filter(isBox);
+  const components = componentPacks(
+    cy,
+    top.filter((n) => !isBox(n)),
+    measure,
+  );
+  let sources = 0;
 
-  const pack = (box: Node | null, maxW: number, subW: number, aspect: number): Packed => {
-    const kids = shownOf(box ? box.children() : cy.nodes().orphans()).filter(
-      (n) => !supports.has(n.id()) && !n.hasClass("unlinked"),
+  // A leaf grid: `maxW` wide at most, its rows `aspect` times as wide as tall when it can.
+  const leafGrid = (leaves: Node[], maxW: number, aspect: number) =>
+    cellGrid(leaves, measure, (cellW, meanH) =>
+      Math.min(Math.floor(maxW / cellW), Math.round(Math.sqrt((leaves.length * aspect * meanH) / cellW))),
     );
-    const leaves = kids.filter((n) => !isBox(n));
-    const subs = kids
-      .filter(isBox)
-      .map((n) => pack(n, subW, subW, aspect))
-      .sort((a, b) => b.h - a.h);
+
+  const pack = (box: Node, maxW: number, subW: number, aspect: number): Packed => {
+    const kids = shownKids(box);
+    const leaves = kids.filter((n) => !isBox(n) && !n.hasClass("boxed-source"));
+    // t342 P3: the sources this box cites, on their own grid under its own leaves.
+    const cited = kids.filter((n) => !isBox(n) && n.hasClass("boxed-source"));
+    const subs = shelf(
+      kids
+        .filter(isBox)
+        .map((n) => pack(n, subW, subW, aspect))
+        .sort((a, b) => b.h - a.h),
+      maxW,
+    );
     // Own leaves: a grid of equal-width cells, each row as tall as its tallest label.
-    const grid = cellGrid(leaves, measure, (cellW, meanH) =>
-      Math.min(
-        Math.floor(maxW / cellW),
-        Math.round(Math.sqrt((leaves.length * aspect * meanH) / cellW)),
-      ),
-    );
-    const leafW = grid.w;
-    const leafH = grid.h;
-    // Sub-boxes: shelf rows, tallest first.
-    const rows: { w: number; h: number; items: Packed[] }[] = [];
-    let row: { w: number; h: number; items: Packed[] } = { w: 0, h: 0, items: [] };
-    for (const s of subs) {
-      if (row.items.length && row.w + s.w > maxW) {
-        rows.push(row);
-        row = { w: 0, h: 0, items: [] };
-      }
-      row.items.push(s);
-      row.w += s.w + PACK.gap;
-      row.h = Math.max(row.h, s.h);
-    }
-    if (row.items.length) rows.push(row);
-    const shelfW = Math.max(0, ...rows.map((r) => r.w - PACK.gap));
-    const shelfH = rows.reduce((t, r) => t + r.h + PACK.gap, 0) - (rows.length ? PACK.gap : 0);
+    const grid = leafGrid(leaves, maxW, aspect);
+    const citedGrid = leafGrid(cited, maxW, aspect);
+    const blocks = [grid, citedGrid, subs].filter((b) => b.h > 0);
+    const stackH = blocks.reduce((t, b) => t + b.h, 0) + PACK.gap * Math.max(0, blocks.length - 1);
+    const stackW = Math.max(0, ...blocks.map((b) => b.w));
     // The box around them: room for its title on top, never narrower than that title.
-    const inner = box ? PACK.pad : 0;
-    const top = box ? PACK.title + PACK.pad : 0;
-    const between = leafH && shelfH ? PACK.gap : 0;
-    const contentW = Math.max(leafW, shelfW, box ? Math.max(PACK.minBox, titleWidth(box)) : 0);
-    const indent = inner + (contentW - Math.max(leafW, shelfW)) / 2;
+    const contentW = Math.max(stackW, PACK.minBox, titleWidth(box));
     return {
-      w: contentW + 2 * inner,
-      h: top + leafH + between + shelfH + inner,
+      w: contentW + 2 * PACK.pad,
+      h: PACK.title + PACK.pad + stackH + PACK.pad,
       place(x0, y0, out) {
-        grid.place(x0 + indent, y0 + top, out);
-        let y = y0 + top + leafH + between;
-        for (const r of rows) {
-          let x = x0 + indent;
-          for (const s of r.items) {
-            s.place(x, y, out);
-            x += s.w + PACK.gap;
-          }
-          y += r.h + PACK.gap;
+        let y = y0 + PACK.title + PACK.pad;
+        for (const b of blocks) {
+          b.place(x0 + PACK.pad + (contentW - b.w) / 2, y, out);
+          y += b.h + PACK.gap;
         }
       },
     };
@@ -775,36 +1114,17 @@ function runNestedLayout(cy: cytoscape.Core): void {
 
   const arrange = (maxW: number, aspect: number) => {
     const out = new Map<string, cytoscape.Position>();
-    const root = pack(null, maxW, maxW * 0.65, aspect);
+    // t342 P2: components and top-level boxes in shelf rows, tallest first (the sort is stable:
+    // ties keep the components' order, then the boxes' urn order).
+    const root = shelf(
+      [...components.packs, ...topBoxes.map((b) => pack(b, maxW * 0.65, maxW * 0.65, aspect))].sort(
+        (a, b) => b.h - a.h,
+      ),
+      maxW,
+    );
     root.place(0, 0, out);
     let w = root.w;
     let h = root.h;
-    // Where a supported node sits: its own place, or the middle of its box's content.
-    const yOf = (m: Node): number | null => {
-      const own = out.get(m.id());
-      if (own) return own.y;
-      const ys = m
-        .descendants()
-        .toArray()
-        .flatMap((d) => out.get(d.id())?.y ?? []);
-      return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : null;
-    };
-    const x = root.w + PACK.columnGap;
-    const wanted = column
-      .map((n) => {
-        const ys = (supports.get(n.id()) ?? []).flatMap((m) => yOf(m) ?? []);
-        return { n, y: ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : 0 };
-      })
-      .sort((a, b) => a.y - b.y);
-    let next = 0;
-    for (const { n, y } of wanted) {
-      const s = measure(n);
-      const topY = Math.max(y - s.h / 2, next);
-      out.set(n.id(), { x: x + s.dx, y: topY + s.dy });
-      next = topY + s.h + PACK.columnPitch;
-      w = Math.max(w, x + s.w);
-      h = Math.max(h, topY + s.h);
-    }
     // t342: the unlinked band, under everything linked and at least as wide.
     const band = bandGrid(unlinked, measure, w);
     if (band.h > 0) {
@@ -836,9 +1156,20 @@ function runNestedLayout(cy: cytoscape.Core): void {
   const positions = best?.out ?? new Map<string, cytoscape.Position>();
   cy.batch(() => {
     positions.forEach((at, id) => {
-      cy.getElementById(id).position(at);
+      const n = cy.getElementById(id);
+      if (n.hasClass("boxed-source")) sources += 1;
+      n.position(at);
     });
   });
+  return {
+    drawn: "nested",
+    components: components.components,
+    refined: components.refined,
+    iterations: components.iterations,
+    overlaps: components.overlaps,
+    sources,
+    band: unlinked.length,
+  };
 }
 
 /** The viewport a fit left behind — compared later to tell whether the user has moved it. */
@@ -870,29 +1201,46 @@ function fitPlain(cy: cytoscape.Core): FittedView {
   return { zoom: cy.zoom(), x: pan.x, y: pan.y };
 }
 
-/** Run the drawn layout over what is shown, then fit. */
-function runLayout(cy: cytoscape.Core, drawn: DrawnLayout): FittedView {
+/**
+ * Run the drawn layout over what is shown, then fit. Exported (t342 P2) so `smoke:lens` J and
+ * `bench:frame` run exactly this, headless; the run's LayoutReport is left in
+ * cy.scratch(LAYOUT_REPORT).
+ */
+export function runLayout(cy: cytoscape.Core, drawn: DrawnLayout): FittedView {
   return withPlainLabels(cy, () => layoutPlain(cy, drawn));
 }
 
 function layoutPlain(cy: cytoscape.Core, drawn: DrawnLayout): FittedView {
   cy.resize(); // re-measure the container: the legend under the canvas may just have moved
   applyStyles(cy);
-  if (drawn === "nested") runNestedLayout(cy);
+  if (drawn === "nested") cy.scratch(LAYOUT_REPORT, runNestedLayout(cy));
   else {
     // t342: the ring / tree / grid draws the linked part; the unlinked band goes under it.
+    // t342 P2: these keep their own placement — a ring by type rank, a tree by depth, and
+    // `grid` is a grid because it was picked; only `nested` grid-packed the linked nodes.
     const linked = cy.elements(":visible").not(".unlinked");
     if (linked.nonempty()) linked.layout(layoutOptions(drawn)).run();
     const bb = linked.nonempty()
       ? linked.boundingBox({ includeLabels: true, includeOverlays: false })
       : null;
     const out = new Map<string, cytoscape.Position>();
-    bandGrid(shownUnlinked(cy), labelBox, bb ? bb.w : 0).place(
+    const band = shownUnlinked(cy);
+    bandGrid(band, labelBox, bb ? bb.w : 0).place(
       bb ? bb.x1 : 0,
       bb ? bb.y2 + PACK.bandGap : 0,
       out,
     );
     cy.batch(() => out.forEach((at, id) => cy.getElementById(id).position(at)));
+    const report: LayoutReport = {
+      drawn,
+      components: [],
+      refined: [],
+      iterations: [],
+      overlaps: 0,
+      sources: 0,
+      band: band.length,
+    };
+    cy.scratch(LAYOUT_REPORT, report);
   }
   return fitShown(cy);
 }
@@ -980,7 +1328,8 @@ export const STYLE: cytoscape.StylesheetStyle[] = [
   })),
   {
     // t337: a label inside a box gets a backing, so the relation lines that cross a box
-    // (provenance runs to the source column) do not strike out the text.
+    // (provenance runs to the source column; t342 P3: to a source in another box) do not
+    // strike out the text.
     selector: "node:child:childless",
     style: {
       "text-background-color": "#0f0f12",
@@ -990,19 +1339,23 @@ export const STYLE: cytoscape.StylesheetStyle[] = [
     },
   },
   {
-    // t337 nested layout: a source in the column — small, its label beside it on one line.
-    selector: "node.source-column",
+    // t342 P3: a knowledge source drawn in the box that cites it (it stood in a column right of
+    // the drawing until t342) — a small disc and a quieter label, on its own grid under the
+    // box's own nodes.
+    selector: "node.boxed-source",
     style: {
-      width: 12,
-      height: 12,
+      width: 14,
+      height: 14,
       "border-width": 1,
-      "text-wrap": "ellipsis",
-      "text-max-width": `${SOURCE_LABEL_WIDTH}px`,
-      "text-valign": "center",
-      "text-halign": "right",
-      "text-margin-x": 4,
-      "text-margin-y": 0,
       color: "#a0a0b0",
+    },
+  },
+  {
+    // t342 P3: a box that cites sources drawn in another box says how many on its title.
+    selector: "node[elsewhere > 0]",
+    style: {
+      label: (ele: cytoscape.NodeSingular) =>
+        `${String(ele.data("label") ?? "")} ${SOURCES_ELSEWHERE}${Number(ele.data("elsewhere"))}`,
     },
   },
   {
@@ -1256,15 +1609,15 @@ export function FrameGraph({
   // relations become lines again, and applyHidden hides those like any other port.
   const nestingHidden = !!KB_NESTING_PORT && hiddenPorts.has(KB_NESTING_PORT);
   const plan = useMemo(() => {
-    const parents =
-      drawn === "nested" && !nestingHidden ? nestingParents(frame) : new Map<string, string>();
-    const unlinked = unlinkedUrns(frame);
-    const elements = toElements(frame, parents, unlinked);
+    // t342 P2/P3: the boxes, the sources drawn in them and the unlinked band (drawingPlan).
+    const { parents, sources, unlinked, elements } = drawingPlan(frame, drawn, nestingHidden);
     return {
       elements,
       key: structureKey(elements),
       legend: legendOf(frame, parents),
       unlinked: unlinked.size,
+      sourcesInBoxes: sources.box.size,
+      boxesCitingElsewhere: sources.elsewhere.size,
     };
   }, [frame, drawn, nestingHidden]);
   /** `${layout}\n${structure}` of what the Cytoscape instance currently holds. */
@@ -1751,6 +2104,24 @@ export function FrameGraph({
                 <span className="legend-count">{row.count}</span>
               </label>
             ))}
+            {/* t342 P3: where the knowledge sources are, and what the box marker means. */}
+            {plan.sourcesInBoxes > 0 && (
+              <span
+                className="legend-note"
+                title={
+                  "A source is drawn inside the box that cites it; cited by several boxes, inside the " +
+                  `one with the most knowledge relations to it (then the first by urn). ${SOURCES_ELSEWHERE}N on ` +
+                  "another box's title: N of the sources it cites are drawn in another box — their lines run there"
+                }
+              >
+                {`${countOf(plan.sourcesInBoxes, "source")} drawn in the box that cites ` +
+                  (plan.sourcesInBoxes === 1 ? "it" : "them") +
+                  (plan.boxesCitingElsewhere > 0
+                    ? ` · ${SOURCES_ELSEWHERE}N on ${plan.boxesCitingElsewhere} box` +
+                      `${plan.boxesCitingElsewhere === 1 ? "" : "es"}: N cited sources drawn in another box`
+                    : "")}
+              </span>
+            )}
           </div>
         </div>
       )}

@@ -138,8 +138,13 @@ was the default, is read as no choice; a stored `breadthfirst` or `grid` still c
 Under `nested` a claim sits inside its field, a field inside its topic, a topic
 inside its module — one box per node, a field or topic before a module, and a
 classification scheme is never a box. The boxes are packed deterministically from the
-measured label sizes, so no label overlaps another, and the sources stand in one column
-beside them. Under the relation-kind palette every other knowledge relation is a line in
+measured label sizes, so no label overlaps another. Since t342 (P3) a knowledge source sits
+inside the box that cites it — the box is a presentation-only parent, ids stay urns — and a
+box that cites a source drawn in another box says so with `↗N` on its title; the column the
+sources stood in beside the boxes is gone. Outside the boxes (P2) each connected component is
+laid out on its own — breadth-first, a large one refined by a bounded `cose` — where they
+used to stand on one grid sorted by urn. Under the relation-kind palette every other
+knowledge relation is a line in
 the vocabulary's colour — dashed or thick as the vocabulary says, with no port text on it and
 no arrowhead when it is self-converse; a claim always takes the colour of its kind. Under any
 other layout the graph is flat and the nesting relation is a line like the rest.
