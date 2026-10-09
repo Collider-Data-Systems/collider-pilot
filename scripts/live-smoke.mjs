@@ -38,6 +38,8 @@ import {
   applyViewFilter,
   resolveViewFilter,
   unnamedEngineIdentity,
+  isKernelUrn,
+  normalizeBaseUrl,
   DEFAULT_ENGINE_URN,
   DEFAULT_ENGINE_URL,
   DEFAULT_MCP_BASE_URL,
@@ -625,6 +627,29 @@ function engineIdentityChecks() {
   assert(
     stamped.provenance.engine === custom && stamped.provenance.engine_reported === null,
     "provenance carries the unidentified name with engine_reported null",
+  );
+
+  // t342 (Copilot, #45): the engine URL and urn label rules shared by storage, the Settings
+  // form, the harness's ?engine= and the review-only pin preview.
+  for (const [raw, want] of [
+    ["http://127.0.0.1:8899", "http://127.0.0.1:8899"],
+    ["  https://Host.example:8443/base/ ", "https://host.example:8443/base"],
+    ["http://?", null],
+    ["http://host?x=1", null],
+    ["http://host#frag", null],
+    ["http://user:pw@host", null],
+    ["ftp://host", null],
+    ["http://host name", null],
+  ]) {
+    const got = normalizeBaseUrl(raw);
+    assert(got === want, `normalizeBaseUrl(${JSON.stringify(raw)}) -> ${JSON.stringify(got)}`);
+  }
+  assert(
+    isKernelUrn("urn:moos:kernel:hp-z440.scratch-kb") &&
+      !isKernelUrn("urn:moos:kernel:") &&
+      !isKernelUrn("urn:moos:kernel:bad label") &&
+      !isKernelUrn("urn:moos:user:sam"),
+    "isKernelUrn: a non-empty id without spaces after urn:moos:kernel:",
   );
 }
 

@@ -64,6 +64,40 @@ export const DEFAULT_MCP_BASE_URL = "http://localhost:8080";
 export const DEFAULT_ENGINE_URL = "http://localhost:8000";
 
 /**
+ * t342: a kernel urn the pilot will stamp into provenance or use as an actor — the
+ * `urn:moos:kernel:` prefix followed by a non-empty id without spaces. A prefix check alone
+ * let `urn:moos:kernel:` and `urn:moos:kernel:bad label` through (Copilot, #45).
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isKernelUrn(value) {
+  return typeof value === "string" && /^urn:moos:kernel:[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+}
+
+/**
+ * t342: an engine base URL the pilot can append `/healthz`, `/fold` or `/sse` to — http(s),
+ * a host, no credentials, no query, no fragment — returned without trailing slashes, or
+ * null. The earlier regex accepted `http://?` and `http://host?x=1`, which then produced
+ * `http://host?x=1/fold` (Copilot, #45). Used by the stored engine, the Settings form and
+ * the harness's `?engine=`, so the three cannot disagree.
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+export function normalizeBaseUrl(value) {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!/^https?:\/\//i.test(raw) || /[\s?#]/.test(raw)) return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (!url.hostname || url.username || url.password) return null;
+  return (url.origin + url.pathname).replace(/\/+$/, "");
+}
+
+/**
  * t337: the identity a frame is stamped with when NOBODY named the engine — the caller
  * gave no urn and the engine's /healthz carries no `kernel_urn`.
  *

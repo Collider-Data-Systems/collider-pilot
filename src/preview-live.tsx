@@ -31,7 +31,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { AccessScope, FrameRequest, HgFrame } from "./mcp/types";
-import { selectFrame, unnamedEngineIdentity, DEFAULT_ENGINE_URL } from "./mcp/transform.js";
+import {
+  selectFrame,
+  unnamedEngineIdentity,
+  normalizeBaseUrl,
+  DEFAULT_ENGINE_URL,
+} from "./mcp/transform.js";
 import { readRequestedMode, ANON_USER_URN } from "./mcp/access.js";
 import { PILOT_ACCESS_KEY, type PilotAccessConfig } from "./state/access-identity";
 import { PostureStrip } from "./components/PostureStrip";
@@ -67,10 +72,12 @@ type Status = "loading" | "ready" | "error";
  */
 function harnessEngineUrl(): string {
   try {
-    const raw = new URLSearchParams(window.location.search).get("engine")?.trim() ?? "";
-    if (/^https?:\/\/[^\s]+$/.test(raw)) return raw.replace(/\/+$/, "");
+    const raw = new URLSearchParams(window.location.search).get("engine") ?? "";
+    // t342: the same base-URL rule as the stored engine (transform.js normalizeBaseUrl).
+    const base = normalizeBaseUrl(raw);
+    if (base) return base;
   } catch {
-    // no location / malformed query -> the default engine
+    // no location -> the default engine
   }
   return DEFAULT_ENGINE_URL;
 }

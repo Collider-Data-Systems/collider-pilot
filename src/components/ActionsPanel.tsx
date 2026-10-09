@@ -47,6 +47,7 @@ import {
   type ToolCallContext,
 } from "../tools/tool-call";
 import { runBrowserAct } from "../tools/browser-acts";
+import { isKernelUrn } from "../mcp/transform.js";
 import {
   buildPinPreview,
   previewToJson,
@@ -208,7 +209,7 @@ export function ActionsPanel({
         // t337: the pin is kernel-authored, so its actor is the engine urn. A custom engine
         // nobody named is stamped "unidentified engine at <host:port>" — not a urn — and an
         // envelope with that actor must not be built, let alone downloaded.
-        if (!engineUrn.startsWith("urn:moos:kernel:")) {
+        if (!isKernelUrn(engineUrn)) {
           setPreview(null);
           setResult({
             ok: false,

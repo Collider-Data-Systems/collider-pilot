@@ -345,7 +345,10 @@ function applyStyles(cy: cytoscape.Core): void {
   cy.elements().forEach((ele) => void ele.style("display"));
 }
 
-/** Hide (display: none) what the legend has unticked. Client-side only — no frame re-read. */
+/**
+ * Hide what the legend has unticked: nodes and relations `display: none`, a box only its own
+ * outline and title (t342). Client-side only — no frame re-read.
+ */
 function applyHidden(
   cy: cytoscape.Core,
   hiddenPorts: ReadonlySet<string>,
@@ -355,8 +358,15 @@ function applyHidden(
     cy.nodes().forEach((n) => {
       n.toggleClass("hidden", hiddenKinds.has(nodeKindKey(n.data("type_id"), n.data("kind"))));
     });
+    // A box that is hidden stays displayed (STYLE `:parent.hidden`), so its own relations
+    // would still draw — hide every relation that touches a hidden node explicitly.
     cy.edges().forEach((e) => {
-      e.toggleClass("hidden", hiddenPorts.has(String(e.data("label"))));
+      e.toggleClass(
+        "hidden",
+        hiddenPorts.has(String(e.data("label"))) ||
+          e.source().hasClass("hidden") ||
+          e.target().hasClass("hidden"),
+      );
     });
   });
 }
@@ -765,6 +775,19 @@ const STYLE: cytoscape.StylesheetStyle[] = [
   },
   // t337: unticked in the legend.
   { selector: ".hidden", style: { display: "none" } },
+  // t342: an unticked box kind hides the box — outline, fill, title — not what it holds.
+  // `display: none` on a compound parent also hides every child, so unticking `domain_tag`
+  // took all still-ticked claims with it (Copilot, #45). The box stays in the layout.
+  {
+    selector: ":parent.hidden",
+    style: {
+      display: "element",
+      "background-opacity": 0,
+      "border-width": 0,
+      "text-opacity": 0,
+      events: "no",
+    },
+  },
 ];
 
 /** A legend line swatch: the relation's colour and dash, as the graph draws it. */

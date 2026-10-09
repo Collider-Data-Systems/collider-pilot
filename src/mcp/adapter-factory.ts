@@ -24,6 +24,7 @@ import {
   type StreamableHttpAdapterConfig,
 } from "./streamable-http-adapter";
 import { resolveSurfaceEngine } from "./surface-resolver.js";
+import { isKernelUrn, normalizeBaseUrl } from "./transform.js";
 
 export type AdapterMode = "mock" | "live";
 
@@ -48,24 +49,21 @@ export interface PilotEngineConfig {
   engineUrn?: string;
 }
 
-function isHttpUrl(value: unknown): value is string {
-  return typeof value === "string" && /^https?:\/\/[^\s]+$/.test(value);
-}
-
 /**
  * The stored shape, or null when the value is not an actionable override. Exported (t337)
  * so the Settings custom-engine inputs are validated by the SAME rule storage is read
- * with — the form cannot offer to save something this would then drop.
+ * with — the form cannot offer to save something this would then drop. t342: URLs and the
+ * urn label go through transform.js `normalizeBaseUrl` / `isKernelUrn`.
  */
 export function normalizeEngineConfig(value: unknown): PilotEngineConfig | null {
   if (!value || typeof value !== "object") return null;
   const cfg = value as Record<string, unknown>;
   const out: PilotEngineConfig = {};
-  if (isHttpUrl(cfg.engineUrl)) out.engineUrl = cfg.engineUrl;
-  if (isHttpUrl(cfg.mcpBaseUrl)) out.mcpBaseUrl = cfg.mcpBaseUrl;
-  if (typeof cfg.engineUrn === "string" && cfg.engineUrn.startsWith("urn:moos:kernel:")) {
-    out.engineUrn = cfg.engineUrn;
-  }
+  const engineUrl = normalizeBaseUrl(cfg.engineUrl);
+  const mcpBaseUrl = normalizeBaseUrl(cfg.mcpBaseUrl);
+  if (engineUrl) out.engineUrl = engineUrl;
+  if (mcpBaseUrl) out.mcpBaseUrl = mcpBaseUrl;
+  if (isKernelUrn(cfg.engineUrn)) out.engineUrn = cfg.engineUrn as string;
   // An override without BOTH transports is not actionable — treat as unset.
   return out.engineUrl && out.mcpBaseUrl ? out : null;
 }
