@@ -220,7 +220,8 @@ export function PostureStrip({
 
   // t342: the engine this frame was READ from (what it reports on /healthz, else the surface's
   // label) — the kb extension reads scratch-kb while main reads primary.
-  const engineRead = provenance.engine_reported ?? provenance.engine;
+  // An empty engine_reported means "not reported" (as the adapter reads it): fall back.
+  const engineRead = provenance.engine_reported || provenance.engine;
 
   // A16 ENGINE MISMATCH: `engine` is what this surface RESOLVES TO (its label);
   // `engine_reported` is what the connected engine SAYS it is (/healthz kernel_urn).

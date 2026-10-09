@@ -1110,8 +1110,17 @@ export function FrameGraph({
   // `nested` (a ring / tree / grid layout cannot place them), so under any other layout
   // the nesting relation is a line like the rest.
   const drawn = useMemo(() => resolveGraphLayout(layout, frame), [layout, frame]);
+  // t337 legend state: what is unticked (by port name / node-kind key), and whether the
+  // legend is open. Unticking only hides — the frame is not re-requested.
+  const [hiddenPorts, setHiddenPorts] = useState<ReadonlySet<string>>(() => new Set());
+  const [hiddenKinds, setHiddenKinds] = useState<ReadonlySet<string>>(() => new Set());
+  // t342 (Copilot on #45): a nesting relation that draws a box is not an edge, so hiding
+  // edges by port cannot hide it. Unticking the nesting port therefore draws no boxes: its
+  // relations become lines again, and applyHidden hides those like any other port.
+  const nestingHidden = !!KB_NESTING_PORT && hiddenPorts.has(KB_NESTING_PORT);
   const plan = useMemo(() => {
-    const parents = drawn === "nested" ? nestingParents(frame) : new Map<string, string>();
+    const parents =
+      drawn === "nested" && !nestingHidden ? nestingParents(frame) : new Map<string, string>();
     const unlinked = unlinkedUrns(frame);
     const elements = toElements(frame, parents, unlinked);
     return {
@@ -1120,14 +1129,10 @@ export function FrameGraph({
       legend: legendOf(frame, parents),
       unlinked: unlinked.size,
     };
-  }, [frame, drawn]);
+  }, [frame, drawn, nestingHidden]);
   /** `${layout}\n${structure}` of what the Cytoscape instance currently holds. */
   const builtRef = useRef<string | null>(null);
 
-  // t337 legend state: what is unticked (by port name / node-kind key), and whether the
-  // legend is open. Unticking only hides — the frame is not re-requested.
-  const [hiddenPorts, setHiddenPorts] = useState<ReadonlySet<string>>(() => new Set());
-  const [hiddenKinds, setHiddenKinds] = useState<ReadonlySet<string>>(() => new Set());
   const hiddenRef = useRef({ ports: hiddenPorts, kinds: hiddenKinds });
   hiddenRef.current = { ports: hiddenPorts, kinds: hiddenKinds };
   // The node kinds that were unticked when the layout last ran. It places only what is

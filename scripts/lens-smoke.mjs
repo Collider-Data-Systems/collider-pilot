@@ -248,7 +248,15 @@ for (const file of codeFiles) {
     if (importedModule(node)?.endsWith("kb-vocab.json") && rel !== VOCAB_READER) {
       fail(`${at} imports ${VOCAB_JSON} itself — only ${VOCAB_READER} may`);
     }
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    // A template with substitutions keeps its fixed text in TemplateHead/Middle/Tail tokens,
+    // so `${x}part-of` is caught like "part-of" (Copilot on #45).
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)
+    ) {
       literals++;
       if (portNames.has(node.text)) {
         fail(`${at} restates the knowledge port "${node.text}" — read it from ${VOCAB_READER}`);
