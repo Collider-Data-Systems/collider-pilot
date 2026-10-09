@@ -18,6 +18,14 @@
  * without knowledge relations keeps its layout, its relation styles and Cytoscape's drag
  * behaviour. What every frame got is the bar under the canvas, and a `fit` that always
  * fits (the 0.2 zoom floor used to cut a wide frame off in a narrow panel).
+ *
+ * WHOLE-FOLD DRAWING (t342, Sam: "I need the view not narrowed at opening"): the panel now
+ * opens on every node, so two things keep that first picture readable. Node and relation
+ * labels are cut below a zoom step at or under LABEL_ZOOM — 0.5 at 100 % and 200 % display
+ * scaling, 0.8 at 125 %, 0.67 at 150 % (labelFloor says why) — while box titles draw at every
+ * zoom and the selection, `find` matches and the hovered node keep a label enlarged to stay
+ * readable (EXEMPT_LABELS). The nodes no relation of the frame touches sit in one band under
+ * the linked drawing — the `unlinked N` chip in the bar hides or shows it.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -98,6 +106,105 @@ const FIT_PADDING = 16;
 // of the bar's zoom buttons.
 const READ_ZOOM = 1;
 const ZOOM_STEP = 1.5;
+// t342: the zoom under which a 9 px label is a smear — on a whole-fold fit it buried the
+// drawing. Cytoscape can only cut at zoom 2^k / devicePixelRatio, so the cut falls at the last
+// such step at or below this: 0.5 at 100 % and 200 % display scaling (see labelFloor).
+const LABEL_ZOOM = 0.9;
+// t342: the plain label sizes, shared by STYLE and the enlarged exempt labels (labelBase).
+const NODE_FONT = 9;
+const BOX_FONT = 10;
+const RELATION_FONT = 8;
+const NODE_LABEL_WIDTH = 90;
+const SOURCE_LABEL_WIDTH = 230;
+
+/**
+ * t342: the `min-zoomed-font-size` that hides a `fontPx` label at and under the cut (labelCut),
+ * the zoom step nearest below LABEL_ZOOM. Built in, so it costs nothing per frame.
+ * Cytoscape compares it with the font size times the TEXTURE
+ * scale, 2^ceil(log2(zoom × devicePixelRatio)), not with the zoom itself, so the cut can only
+ * fall at zoom 2^k / devicePixelRatio: this takes the last such step at or below LABEL_ZOOM
+ * (0.5 at 100 % and 200 % display scaling, 0.8 at 125 %, 0.67 at 150 %). A label therefore
+ * always draws at READ_ZOOM.
+ */
+function labelFloor(fontPx: number) {
+  return (ele: cytoscape.NodeSingular | cytoscape.EdgeSingular): number =>
+    fontPx * 2 ** (Math.floor(Math.log2(LABEL_ZOOM * pixelRatio(ele.cy()))) + 1);
+}
+
+/** The display scaling of the window the canvas lives in (a Document PiP has its own). */
+function pixelRatio(cy: cytoscape.Core): number {
+  return cy.container()?.ownerDocument.defaultView?.devicePixelRatio || 1;
+}
+
+/** t342: the zoom at and under which labelFloor hides a label (0.5 at 100 % scaling). */
+function labelCut(cy: cytoscape.Core): number {
+  const ratio = pixelRatio(cy);
+  return 2 ** Math.floor(Math.log2(LABEL_ZOOM * ratio)) / ratio;
+}
+
+/**
+ * t342 EXEMPT LABELS: the selection, a `find` match (class `found`) and the node under the
+ * pointer (class `hovered`) keep their label below the cut. At the side panel's fit of the
+ * whole fold (zoom about 0.05) a 9 px label is half a pixel, so below the cut these are also
+ * ENLARGED with the zoom to stay 9 to 13 px on screen. The factor moves in half-octave steps,
+ * so a zoom gesture restyles a handful of times, not every frame; above the cut it is 1.
+ *   - Layout and fit measure every label at its plain size (withPlainLabels), so an enlarged
+ *     label never moves the packing or widens the fit.
+ *   - While it is above 1 a box is sized around its nodes without their labels — the other
+ *     labels are not drawn then, and an enlarged one would otherwise swell its box.
+ */
+const EXEMPT_LABELS = "node:selected, node.found, node.hovered, edge:selected";
+// cy.scratch keys: the current enlargement, and "a layout or fit is measuring".
+const EXEMPT_SCALE = "pilotExemptScale";
+const LABELS_PLAIN = "pilotLabelsPlain";
+
+function exemptScaleAt(cy: cytoscape.Core, zoom: number): number {
+  return zoom > labelCut(cy) ? 1 : 2 ** (Math.ceil(2 * Math.log2(READ_ZOOM / zoom)) / 2);
+}
+
+function exemptScale(cy: cytoscape.Core): number {
+  const k: unknown = cy.scratch(EXEMPT_SCALE);
+  return typeof k === "number" ? k : 1;
+}
+
+function setExemptScale(cy: cytoscape.Core, k: number): void {
+  if (exemptScale(cy) === k) return;
+  cy.scratch(EXEMPT_SCALE, k);
+  // `eles.updateStyle()` (Cytoscape 3, missing from @types/cytoscape) re-runs the style of
+  // just these elements and the boxes (see EXEMPT_LABELS).
+  const restyle = cy.elements(EXEMPT_LABELS).union(cy.nodes(":parent"));
+  (restyle as unknown as { updateStyle(): void }).updateStyle();
+}
+
+/** Enlarge the exempt labels for the current zoom — unless a layout or fit is measuring. */
+function followZoom(cy: cytoscape.Core): void {
+  if (cy.scratch(LABELS_PLAIN) !== true) setExemptScale(cy, exemptScaleAt(cy, cy.zoom()));
+}
+
+/** Run a measurement (layout, fit, readZoom) with every label at its plain size. */
+function withPlainLabels<T>(cy: cytoscape.Core, run: () => T): T {
+  const outer = cy.scratch(LABELS_PLAIN) === true;
+  cy.scratch(LABELS_PLAIN, true);
+  setExemptScale(cy, 1);
+  try {
+    return run();
+  } finally {
+    if (!outer) {
+      cy.scratch(LABELS_PLAIN, false);
+      followZoom(cy);
+    }
+  }
+}
+
+/** An element's plain label font and wrap width, as STYLE sets them. */
+function labelBase(ele: cytoscape.NodeSingular | cytoscape.EdgeSingular): { font: number; width: number } {
+  if (ele.isEdge()) return { font: RELATION_FONT, width: NODE_LABEL_WIDTH };
+  if (ele.isParent()) return { font: BOX_FONT, width: NODE_LABEL_WIDTH };
+  return {
+    font: NODE_FONT,
+    width: ele.hasClass("source-column") ? SOURCE_LABEL_WIDTH : NODE_LABEL_WIDTH,
+  };
+}
 
 /**
  * Per-layout Cytoscape options. All layouts ship in cytoscape core (no new dep). Every
@@ -187,6 +294,23 @@ export function resolveGraphLayout(layout: GraphLayoutName, frame: HgFrame | nul
   return nestingParents(frame).size > 0 ? "nested" : "concentric";
 }
 
+/**
+ * t342 UNLINKED: the nodes of this frame that no relation of this frame touches (a relation
+ * counts when both its ends are in the frame). They are laid out in one band of their own
+ * under the linked drawing, not interleaved in its grid. A node can be linked in the whole
+ * fold and unlinked here, when the lens, focus or access posture left out its neighbours.
+ */
+export function unlinkedUrns(frame: HgFrame | null): Set<string> {
+  const urns = new Set(nodesOf(frame).map((n) => n.urn));
+  const linked = new Set<string>();
+  for (const r of relationsOf(frame)) {
+    if (!urns.has(r.source_urn) || !urns.has(r.target_urn)) continue;
+    linked.add(r.source_urn);
+    linked.add(r.target_urn);
+  }
+  return new Set([...urns].filter((urn) => !linked.has(urn)));
+}
+
 /** A claim's `kind` when the vocabulary declares it (the only kinds that carry a colour). */
 function claimKind(node: HgNode): string | null {
   const kind = node.type_id === "claim" ? node.properties?.kind : null;
@@ -197,7 +321,11 @@ function claimKind(node: HgNode): string | null {
 const nodeKindKey = (typeId: string, kind?: string | null) =>
   kind ? `${typeId} · ${kind}` : typeId;
 
-function toElements(frame: HgFrame, parents: Map<string, string>): cytoscape.ElementDefinition[] {
+function toElements(
+  frame: HgFrame,
+  parents: Map<string, string>,
+  unlinked: ReadonlySet<string>,
+): cytoscape.ElementDefinition[] {
   const frameNodes = nodesOf(frame);
   // t337: in a drawing with boxes, a drag that starts on a box or on a relation line pans
   // the view, as on the background. Zoomed in to read, boxes and lines cover the canvas:
@@ -219,6 +347,8 @@ function toElements(frame: HgFrame, parents: Map<string, string>): cytoscape.Ele
         ...(parent ? { parent } : {}),
       },
       ...(boxes.has(n.urn) ? { grabbable: false, pannable: true } : {}),
+      // t342: a class, not data — it places the node in the unlinked band.
+      ...(unlinked.has(n.urn) ? { classes: "unlinked" } : {}),
     };
   });
   // Cytoscape "edges" == mo:os relations. Guard against dangling endpoints.
@@ -346,6 +476,13 @@ function applyStyles(cy: cytoscape.Core): void {
 }
 
 /**
+ * t342: the key the `unlinked N` chip puts in the hidden kinds to hide the unlinked band —
+ * no type or claim kind can be spelled this way. Riding with the legend's kinds, it gets
+ * `show all` and the re-layout on showing again for free.
+ */
+const UNLINKED_KEY = "(unlinked)";
+
+/**
  * Hide what the legend has unticked: nodes and relations `display: none`, a box only its own
  * outline and title (t342). Client-side only — no frame re-read.
  */
@@ -354,9 +491,14 @@ function applyHidden(
   hiddenPorts: ReadonlySet<string>,
   hiddenKinds: ReadonlySet<string>,
 ): void {
+  const bandHidden = hiddenKinds.has(UNLINKED_KEY);
   cy.batch(() => {
     cy.nodes().forEach((n) => {
-      n.toggleClass("hidden", hiddenKinds.has(nodeKindKey(n.data("type_id"), n.data("kind"))));
+      n.toggleClass(
+        "hidden",
+        hiddenKinds.has(nodeKindKey(n.data("type_id"), n.data("kind"))) ||
+          (bandHidden && n.hasClass("unlinked")),
+      );
     });
     // A box that is hidden stays displayed (STYLE `:parent.hidden`), so its own relations
     // would still draw — hide every relation that touches a hidden node explicitly.
@@ -381,6 +523,7 @@ const PACK = {
   minBox: 120,
   columnGap: 140, // between the packed boxes and the source column
   columnPitch: 4, // between two sources in the column
+  bandGap: 60, // t342: between the linked drawing and the unlinked band under it
 };
 /** The node type that stands in the source column (the target of provenance relations). */
 const SOURCE_TYPE = "knowledge_item";
@@ -394,6 +537,79 @@ interface Packed {
   w: number;
   h: number;
   place: (x0: number, y0: number, out: Map<string, cytoscape.Position>) => void;
+}
+
+/** A node's drawn box INCLUDING its label, and where its position sits inside that box. */
+interface LabelBox {
+  w: number;
+  h: number;
+  dx: number;
+  dy: number;
+}
+
+function labelBox(n: cytoscape.NodeSingular): LabelBox {
+  const bb = n.boundingBox({ includeLabels: true, includeOverlays: false });
+  const at = n.position();
+  return { w: bb.w, h: bb.h, dx: at.x - bb.x1, dy: at.y - bb.y1 };
+}
+
+/**
+ * Nodes on a grid of equal-width cells, in the order given, each row as tall as its tallest
+ * label — a box's own leaves (t337) and, since t342, the unlinked band. `colsFor` picks the
+ * column count from the cell width and the mean row height.
+ */
+function cellGrid(
+  nodes: cytoscape.NodeSingular[],
+  sizeOf: (n: cytoscape.NodeSingular) => LabelBox,
+  colsFor: (cellW: number, meanH: number) => number,
+): Packed {
+  const sizes = nodes.map(sizeOf);
+  const cellW = Math.max(0, ...sizes.map((s) => s.w)) + PACK.cellGapX;
+  const meanH = sizes.reduce((t, s) => t + s.h + PACK.cellGapY, 0) / (nodes.length || 1);
+  const cols = Math.max(1, Math.min(nodes.length, colsFor(cellW, meanH)));
+  const rowH: number[] = [];
+  sizes.forEach((s, i) => {
+    const r = Math.floor(i / cols);
+    rowH[r] = Math.max(rowH[r] ?? 0, s.h + PACK.cellGapY);
+  });
+  return {
+    w: nodes.length ? cols * cellW : 0,
+    h: rowH.reduce((t, h) => t + h, 0),
+    place(x0, y0, out) {
+      let y = y0;
+      nodes.forEach((n, i) => {
+        const s = sizes[i];
+        const c = i % cols;
+        if (c === 0 && i > 0) y += rowH[Math.floor(i / cols) - 1];
+        out.set(n.id(), { x: x0 + c * cellW + (cellW - s.w) / 2 + s.dx, y: y + s.dy });
+      });
+    },
+  };
+}
+
+/** t342: the shown nodes of class `unlinked` (see toElements), type first, then urn. */
+function shownUnlinked(cy: cytoscape.Core): cytoscape.NodeSingular[] {
+  const key = (n: cytoscape.NodeSingular) => `${n.data("type_id")}\t${n.id()}`;
+  return cy
+    .nodes(".unlinked")
+    .toArray()
+    .filter((n) => n.visible())
+    .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+}
+
+/**
+ * t342 UNLINKED BAND: those nodes on one grid of their own, at least `minW` wide (the linked
+ * drawing's width) and never narrower than square. It goes under the linked drawing; node
+ * ids stay the urns and no box is made for it.
+ */
+function bandGrid(
+  band: cytoscape.NodeSingular[],
+  sizeOf: (n: cytoscape.NodeSingular) => LabelBox,
+  minW: number,
+): Packed {
+  return cellGrid(band, sizeOf, (cellW) =>
+    Math.floor(Math.max(minW, cellW * Math.ceil(Math.sqrt(band.length))) / cellW),
+  );
 }
 
 /**
@@ -436,24 +652,24 @@ function runNestedLayout(cy: cytoscape.Core): void {
 
   applyStyles(cy); // the class just set changes the label box measured below
 
-  // A node's drawn box INCLUDING its label, and where its position sits inside that box.
-  const sizes = new Map<string, { w: number; h: number; dx: number; dy: number }>();
+  // A node's drawn box INCLUDING its label, measured once per layout run.
+  const sizes = new Map<string, LabelBox>();
   const measure = (n: Node) => {
     let size = sizes.get(n.id());
     if (!size) {
-      const bb = n.boundingBox({ includeLabels: true, includeOverlays: false });
-      const at = n.position();
-      size = { w: bb.w, h: bb.h, dx: at.x - bb.x1, dy: at.y - bb.y1 };
+      size = labelBox(n);
       sizes.set(n.id(), size);
     }
     return size;
   };
   const titleWidth = (box: Node) =>
     box.boundingBox({ includeNodes: false, includeLabels: true, includeOverlays: false }).w;
+  // t342: the unlinked nodes are not packed with the rest — they form the band under it.
+  const unlinked = shownUnlinked(cy);
 
   const pack = (box: Node | null, maxW: number, subW: number, aspect: number): Packed => {
     const kids = shownOf(box ? box.children() : cy.nodes().orphans()).filter(
-      (n) => !supports.has(n.id()),
+      (n) => !supports.has(n.id()) && !n.hasClass("unlinked"),
     );
     const leaves = kids.filter((n) => !isBox(n));
     const subs = kids
@@ -461,24 +677,14 @@ function runNestedLayout(cy: cytoscape.Core): void {
       .map((n) => pack(n, subW, subW, aspect))
       .sort((a, b) => b.h - a.h);
     // Own leaves: a grid of equal-width cells, each row as tall as its tallest label.
-    const leafSizes = leaves.map(measure);
-    const cellW = Math.max(0, ...leafSizes.map((s) => s.w)) + PACK.cellGapX;
-    const meanH = leafSizes.reduce((t, s) => t + s.h + PACK.cellGapY, 0) / (leaves.length || 1);
-    const cols = Math.max(
-      1,
+    const grid = cellGrid(leaves, measure, (cellW, meanH) =>
       Math.min(
-        leaves.length,
         Math.floor(maxW / cellW),
         Math.round(Math.sqrt((leaves.length * aspect * meanH) / cellW)),
       ),
     );
-    const rowH: number[] = [];
-    leafSizes.forEach((s, i) => {
-      const r = Math.floor(i / cols);
-      rowH[r] = Math.max(rowH[r] ?? 0, s.h + PACK.cellGapY);
-    });
-    const leafW = leaves.length ? cols * cellW : 0;
-    const leafH = rowH.reduce((t, h) => t + h, 0);
+    const leafW = grid.w;
+    const leafH = grid.h;
     // Sub-boxes: shelf rows, tallest first.
     const rows: { w: number; h: number; items: Packed[] }[] = [];
     let row: { w: number; h: number; items: Packed[] } = { w: 0, h: 0, items: [] };
@@ -504,17 +710,8 @@ function runNestedLayout(cy: cytoscape.Core): void {
       w: contentW + 2 * inner,
       h: top + leafH + between + shelfH + inner,
       place(x0, y0, out) {
-        let y = y0 + top;
-        leaves.forEach((n, i) => {
-          const s = leafSizes[i];
-          const c = i % cols;
-          if (c === 0 && i > 0) y += rowH[Math.floor(i / cols) - 1];
-          out.set(n.id(), {
-            x: x0 + indent + c * cellW + (cellW - s.w) / 2 + s.dx,
-            y: y + s.dy,
-          });
-        });
-        y = y0 + top + leafH + between;
+        grid.place(x0 + indent, y0 + top, out);
+        let y = y0 + top + leafH + between;
         for (const r of rows) {
           let x = x0 + indent;
           for (const s of r.items) {
@@ -559,6 +756,14 @@ function runNestedLayout(cy: cytoscape.Core): void {
       w = Math.max(w, x + s.w);
       h = Math.max(h, topY + s.h);
     }
+    // t342: the unlinked band, under everything linked and at least as wide.
+    const band = bandGrid(unlinked, measure, w);
+    if (band.h > 0) {
+      const y0 = h > 0 ? h + PACK.bandGap : 0;
+      band.place(0, y0, out);
+      w = Math.max(w, band.w);
+      h = y0 + band.h;
+    }
     return { out, w, h };
   };
 
@@ -599,6 +804,10 @@ interface FittedView {
  * then cuts nodes off, so the floor is lowered first when this fit needs less than MIN_ZOOM.
  */
 function fitShown(cy: cytoscape.Core): FittedView {
+  return withPlainLabels(cy, () => fitPlain(cy));
+}
+
+function fitPlain(cy: cytoscape.Core): FittedView {
   applyStyles(cy);
   const shown = cy.elements(":visible");
   const bb = shown.boundingBox();
@@ -614,10 +823,28 @@ function fitShown(cy: cytoscape.Core): FittedView {
 
 /** Run the drawn layout over what is shown, then fit. */
 function runLayout(cy: cytoscape.Core, drawn: DrawnLayout): FittedView {
+  return withPlainLabels(cy, () => layoutPlain(cy, drawn));
+}
+
+function layoutPlain(cy: cytoscape.Core, drawn: DrawnLayout): FittedView {
   cy.resize(); // re-measure the container: the legend under the canvas may just have moved
   applyStyles(cy);
   if (drawn === "nested") runNestedLayout(cy);
-  else cy.elements(":visible").layout(layoutOptions(drawn)).run();
+  else {
+    // t342: the ring / tree / grid draws the linked part; the unlinked band goes under it.
+    const linked = cy.elements(":visible").not(".unlinked");
+    if (linked.nonempty()) linked.layout(layoutOptions(drawn)).run();
+    const bb = linked.nonempty()
+      ? linked.boundingBox({ includeLabels: true, includeOverlays: false })
+      : null;
+    const out = new Map<string, cytoscape.Position>();
+    bandGrid(shownUnlinked(cy), labelBox, bb ? bb.w : 0).place(
+      bb ? bb.x1 : 0,
+      bb ? bb.y2 + PACK.bandGap : 0,
+      out,
+    );
+    cy.batch(() => out.forEach((at, id) => cy.getElementById(id).position(at)));
+  }
   return fitShown(cy);
 }
 
@@ -627,7 +854,8 @@ function runLayout(cy: cytoscape.Core, drawn: DrawnLayout): FittedView {
  */
 function readZoom(cy: cytoscape.Core, el: cytoscape.NodeSingular): number {
   if (!el.isParent()) return Math.max(cy.zoom(), READ_ZOOM);
-  const bb = el.boundingBox();
+  // t342: a hovered or selected box's title is enlarged — measure it at its plain size.
+  const bb = withPlainLabels(cy, () => el.boundingBox());
   return Math.min(
     READ_ZOOM,
     (cy.width() - 2 * FIT_PADDING) / bb.w,
@@ -647,9 +875,11 @@ const STYLE: cytoscape.StylesheetStyle[] = [
       "background-color": DEFAULT_COLOR,
       label: "data(label)",
       color: "#f0f0f5",
-      "font-size": "9px",
+      "font-size": `${NODE_FONT}px`,
+      // t342: no label below the cut (labelFloor) — the exceptions follow below.
+      "min-zoomed-font-size": labelFloor(NODE_FONT),
       "text-wrap": "wrap",
-      "text-max-width": "90px",
+      "text-max-width": `${NODE_LABEL_WIDTH}px`,
       "text-valign": "bottom",
       "text-margin-y": 4,
       width: 26,
@@ -676,13 +906,23 @@ const STYLE: cytoscape.StylesheetStyle[] = [
       "background-opacity": 0.07,
       "border-width": 1.5,
       padding: "12px",
-      "font-size": "10px",
+      "font-size": `${BOX_FONT}px`,
+      "min-zoomed-font-size": 0, // t342: a box title draws at every zoom
       "font-weight": 600,
       "text-wrap": "none",
       "text-valign": "top",
       "text-halign": "center",
       "text-margin-y": -3,
     },
+  },
+  {
+    // t342: below the label cut, with exempt labels enlarged, a box hugs its nodes (see
+    // EXEMPT_LABELS). Missing from @types/cytoscape, hence the cast.
+    selector: ":parent",
+    style: {
+      "compound-sizing-wrt-labels": (ele: cytoscape.NodeSingular) =>
+        exemptScale(ele.cy()) > 1 ? "exclude" : "include",
+    } as unknown as cytoscape.Css.Node,
   },
   ...Object.keys(NEST_PARENT_RANK).map((type) => ({
     selector: `node[type_id = "${type}"]:parent`,
@@ -707,7 +947,7 @@ const STYLE: cytoscape.StylesheetStyle[] = [
       height: 12,
       "border-width": 1,
       "text-wrap": "ellipsis",
-      "text-max-width": "230px",
+      "text-max-width": `${SOURCE_LABEL_WIDTH}px`,
       "text-valign": "center",
       "text-halign": "right",
       "text-margin-x": 4,
@@ -735,7 +975,9 @@ const STYLE: cytoscape.StylesheetStyle[] = [
       "curve-style": "bezier",
       label: "data(label)",
       color: "#a0a0b0",
-      "font-size": "8px",
+      "font-size": `${RELATION_FONT}px`,
+      // t342: a port name on a line is held to the same zoom as the node labels.
+      "min-zoomed-font-size": labelFloor(RELATION_FONT),
       "text-rotation": "autorotate",
       "text-background-color": "#0f0f12",
       "text-background-opacity": 0.85,
@@ -764,6 +1006,19 @@ const STYLE: cytoscape.StylesheetStyle[] = [
   {
     selector: "edge:selected",
     style: { "line-color": "#6366f1", "target-arrow-color": "#6366f1" },
+  },
+  {
+    // t342: below the cut these still carry their label — the selection, a `find` match
+    // (class `found`) and the node under the pointer (class `hovered`) — enlarged with the
+    // zoom so it can be read (EXEMPT_LABELS).
+    selector: EXEMPT_LABELS,
+    style: {
+      "min-zoomed-font-size": 0,
+      "font-size": (ele: cytoscape.NodeSingular | cytoscape.EdgeSingular) =>
+        labelBase(ele).font * exemptScale(ele.cy()),
+      "text-max-width": (ele: cytoscape.NodeSingular | cytoscape.EdgeSingular) =>
+        `${labelBase(ele).width * exemptScale(ele.cy())}px`,
+    },
   },
   // t337: a node outside the highlighted set (see `highlightUrns`) and the relations that
   // touch one. A box fades its own outline and title only — `opacity` on a compound
@@ -857,8 +1112,14 @@ export function FrameGraph({
   const drawn = useMemo(() => resolveGraphLayout(layout, frame), [layout, frame]);
   const plan = useMemo(() => {
     const parents = drawn === "nested" ? nestingParents(frame) : new Map<string, string>();
-    const elements = toElements(frame, parents);
-    return { elements, key: structureKey(elements), legend: legendOf(frame, parents) };
+    const unlinked = unlinkedUrns(frame);
+    const elements = toElements(frame, parents, unlinked);
+    return {
+      elements,
+      key: structureKey(elements),
+      legend: legendOf(frame, parents),
+      unlinked: unlinked.size,
+    };
   }, [frame, drawn]);
   /** `${layout}\n${structure}` of what the Cytoscape instance currently holds. */
   const builtRef = useRef<string | null>(null);
@@ -919,6 +1180,24 @@ export function FrameGraph({
     cy.on("tap", (evt: cytoscape.EventObject) => {
       if (evt.target === cy) onSelectRef.current(null);
     });
+    // t342: the node under the pointer shows its label at any zoom (STYLE `node.hovered`).
+    cy.on("mouseover", "node", (evt: cytoscape.EventObject) => {
+      (evt.target as cytoscape.NodeSingular).addClass("hovered");
+    });
+    cy.on("mouseout", "node", (evt: cytoscape.EventObject) => {
+      (evt.target as cytoscape.NodeSingular).removeClass("hovered");
+    });
+    // t342: leaving the canvas straight from a node fires no node `mouseout` (Cytoscape emits
+    // the container's mouseout on the core only), so the core clears the hover itself — but
+    // not for a move between the container's own layers.
+    cy.on("mouseout", (evt: cytoscape.EventObject) => {
+      if (evt.target !== cy) return;
+      const to = (evt.originalEvent as MouseEvent | undefined)?.relatedTarget as Node | null;
+      if (to && containerRef.current?.contains(to)) return;
+      cy.nodes(".hovered").removeClass("hovered");
+    });
+    // t342: the exempt labels follow the zoom (EXEMPT_LABELS).
+    cy.on("zoom", () => followZoom(cy));
     // t337: a double-click on a box brings that whole box into view (see readZoom).
     cy.on("dbltap", "node:parent", (evt: cytoscape.EventObject) => {
       const box = evt.target as cytoscape.NodeSingular;
@@ -1009,11 +1288,12 @@ export function FrameGraph({
     if (!cy) return;
     const lit = new Set(highlightKey ? highlightKey.split("\n") : []);
     cy.batch(() => {
-      cy.elements().removeClass("faded");
+      cy.elements().removeClass("faded found");
       const hits = cy.nodes().filter((n) => lit.has(n.id()));
       // A set that names no node of THIS frame fades nothing — a mirror gets the frame and
       // the search through two store keys, and the two can be of different frames.
       if (hits.empty()) return;
+      hits.addClass("found"); // t342: a match keeps its label at any zoom
       // The boxes a match sits in stay lit, so the match can be placed at a glance.
       const out = cy.nodes().not(hits.union(hits.ancestors()));
       out.addClass("faded");
@@ -1101,6 +1381,8 @@ export function FrameGraph({
   // Every unticked row, on this lens or another: a tick stays off across lenses (rows are
   // matched by name), so the count and `show all` must not depend on the rows in view.
   const hiddenCount = hiddenPorts.size + hiddenKinds.size;
+  // t342: the unlinked band is shown unless its chip has hidden it.
+  const bandShown = !hiddenKinds.has(UNLINKED_KEY);
 
   return (
     <div className={`graph-wrap${legendOpen ? " legend-open" : ""}`}>
@@ -1135,9 +1417,24 @@ export function FrameGraph({
             type="button"
             className="mini-btn"
             onClick={handleShowAll}
-            title="Tick every legend row again — a row unticked on one lens stays unticked on the others"
+            title="Tick every legend row again and show the unlinked band — a row unticked on one lens stays unticked on the others"
           >
             show all
+          </button>
+        )}
+        {plan.unlinked > 0 && (
+          <button
+            type="button"
+            className={`mini-btn graph-unlinked${bandShown ? " is-on" : ""}`}
+            aria-pressed={bandShown}
+            onClick={() => setHiddenKinds((prev) => toggleIn(prev, UNLINKED_KEY))}
+            title={
+              `${countOf(plan.unlinked, "node")} without a relation in this frame, drawn in one ` +
+              `band under the linked graph — ${bandShown ? "hide" : "show"} the band (the frame ` +
+              "is not re-read)"
+            }
+          >
+            unlinked {plan.unlinked}
           </button>
         )}
         <button

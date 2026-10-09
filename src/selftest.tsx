@@ -196,11 +196,14 @@ async function runChecks(push: (r: Row) => void): Promise<void> {
     });
     const scope = idf?.provenance?.access?.scope;
     const trusted = scope?.identity_source === "trusted-storage";
+    // t342: a stored user that is not a user urn (a bare "sam") resolves "identified" but
+    // owns nothing — every seat drops out. The check printed its urn tail, which hid that.
+    const userIsUrn = /^urn:moos:user:\S+$/.test(String(scope?.user ?? ""));
     return {
-      ok: true, // informational: an unset identity legitimately stays anon
+      ok: !trusted || userIsUrn, // an unset identity legitimately stays anon
       skipped: !trusted,
       detail: trusted
-        ? `user ${String(scope?.user).split(":").pop()} · permitted ${idf?.provenance?.access?.permitted_workspaces?.length ?? 0}`
+        ? `user ${String(scope?.user)}${userIsUrn ? "" : " — NOT a user urn"} · permitted ${idf?.provenance?.access?.permitted_workspaces?.length ?? 0}`
         : "no identity stored — stayed anon (expected when pilot.access is unset)",
     };
   });

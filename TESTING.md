@@ -41,7 +41,7 @@ healthz `kernel_urn`), an invalid key must fall back to the default engine, and 
 menno twin is not up — the surfaced case reports SKIP rather than silently passing.
 
 **`smoke:live`** proves the slice law twice: on a synthetic chain (ports narrow relations;
-hops expand only along retained ports) and on the **live fold** (the default lens loses no
+hops expand only along retained ports) and on the **live fold** (the content lens loses no
 node or relation the legacy default showed; `["*"]` reaches the whole fold; hops widen a real
 focus monotonically). One assertion there earns its keep long-term: **every live relation
 label must be present in the UI's port vocabulary** — it caught `guards` and `participates`
@@ -100,6 +100,14 @@ replaced file whose record was not updated, fails); only `src/ui/kb-vocab.js` im
 and none of its port names (both ends) or colours is a string literal in any code file
 under `src/` or `scripts/`. The files are parsed, so a name in a comment or inside a
 sentence is not a hit. `.gitattributes` keeps the JSON byte-identical on a Windows checkout.
+E (t342) holds the opening view un-narrowed: `defaultSliceSpec()` is the `everything`
+sentinel (all types, all ports, latest t, 1 hop) — the access posture is the only gate a
+freshly opened panel applies. F (t342) holds the strip's counts honest on the real transform
+and a synthetic fold: `provenance.fold_counts` counts what the access posture alone withheld
+over the whole fold, and a narrower lens holds less without moving that number. G (t342)
+holds the unlinked band to the nodes no relation of the CURRENT frame touches — a seat whose
+only relation runs to a withheld seat is unlinked there — on the real `unlinkedUrns`, loaded
+from `FrameGraph.tsx` the way `smoke:live` loads it.
 
 **`selftest.html`** (open it from the extension: `chrome-extension://<id>/selftest.html`) is
 the one surface that can exercise what the harnesses fake — the worker seam with real
@@ -130,7 +138,11 @@ Two things have burned real time here:
    server if it disagrees.
 2. **Harness prop drift hides features.** Twice a harness passed something the panel does not
    (`dirty={false}`, no `collapsible`), making the feature untestable outside the extension.
-   Keep harness prop wiring identical to `sidepanel.tsx`.
+   Keep the harness props identical to `sidepanel.tsx`. Since t342 that includes the
+   strip's `requestedMode` and the opening posture: `preview-live.html` opens under the posture saved in the shimmed
+   `pilot.accessPosture`, as the panel does, and saves the toggle — it used to open anon
+   (1 node on the scratch-kb fold) whatever "Bring me in" had saved. The posture is never
+   read from the URL.
 
 Note also that a **viewport** media query (the log feed drops the actor column below 430px)
 cannot fire inside the 380px frame — a docked side panel *is* its own viewport, so test that
@@ -179,7 +191,8 @@ relations), with no layout stored:
   box titles, titles against leaf labels);
 - fit zoom by surface: side panel inline graph (380 x 155 canvas) 0.11, popup mirror
   (400 x 465) 0.23, full-tab mirror at 1600 x 900 (1600 x 393) 0.39. At fit the labels are
-  1 to 3.5 px: the fitted picture is an overview. Reading is one act away: a find hit or
+  1 to 3.5 px: the fitted picture is an overview (t342: below zoom 0.5 they are no longer
+  drawn — see "Drawing the whole fold"). Reading is one act away: a find hit or
   an inspector relation row centres the node at zoom 1 (9 px labels), a double-click on a
   box brings that box into view, and the bar's `+` reaches zoom 1 in 6 clicks from the
   panel's fit, 4 from the pop-out's, 3 from the tab's (it was 77 / 51 / 32 wheel notches);
@@ -204,7 +217,8 @@ relations), with no layout stored:
 On the Z440 primary (4.0.7, no knowledge relations), `content` (168 / 78) and `everything`
 (320 / 238), old build (f1c192b) against this one in the unpacked extension: no box, every
 relation in the default style with its port label, and every node position equal to the
-old build's after one common shift of 12 model px (residual 0) — the canvas is 24 px
+old build's after one common shift of 12 model px (residual 0; t342: no longer on a frame
+with unlinked nodes — ring, tree and grid now lay out the linked part and put those in a band) — the canvas is 24 px
 shorter by the bar under it. The legend starts closed there (no knowledge relation), so it
 takes no canvas height. Two node colours changed: `claim` and `classification_scheme` were
 the default grey.
@@ -224,11 +238,76 @@ In the narrow panel that is a smaller, whole picture where the old one was a lar
 cropped one; two clicks on `+` (three on `everything`) give the old zoom back.
 
 Limits, deliberately not hidden: `nested` on a frame with several hundred un-nested nodes
-is a plain grid above the boxes — and `auto` picks `nested` as soon as ONE node sits in a
+is a plain grid above the boxes (t342: only the linked ones now — the unlinked go to the band
+under the drawing) — and `auto` picks `nested` as soon as ONE node sits in a
 box, so on the scratch fold `content` (17 nodes in 3 boxes, of 231) and `everything` (80
 in 19 boxes, of 447) come up that way too (counts from `smoke:live`, which reads without
 an access gate). The panel's inspector pane grows for a node with text, not the mirrors';
 the full tab still stacks the inspector under the canvas rather than beside it.
+
+## Drawing the whole fold (t342)
+
+Sam's ruling at t342 — "I need the view not narrowed at opening" — opens every surface on
+`everything`: 444 nodes / 416 relations on the scratch-kb fold, identified as
+`urn:moos:user:sam`. Four things keep that first picture readable. Only the unlinked rule is
+asserted (`smoke:lens` G); the rest was looked at.
+
+- **Label cut.** Node and relation labels are not drawn below a zoom step. Cytoscape's
+  `min-zoomed-font-size` compares the font with the texture scale
+  2^ceil(log2(zoom × devicePixelRatio)), so a cut can only fall at 2^k / devicePixelRatio;
+  `LABEL_ZOOM` (0.9) picks the last step at or below it. Labels draw above zoom 0.5 at 100 %
+  and 200 % display scaling, 0.8 at 125 %, 0.67 at 150 %. Box titles draw at every zoom.
+- **Exempt labels.** The selection, `find` matches and the hovered node keep their label
+  below the cut, enlarged with the zoom to stay 9 to 13 px on screen (half-octave steps, so
+  a zoom gesture restyles a few times, not every frame). Layout, fit and the box
+  double-click measure every label at its plain size, so an enlarged label moves nothing;
+  while labels are enlarged a box is sized around its nodes without their labels, so an
+  enlarged label does not swell its box. Above the cut every label is drawn at its plain
+  size. The hover is cleared when the pointer leaves the canvas.
+- **Unlinked band.** The nodes no relation of the frame touches (141 under sam's urn, 156
+  under a bare "sam") are left out of the packing and laid on one grid under the linked
+  drawing, at least as wide as it, by type and then urn — under `nested`, and under ring,
+  tree and grid, which now lay out the linked part only. Node ids stay urns; no box is made.
+- **The `unlinked N` chip** in the bar hides or shows the band. It rides the legend's hidden
+  kinds under the key `(unlinked)`: while the band is hidden the legend toggle reads
+  `1 hidden`, `show all` brings it back, and showing it runs the layout again. It is not
+  saved.
+
+**The strip.** `sam · all permitted · 444/447 · access −3 · hp-z440.scratch-kb · seq 1012 ·
+T=342 · 4.0.8`. `444/447` is what is in the frame, not on the canvas — the legend and the
+chip can hide more, and the tooltip says so. Where the badges leave the summary less than
+240 px (the 380 px panel) it takes its own line; inside it the counts never shrink and the
+tail after them is cut first. The audit drawer has a counts row: nodes and relations in the
+frame of the whole fold, withheld by access, left out by the lens, focus or t. Anon reads
+`anon · public only · 1/447 · Bring me in`; "Bring me in" on with no identity stored reads
+`· no identity — Settings`. The side panel calls a frame restored from session scratch
+CACHED until the opening read lands, and the STALE / CACHED titles and the failed-refresh
+banner name the lens the frame was read under — the lens row may already name another.
+
+Looked at, not asserted: the built `dist/preview-live.html` served from `127.0.0.1` with
+`?engine=` set to the scratch kernel (GET only), in the desktop app's browser pane, 380 px
+panel, devicePixelRatio 1, the identity in the harness shim:
+
+- `urn:moos:user:sam`, `everything`: the summary on its own line, 306 px; who/where (104 px)
+  and the counts (121 px) whole, the tail cut (80 of 264 px). A bare "sam":
+  `431/447 · access −16` whole, who/where cut. Anon: `1/447 · Bring me in`. "Bring me in"
+  pressed with no identity: `1/447 · no identity — Settings`. `content`: `228/447 · access −3`;
+- the inline graph (380 x 155, fit zoom 0.052 to 0.058): an ordinary label not drawn (it
+  would be 0.47 px); the selected claim drawn at 10.6 px, a hovered node at 11.7 px; at zoom
+  0.3 10.8 px, at 0.49 12.5 px; from 0.51 every label at its plain size (4.6 px);
+- `re-layout` twice: 0 of 444 positions differ; with a hovered box, a hovered node and 5
+  `find` matches: 0 differ. A selection moves 59 positions under `re-layout`, with the
+  enlargement and without it alike — the selected node's 3 px border (t337) enters its
+  measured label box;
+- a pointer leaving the canvas from a node clears its hover; a move onto the canvas's own
+  layer keeps it;
+- a failed read (the page's fetch rejected) after `content` → `everything`: STALE, and the
+  banner reads `(seq 1012, content lens)`;
+- Settings with a custom workstation `hp-z440`: Save disabled and the note
+  `not a workstation urn — write urn:moos:workstation:<name>, or pick none`. The stored bare
+  "sam" alert names public workspaces and unattributed nodes, every other seat hidden.
+
+Not looked at: the side panel's CACHED badge (it needs the extension) and `selftest.html`.
 
 ## Finding and inspecting in the knowledge graph (t337)
 
@@ -312,7 +391,8 @@ access posture, which is anon, 1 node.
   `pilot.engine` override only for a fleet engine
 - the graph drawing itself — boxes, relation styles, legend ticks, the kept zoom and
   pan, the refit, the drag that pans. Cytoscape needs a browser; "Drawing the knowledge
-  graph" says what was looked at. What is asserted is what it is asked to draw: which
+  graph" and "Drawing the whole fold" say what was looked at. What is asserted is what
+  it is asked to draw: which
   node sits in which box and which layout `auto` picks (`smoke:live`)
 - a mirror drawing what the panel asks for — the layout choice, the search fade, the
   centring on a relation row. `selftest.html` asserts that the scratch-view channel

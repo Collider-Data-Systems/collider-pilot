@@ -154,6 +154,17 @@ starts closed and the canvas keeps its height. An unticked row stays unticked on
 lenses — the bar counts them and `show all` ticks every row back — and ticking back a node
 kind the layout last ran without runs the layout again, so its nodes get a place.
 
+**The whole fold (t342).** Every surface opens on `everything` (Sam, t342: "I need the view
+not narrowed at opening"). Node and relation labels are not drawn below a zoom step — 0.5
+at 100 % and 200 % display scaling, 0.8 at 125 %, 0.67 at 150 % — box titles always are,
+and the selection, `find` matches and the hovered node keep a label enlarged to stay
+readable, without moving anything. The nodes no relation of the frame touches sit in one
+band under the linked drawing, on every layout; the bar's `unlinked N` chip hides or shows
+it, counts as one of the legend's hidden rows (`1 hidden`) and comes back with `show all`.
+The strip's `444/447 · access −3` counts what is in the frame and what the access posture
+alone left out — not what is on the canvas, and not protection (see TESTING.md, "Drawing
+the whole fold").
+
 A frame re-read that brings the same node and relation ids updates the drawing in place
 and keeps the zoom and pan. When the canvas changes size — the legend opens, the window is
 resized — the picture is fitted again, unless the user has zoomed or panned since the last

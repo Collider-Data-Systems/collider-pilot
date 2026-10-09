@@ -107,9 +107,9 @@ export const LENSES: Lens[] = [
       "session",
       "domain_tag",
     ],
-    // ALL ports (t264 review major): this is the DEFAULT lens, and main's default
-    // frame showed every relation between the retained nodes. Narrowing relations is
-    // the spine lenses' job; the content lens narrows TYPES only.
+    // ALL ports (t264 review major): this was the DEFAULT lens until t342, and main's
+    // default frame showed every relation between the retained nodes. Narrowing relations
+    // is the spine lenses' job; the content lens narrows TYPES only.
     ports: [],
     title:
       "Knowledge and work products: knowledge items, derivations, applied programs, grammar fragments — with every relation between them.",
@@ -186,8 +186,14 @@ export const LENSES: Lens[] = [
 /** The lens id used when the advanced checkboxes deviate from every preset. */
 export const CUSTOM_LENS_ID = "custom";
 
-/** Default lens on open — continuity with the classic four-type content slice. */
-export const DEFAULT_LENS_ID = "content";
+/**
+ * Default lens on open — `everything` (t342, Sam: "I need the view not narrowed at
+ * opening"). The panel opens on the whole permitted fold; every narrower lens is one tap
+ * away and Reset comes back here. It was `content` (the classic four-type slice), which hid
+ * every principal, place and claim until a lens was tapped. This widens WHAT is selected,
+ * never WHO: the access posture still gates the frame exactly as before.
+ */
+export const DEFAULT_LENS_ID = "everything";
 
 export function lensById(id: string): Lens | null {
   return LENSES.find((l) => l.id === id) ?? null;
@@ -755,7 +761,7 @@ export function GraphControls({
           type="button"
           className="gc-btn gc-btn-ghost gc-reset"
           onClick={onResetFilter}
-          title="Back to the default content lens, no focus, 1 hop, latest t"
+          title="Back to the opening view: the everything lens, no focus, 1 hop, latest t"
         >
           Reset
         </button>

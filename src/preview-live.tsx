@@ -58,6 +58,8 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import {
   DEFAULT_GRAPH_LAYOUT,
   DEFAULT_ACCESS_POSTURE,
+  loadAccessPosturePref,
+  saveAccessPosturePref,
   type GraphLayoutName,
   type AccessPosture,
 } from "./state/prefs";
@@ -286,8 +288,21 @@ function PreviewLive() {
     }
   }, []);
 
+  // t342: open under the SAVED posture, as the side panel does (sidepanel.tsx mount effect,
+  // loadAccessPosturePref) — read through the storage shim, never from the URL. This harness
+  // always opened anon (1 node on the scratch fold), whatever "Bring me in" had saved.
   useEffect(() => {
-    void loadFrame();
+    let cancelled = false;
+    void (async () => {
+      const savedPosture = await loadAccessPosturePref();
+      if (!cancelled) setAccessMode(savedPosture);
+      const initialReq = buildFrameRequest(defaultSliceSpec(), savedPosture);
+      frameRequestRef.current = initialReq;
+      await loadFrame(initialReq);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [loadFrame]);
 
   // (d) WORKER-STRIP PROOF (dev console). A page-forged access.user/workstation is DROPPED by
@@ -433,6 +448,7 @@ function PreviewLive() {
   const handleAccessModeChange = useCallback(
     (mode: AccessPosture) => {
       setAccessMode(mode);
+      void saveAccessPosturePref(mode); // t342: persisted as the panel does, so a reload keeps it
       setViewScope(""); // posture change ⇒ permitted set changes; reset focus to All permitted
       commitSlice(spec, mode, "");
     },
@@ -491,12 +507,14 @@ function PreviewLive() {
           streamStatus={isLive ? streamStatus : "off"}
           pulseKey={pulseKey}
           stale={stale}
+          requestedMode={accessMode}
         />
       )}
       {stale && (
         <div className="stale-banner" role="status">
           <span className="stale-banner-text">
-            refresh failed — showing the last good frame (seq {frame?.provenance?.log_seq}):{" "}
+            refresh failed — showing the last good frame (seq {frame?.provenance?.log_seq},{" "}
+            {frame?.provenance?.view_filter?.lens ?? "custom"} lens):{" "}
             {error}
           </span>
           <button className="mini-btn" onClick={() => void loadFrame()}>

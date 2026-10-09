@@ -152,6 +152,9 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [current, setCurrent] = useState<PilotAccessConfig | null>(null);
   const identitySet = isIdentitySet(current);
+  // t342: stored, but not a user urn — "Bring me in" then permits the public workspaces only:
+  // the frame keeps those and the unattributed nodes, and every other seat is hidden.
+  const identityMalformed = identitySet && !USER_URN_PATTERN.test(current?.user ?? "");
   const [open, setOpen] = useState(false);
   // Whether the stored identity has actually been READ yet. The auto-expand below must
   // wait for it: before the async chrome.storage read resolves, identitySet is a
@@ -163,8 +166,10 @@ export function SettingsPanel({
   // stuck-at-anon state this block exists to fix. Only once the stored identity has
   // resolved (see above). A manual collapse sticks.
   useEffect(() => {
-    if (identityLoaded && accessMode === "identified" && !identitySet) setOpen(true);
-  }, [identityLoaded, accessMode, identitySet]);
+    if (identityLoaded && accessMode === "identified" && (!identitySet || identityMalformed)) {
+      setOpen(true);
+    }
+  }, [identityLoaded, accessMode, identitySet, identityMalformed]);
 
   const activeProvider = provider ? getProvider(provider.providerId) : null;
 
@@ -311,7 +316,13 @@ function IdentitySection({
 
   const effectiveUser = userPick === CUSTOM ? userText.trim() : userPick;
   const effectiveWs = wsPick === CUSTOM ? wsText.trim() : wsPick;
-  const canSave = effectiveUser.length > 0;
+  // t342: only a user urn can be saved. A bare "sam" used to save: it resolves no governs
+  // closure and owns no session, so "Bring me in" drew public + unattributed nodes only
+  // (431 of 447 on the scratch fold, every seat hidden) while the strip still read "sam".
+  const userValid = USER_URN_PATTERN.test(effectiveUser) && effectiveUser !== ANON_URN;
+  const wsValid = effectiveWs === "" || WORKSTATION_URN_PATTERN.test(effectiveWs);
+  const canSave = userValid && wsValid;
+  const storedMalformed = identitySet && !USER_URN_PATTERN.test(current?.user ?? "");
 
   const handleSave = useCallback(async () => {
     if (!canSave) return;
@@ -346,6 +357,13 @@ function IdentitySection({
         <div className="gc-identity-hint" role="note">
           "Bring me in" is on but no identity is set — pick one below to load your
           workspaces
+        </div>
+      )}
+      {storedMalformed && (
+        <div className="gc-identity-hint" role="alert">
+          the stored user "{current?.user}" is not a user urn — it owns no workspace, so
+          "Bring me in" draws the public workspaces and unattributed nodes only — every other
+          seat is hidden. Pick urn:moos:user:… below and save.
         </div>
       )}
       <label className="gc-field">
@@ -386,6 +404,9 @@ function IdentitySection({
           />
         </label>
       )}
+      {userPick === CUSTOM && userText.trim() !== "" && !userValid && (
+        <div className="gc-note">not a user urn — write urn:moos:user:&lt;name&gt;</div>
+      )}
       <label className="gc-field">
         <span className="gc-label">workstation (optional)</span>
         <select
@@ -416,6 +437,12 @@ function IdentitySection({
             autoComplete="off"
           />
         </label>
+      )}
+      {/* t342: Save is disabled for this too, so say why, as for the user urn above. */}
+      {wsPick === CUSTOM && wsText.trim() !== "" && !wsValid && (
+        <div className="gc-note">
+          not a workstation urn — write urn:moos:workstation:&lt;name&gt;, or pick none
+        </div>
       )}
       <div className="gc-identity-actions">
         <button

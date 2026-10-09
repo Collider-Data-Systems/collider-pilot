@@ -31,6 +31,7 @@
  * @typedef {import("./types").FrameProvenance} FrameProvenance
  * @typedef {import("./types").AccessScope} AccessScope
  * @typedef {import("./types").AccessResolution} AccessResolution
+ * @typedef {import("./types").FoldCounts} FoldCounts
  */
 
 import { resolveAccess, accessKeepSet } from "./access.js";
@@ -498,6 +499,27 @@ export function selectFrame(fold, opts) {
     accessKeep,
   );
 
+  // t342 HONEST COUNTS (Sam: "I need the view not narrowed at opening"): what the access
+  // keep-set alone left out, counted over the WHOLE fold — so the lens, focus and t, which
+  // narrow by choice, never read as access. A relation is withheld when one of its ends is.
+  // Counting only: the keep-set and what it keeps are untouched.
+  const withheld = new Set(
+    accessKeep ? allNodes.filter((n) => !accessKeep.has(n.urn)).map((n) => n.urn) : [],
+  );
+  /** @type {FoldCounts} */
+  const foldCounts = {
+    total: allNodes.length,
+    in_frame: nodes.length,
+    withheld_by_access: withheld.size,
+    relations: {
+      total: allRelations.length,
+      in_frame: relations.length,
+      withheld_by_access: allRelations.filter(
+        (r) => withheld.has(r.source_urn) || withheld.has(r.target_urn),
+      ).length,
+    },
+  };
+
   // workspace = first in-scope node that is a session; else first scope urn.
   const sessionScope = viewFilter.scope_urns.find(
     (u) => fold.nodes?.[u]?.type_id === "session",
@@ -529,6 +551,7 @@ export function selectFrame(fold, opts) {
     mock: false,
     // Stamp the derived access fiber (or leave undefined when no access scope was requested).
     ...(accessResolution ? { access: accessResolution } : {}),
+    fold_counts: foldCounts,
   };
 
   return { provenance, nodes, relations };

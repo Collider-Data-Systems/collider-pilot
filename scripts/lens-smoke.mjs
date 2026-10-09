@@ -25,6 +25,14 @@
  *      as a string literal anywhere else in `src/` or `scripts/`. The knowledge lens and
  *      port group above are built from it, so a restated name would be a second copy that
  *      can drift — the failure this script exists for.
+ *   E. (t342) The panel opens un-narrowed: `defaultSliceSpec()` is the `everything` sentinel.
+ *      Sam's ruling, held as a gate rather than a comment — a later "sensible default" lens
+ *      would otherwise quietly narrow the opening view again.
+ *   F. (t342) The strip's counts are honest: `provenance.fold_counts` (the REAL transform, on
+ *      a synthetic fold) counts what the access posture alone withheld over the whole fold,
+ *      apart from what the lens narrowed — narrowing the lens never moves the access number.
+ *   G. (t342) The unlinked band takes exactly the nodes no relation of the CURRENT frame
+ *      touches (`unlinkedUrns`, the real FrameGraph.tsx rule — nothing is drawn).
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -44,6 +52,7 @@ import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import { KB_CLAIM_KINDS, KB_RELATIONS } from "../src/ui/kb-vocab.js";
+import { selectFrame } from "../src/mcp/transform.js";
 
 const SRC = resolve(process.cwd(), "src/components/GraphControls.tsx");
 
@@ -83,6 +92,35 @@ async function loadModule() {
   );
   try {
     return await import(pathToFileURL(out).href);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * t342: type-strip `FrameGraph.tsx` for its pure exports, as live-smoke.mjs does — beside the
+ * source, next to the one TypeScript module it imports a VALUE from (`state/prefs.ts`).
+ * React and Cytoscape are only loaded; nothing mounts or draws.
+ */
+async function loadFrameGraph() {
+  const strip = (file) =>
+    ts.transpileModule(readFileSync(resolve(process.cwd(), file), "utf8"), {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+        jsx: ts.JsxEmit.ReactJSX,
+      },
+    }).outputText;
+  const dir = mkdtempSync(join(resolve(process.cwd(), "src/components"), ".lens-smoke-"));
+  try {
+    writeFileSync(join(dir, "prefs.mjs"), strip("src/state/prefs.ts"));
+    writeFileSync(
+      join(dir, "FrameGraph.mjs"),
+      strip("src/components/FrameGraph.tsx")
+        .replaceAll('from "../state/prefs"', 'from "./prefs.mjs"')
+        .replaceAll('from "../', 'from "../../'),
+    );
+    return await import(pathToFileURL(join(dir, "FrameGraph.mjs")).href);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -230,6 +268,116 @@ if (failures === before) {
       `names and ${colours.length} colours are in none of the ${literals} string literals of ` +
       `${codeFiles.length} code files`
   );
+}
+
+// E — the panel opens un-narrowed (t342, Sam: "I need the view not narrowed at opening").
+// The opening spec is the `everything` sentinel: all types, all ports, no t bound, 1 hop.
+console.log("\nE. the opening slice is the whole permitted fold");
+const opening = m.defaultSliceSpec();
+if (
+  m.DEFAULT_LENS_ID !== "everything" ||
+  opening.lens !== "everything" ||
+  opening.types.length !== 1 ||
+  opening.types[0] !== "*" ||
+  opening.ports.length !== 0 ||
+  opening.t !== "" ||
+  opening.hops !== 1
+) {
+  fail(`the panel opens narrowed: ${JSON.stringify(opening)} — expected the everything sentinel`);
+} else {
+  pass(`opens on lens '${opening.lens}' (types ["*"], ports all, t latest, 1 hop)`);
+}
+
+// F — the strip's counts (t342): "444/447 · access −3" must not mix the access posture with
+// the lens. A synthetic fold (synthetic urns only; the repo is public): a public seat, the
+// user's own seat, someone else's seat, two unattributed items, and two relations.
+console.log("\nF. the frame counts access withholding apart from lens narrowing");
+const SEAT = "urn:moos:session:lens-smoke.";
+const ITEM = "urn:moos:knowledge_item:lens-smoke.";
+const USER = "urn:moos:user:lens-smoke";
+const countFold = {
+  nodes: Object.fromEntries(
+    [
+      [`${SEAT}public`, "session", { anon_visible: true }],
+      [`${SEAT}mine`, "session", { owner_urn: USER }],
+      [`${SEAT}theirs`, "session", { owner_urn: `${USER}-other` }],
+      [`${ITEM}a`, "knowledge_item", {}],
+      [`${ITEM}b`, "knowledge_item", {}],
+    ].map(([urn, type_id, props]) => [
+      urn,
+      {
+        urn,
+        type_id,
+        properties: Object.fromEntries(Object.entries(props).map(([k, value]) => [k, { value }])),
+      },
+    ]),
+  ),
+  relations: Object.fromEntries(
+    [
+      ["mine-theirs", `${SEAT}mine`, `${SEAT}theirs`],
+      ["a-b", `${ITEM}a`, `${ITEM}b`],
+    ].map(([id, src_urn, tgt_urn]) => [
+      id,
+      { urn: `urn:moos:relation:lens-smoke.${id}`, src_urn, src_port: "depends-on", tgt_urn },
+    ]),
+  ),
+};
+const scopeOf = (mode) => ({
+  mode,
+  user: mode === "anon" ? "urn:moos:user:anon" : USER,
+  workstation: null,
+  role: null,
+  identity_source: mode === "anon" ? "anon" : "trusted-storage",
+  enforced_by: "client-presentation",
+});
+const frameOf = (view_filter) =>
+  selectFrame(countFold, { healthz: { t_day: 342 }, request: { view_filter } });
+const countCases = [
+  // the whole fold as the user: only someone else's seat (and its one relation) withheld
+  ["identified, everything", { types: ["*"], access: scopeOf("identified") }, [5, 4, 1, 2, 1, 1]],
+  // a narrower lens holds less — the access number does not move
+  ["identified, sessions only", { types: ["session"], access: scopeOf("identified") }, [5, 2, 1, 2, 0, 1]],
+  // anon: the public seat only
+  ["anon, everything", { types: ["*"], access: scopeOf("anon") }, [5, 1, 4, 2, 0, 2]],
+  // no access scope: nothing is withheld
+  ["no access scope", { types: ["*"] }, [5, 5, 0, 2, 2, 0]],
+];
+for (const [name, vf, want] of countCases) {
+  const c = frameOf(vf).provenance.fold_counts;
+  const got = c
+    ? [c.total, c.in_frame, c.withheld_by_access, c.relations.total, c.relations.in_frame, c.relations.withheld_by_access]
+    : null;
+  if (JSON.stringify(got) !== JSON.stringify(want)) {
+    fail(`${name}: fold_counts [total, in_frame, withheld; relations …] ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`);
+  } else {
+    pass(`${name}: ${c.in_frame}/${c.total} in frame · access −${c.withheld_by_access} · relations ${c.relations.in_frame}/${c.relations.total}`);
+  }
+}
+
+// G — the unlinked band (t342): the nodes no relation of the CURRENT frame touches.
+console.log("\nG. the unlinked band holds exactly the nodes no relation of the frame touches");
+const { unlinkedUrns } = await loadFrameGraph();
+const bandOf = (frame) => [...unlinkedUrns(frame)].sort().join(", ");
+const whole = frameOf(countCases[0][1]);
+const bandCases = [
+  // the public seat has no relation; my seat's only relation runs to a withheld seat, so it is
+  // linked in the fold and unlinked in this frame; a and b link each other
+  ["identified, everything", whole, [`${SEAT}mine`, `${SEAT}public`]],
+  // a frame without b (as a narrower slice would leave it): a lost its only relation here
+  [
+    "identified, everything but b",
+    { ...whole, nodes: whole.nodes.filter((n) => n.urn !== `${ITEM}b`) },
+    [`${ITEM}a`, `${SEAT}mine`, `${SEAT}public`],
+  ],
+  ["anon", frameOf(countCases[2][1]), [`${SEAT}public`]],
+];
+for (const [name, frame, want] of bandCases) {
+  const got = bandOf(frame);
+  if (got !== [...want].sort().join(", ")) {
+    fail(`${name}: unlinked [${got}], expected [${[...want].sort().join(", ")}]`);
+  } else {
+    pass(`${name}: ${want.length} unlinked of ${frame.nodes.length}`);
+  }
 }
 
 console.log(

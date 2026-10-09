@@ -213,6 +213,34 @@ body {
 .prov-toggle .prov-badge + .prov-badge {
   margin-left: 4px;
 }
+/* t342: the posture strip's summary needs 240px; where the badges leave less (a docked side
+   panel is 380px) it takes its own line under them instead of shrinking to a few letters.
+   Inside it the counts never shrink; the tail after them (engine · seq · T · ontology) only
+   takes the room left over (basis 0), so an ellipsis cuts it first and who/where only when
+   who/where and the counts alone do not fit. */
+.posture-strip .prov-toggle {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.posture-strip .prov-toggle .prov-summary {
+  display: flex;
+  flex: 1 1 240px;
+}
+.prov-summary > .prov-who {
+  flex: 0 1 auto;
+  min-width: 3ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prov-summary > .prov-counts {
+  flex: none;
+}
+.prov-summary > .prov-rest {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .prov-badge {
   font-size: 9px;
   font-weight: 700;
@@ -368,6 +396,12 @@ body {
 .graph-bar .mini-btn {
   flex: none;
   white-space: nowrap;
+}
+/* t342: the `unlinked N` chip while the band is shown (aria-pressed). */
+.graph-bar .mini-btn.is-on {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background: var(--accent-muted);
 }
 .graph-legend-toggle {
   flex: 0 1 auto;

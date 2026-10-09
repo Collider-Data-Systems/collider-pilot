@@ -150,6 +150,26 @@ export interface ViewFilter {
   lens?: string;
 }
 
+/** One kind of element (nodes or relations) counted against the whole fold — see FoldCounts. */
+export interface FoldCount {
+  total: number; // in the whole fold the engine returned
+  in_frame: number; // in this frame (after access AND the lens / focus / t)
+  withheld_by_access: number; // left out by the access posture alone, whatever the lens
+}
+
+/**
+ * t342 HONEST COUNTS (Sam: "I need the view not narrowed at opening"): how much of the fold
+ * this frame holds, and how much the ACCESS posture alone left out. The two are kept apart:
+ * what the lens, focus and t narrow is `total - withheld_by_access - in_frame`, a choice the
+ * user made, never counted as access. A relation is withheld when one of its ends is.
+ * "In the frame" is not "on the canvas": the graph's legend and its `unlinked` chip can hide
+ * more, and they are not counted here. Presentation only — under ACCESS: PRESENTATION the
+ * whole fold reached this browser either way (in the extension, its worker).
+ */
+export interface FoldCounts extends FoldCount {
+  relations: FoldCount;
+}
+
 /**
  * Provenance header Steinberger requires: every frame states exactly which engine,
  * log position, workspace/session, purpose, and view_filter it came from.
@@ -198,6 +218,12 @@ export interface FrameProvenance {
    * sub-note when `intersection_applied === false`. Absent ⇒ the header omits the row.
    */
   access?: AccessResolution;
+  /**
+   * t342: in-frame / whole-fold / withheld-by-access counts (transform.js `selectFrame`), for
+   * the strip's "444/447 · access −3". Absent on fixture frames and on frames cached before
+   * t342 — the strip then omits the counts.
+   */
+  fold_counts?: FoldCounts;
 }
 
 /** A projected frame: provenance + the selected nodes and relations. */

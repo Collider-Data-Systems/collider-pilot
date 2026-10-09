@@ -193,6 +193,10 @@ function SidePanel() {
    * (Copilot #26). It clears only when a frame actually lands.
    */
   const [readFailed, setReadFailed] = useState(false);
+  // t342: the frame on screen was restored from session scratch and the opening read has not
+  // landed — it may be a narrower slice than the `everything` lens row above says (Sam: "I
+  // need the view not narrowed at opening"). The strip calls it CACHED, not LIVE.
+  const [restored, setRestored] = useState(false);
   const [popOutSupported] = useState(() => isPopOutSupported());
   const [fullTabSupported] = useState(() => isFullTabSupported());
   const [pipOpen, setPipOpen] = useState(false);
@@ -252,6 +256,7 @@ function SidePanel() {
         setFrame(safeFrame);
         setStatus("ready");
         setReadFailed(false); // a good frame landed — the posture is current again
+        setRestored(false); // t342: and it is no longer the restored one
         setSelectedUrn((prev) => {
           const stillThere =
             prev && safeFrame.nodes.some((n) => n.urn === prev) ? prev : null;
@@ -323,6 +328,7 @@ function SidePanel() {
         setFrame(scratch.frame);
         setSelectedUrn(scratch.selectedUrn);
         setStatus("ready");
+        setRestored(true);
       }
       // Seed the first read under the restored posture so an "identified" toggle survives a
       // reopen (default anon on a fresh profile). The worker still resolves the identity.
@@ -649,6 +655,8 @@ function SidePanel() {
           streamStatus={isLive ? streamStatus : "off"}
           pulseKey={pulseKey}
           stale={stale}
+          cached={restored}
+          requestedMode={accessMode}
         />
       )}
       {/* A failed refresh WITH a frame already loaded used to be invisible: the frame was
@@ -659,7 +667,8 @@ function SidePanel() {
       {stale && (
         <div className="stale-banner" role="status">
           <span className="stale-banner-text">
-            refresh failed — showing the last good frame (seq {frame?.provenance?.log_seq}):{" "}
+            refresh failed — showing the last good frame (seq {frame?.provenance?.log_seq},{" "}
+            {frame?.provenance?.view_filter?.lens ?? "custom"} lens{restored ? ", restored" : ""}):{" "}
             {error}
           </span>
           <button className="mini-btn" onClick={() => void loadFrame()}>
