@@ -208,6 +208,9 @@ function drawCheck(fg, frame) {
           : val(e, "line-fill") === "linear-gradient" && stops[0] === ks && stops[stops.length - 1] === kt) &&
         kappaRgb.has(ks) && kappaRgb.has(kt) &&
         val(e, "source-arrow-shape") === d.kss && val(e, "target-arrow-shape") === d.kts &&
+        // both ends of the uncoloured state are hollow, every other end filled (Copilot on #46)
+        val(e, "source-arrow-fill") === (d.kss === END_GLYPHS.source.uncoloured ? "hollow" : "filled") &&
+        val(e, "target-arrow-fill") === (d.kts === END_GLYPHS.target.uncoloured ? "hollow" : "filled") &&
         (ks === neutral) === (d.kss !== END_GLYPHS.source.colour) &&
         (kt === neutral) === (d.kts !== END_GLYPHS.target.colour) &&
         val(e, "line-style") === (undeclared ? UNDECLARED_MARKER.lineStyle : "solid") &&
@@ -982,6 +985,8 @@ console.log("\nI. the drawer offers the static lists + the engine's declared nam
   const none = m.drawerVocab(undefined, null);
   check(
     absent.source === "static" && /no \/operad\//.test(absent.note) &&
+      // the note names what the fold adds when it adds something (Copilot on #46), else "static lists only"
+      /static lists \+ \d+ types? and \d+ ports? from the permitted fold/.test(absent.note) && /static lists only$/.test(none.note) &&
       absent.portGroups.length === m.PORT_GROUPS.length + 1 && absent.undeclaredPorts.length === 0 &&
       none.source === "static" && /no engine grammar/.test(none.note) &&
       none.portGroups.length === m.PORT_GROUPS.length && none.typeGroups.length === m.TYPE_GROUPS.length,

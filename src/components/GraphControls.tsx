@@ -485,12 +485,18 @@ export function drawerVocab(
         ]
       : []),
   ];
+  // Without an engine grammar the drawer is the static lists plus what the permitted fold adds
+  // (the "in this fold" groups above); the note says which.
+  const staticNote =
+    foldOnlyTypes.length || foldOnlyPorts.length
+      ? `static lists + ${plural(foldOnlyTypes.length, "type")} and ${plural(foldOnlyPorts.length, "port")} from the permitted fold`
+      : "static lists only";
   const note = engine
     ? `+${plural(engineTypes.length, "type")} and ${plural(enginePorts.length, "port")} the engine declares (ontology ${ov})` +
       (foldOnlyPorts.length ? ` · ${plural(foldOnlyPorts.length, "label")} on no declared pair` : "")
     : grammar && grammar.status === "absent"
-      ? `${grammarGap(grammar)} (${grammar.reason}) — static lists only`
-      : "no engine grammar on this frame — static lists only";
+      ? `${grammarGap(grammar)} (${grammar.reason}) — ${staticNote}`
+      : `no engine grammar on this frame — ${staticNote}`;
   return {
     typeGroups,
     portGroups,

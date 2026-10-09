@@ -1598,6 +1598,9 @@ function drawCheck(fg, frame) {
           : val(e, "line-fill") === "linear-gradient" && stops[0] === ks && stops[stops.length - 1] === kt) &&
         kappaRgb.has(ks) && kappaRgb.has(kt) &&
         val(e, "source-arrow-shape") === d.kss && val(e, "target-arrow-shape") === d.kts &&
+        // both ends of the uncoloured state are hollow, every other end filled (Copilot on #46)
+        val(e, "source-arrow-fill") === (d.kss === END_GLYPHS.source.uncoloured ? "hollow" : "filled") &&
+        val(e, "target-arrow-fill") === (d.kts === END_GLYPHS.target.uncoloured ? "hollow" : "filled") &&
         (ks === neutral) === (d.kss !== END_GLYPHS.source.colour) &&
         (kt === neutral) === (d.kts !== END_GLYPHS.target.colour) &&
         val(e, "line-style") === (undeclared ? UNDECLARED_MARKER.lineStyle : "solid") &&

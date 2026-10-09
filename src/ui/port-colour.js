@@ -12,7 +12,7 @@
  *   - three states are NOT colours and never get a hue — a neutral grey plus a glyph of their
  *     own at that end, or on the line:
  *       exempt      κ = ""            (98f2ccc kernels on 4.0.x)      source ⊣ tee · target ▸⊣
- *       uncoloured  port not in the map                               source ○ · target ○▸
+ *       uncoloured  port not in the map                               source ○ · target ○▹ (hollow)
  *       undeclared  (src_port, tgt_port) is on no declared pair       dotted line + ◇ midway
  *     The pair check is the ONLY grammar check here: the kernel's type law is not ported, and
  *     the workbench's check 8 is the authority on admission.

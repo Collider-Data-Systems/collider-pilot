@@ -1078,6 +1078,9 @@ export const STYLE: cytoscape.StylesheetStyle[] = [
         e.data("kss") === "circle" ? "hollow" : "filled",
       "target-arrow-shape": "data(kts)",
       "target-arrow-color": "data(kt)",
+      // the uncoloured state is hollow at both ends (Cytoscape fills every arrow by default)
+      "target-arrow-fill": (e: cytoscape.EdgeSingular) =>
+        e.data("kts") === "circle-triangle" ? "hollow" : "filled",
       "mid-target-arrow-shape": (e: cytoscape.EdgeSingular) =>
         e.data("kpair") === "undeclared" ? UNDECLARED_MARKER.midGlyph : "none",
       "mid-target-arrow-color": KAPPA_NEUTRAL,
