@@ -288,8 +288,9 @@ Measured on the t336 scratch fold, `knowledge` lens, identified (122 nodes / 178
 relations), with no layout stored:
 
 - it comes up `nested`: 19 boxes; 80 of the 82 nesting relations are shown as boxes and
-  98 relations as lines; 38 sources stand in the column (t342 P3: inside the box that cites
-  them now — see "Components and sources in their box"); 0 overlapping labels (leaf labels,
+  98 relations as lines; 38 sources drawn inside the box of the node that cites them (t342 P3;
+  a source cited by several boxes goes to the box with the most knowledge relations to it, and
+  the other boxes show ↗N — see "Components and sources in their box"); 0 overlapping labels (leaf labels,
   box titles, titles against leaf labels);
 - fit zoom by surface: side panel inline graph (380 x 155 canvas) 0.11, popup mirror
   (400 x 465) 0.23, full-tab mirror at 1600 x 900 (1600 x 393) 0.39. At fit the labels are
@@ -311,7 +312,7 @@ relations), with no layout stored:
   rows stay hidden across a frame re-read;
 - a node kind unticked, then a layout run without it (a lens change, a layout picked,
   `re-layout`), then ticked back: the layout runs again and its nodes get their place —
-  38 sources in the column (t342 P3: in their boxes), 0 labels overlapping (before: all 38
+  38 sources inside the boxes that cite them (t342 P3), 0 labels overlapping (before: all 38
   on one point, or 12 labels overlapping). Two presses of `re-layout` give the same positions in every legend
   state. On a lens without the unticked kind the bar still reads `1 hidden`, with
   `show all` beside it.
