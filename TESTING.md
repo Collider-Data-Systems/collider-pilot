@@ -174,6 +174,37 @@ the node types is `absent` and cached; a 404 on the port colours alone keeps the
 pairs and types (the drawer's engine groups stand) and draws relation kind; a route that does
 not answer is cut at the timeout — `absent`, marked unreachable, kept for the back-off only —
 and the check races a test deadline, so a timeout that stops cutting fails instead of hanging.
+J (t342 P2/P3) holds the `nested` drawing outside the boxes and the sources inside them, on a
+SYNTHETIC frame whose urns and types interleave its five loose components (36, 6, 5, 2 and 1
+nodes), three boxes (one inside another) and seven sources, through the real
+`src/ui/component-layout.js` and FrameGraph's real `drawingPlan`, `runLayout` and STYLE in
+headless Cytoscape (which measures no text: labels count as zero-size there). Pure rules first:
+the components; the breadth-first layers, exactly — the chain n03 / n02, n04 / n01 / n00 and the
+star's hub over its five leaves; the cose bound (none at 30 nodes or at 2000, at most 100
+iterations, each anneal ending at its floor) and ONE budget of 1.5 M pair-steps per frame,
+largest component first (ten components of 170 nodes: 100 iterations for the first, none for the
+rest; 287 / 158 / 40 / 31 nodes: 36 / 0 / 0 / 48); and `separateLabels` taking 24 label boxes
+dropped on one point from 276 overlapping pairs to 0. Then the drawing: every linked node outside
+a box gets its position from exactly its own component; the components and the top-level boxes
+occupy disjoint rectangles while urn order and type order change component 21 times — so no urn
+or type grid between components — and each component of 30 nodes or fewer is drawn layer by
+layer, every layer strictly above the next (the chain one row per layer) — so none inside one;
+only the 36-node component is cose-refined (100 iterations), its related nodes closer than its
+average pair; each source sits in the box that cites it most (a tie to the first by urn, a
+box's own citation counted, the inner box first) and the other citing box carries `elsewhere` 2
+(`↗2`); every node id is a frame urn and every line a frame relation; with the nesting relation
+unticked every source is in a component, the components' rectangles are disjoint there too (a
+source moved out to a column would stretch its component's rectangle over the others) and the
+small ones are drawn layer by layer; the frame read in reverse order draws the same 66
+positions; laid out again at a 380 × 155 and a 1600 × 393 canvas, no node moves inside its
+component, and a second run on the same instance moves none; and a frame of four 110-node
+components gets 100, 100 and 50 iterations, the fourth breadth-first. J was run once at t342
+against deliberately broken copies of the layout, and each copy fails it: one urn grid over all
+the loose nodes (five checks), one urn-sorted layer per component, components placed without
+their relations, the small components on one urn row, the sources moved to a column when no
+box is drawn, cose on the panel's own canvas (the 36-node component moved by up to 131 px),
+label boxes off their grid (a second run moved all 66 nodes), and a cose budget per component
+(in the helper, or FrameGraph ignoring the frame's).
 
 **`selftest.html`** (open it from the extension: `chrome-extension://<id>/selftest.html`) is
 the one surface that can exercise what the harnesses fake — the worker seam with real
@@ -257,7 +288,9 @@ Measured on the t336 scratch fold, `knowledge` lens, identified (122 nodes / 178
 relations), with no layout stored:
 
 - it comes up `nested`: 19 boxes; 80 of the 82 nesting relations are shown as boxes and
-  98 relations as lines; 38 sources stand in the column; 0 overlapping labels (leaf labels,
+  98 relations as lines; 38 sources drawn inside the box of the node that cites them (t342 P3;
+  a source cited by several boxes goes to the box with the most knowledge relations to it, and
+  the other boxes show ↗N — see "Components and sources in their box"); 0 overlapping labels (leaf labels,
   box titles, titles against leaf labels);
 - fit zoom by surface: side panel inline graph (380 x 155 canvas) 0.11, popup mirror
   (400 x 465) 0.23, full-tab mirror at 1600 x 900 (1600 x 393) 0.39. At fit the labels are
@@ -279,8 +312,8 @@ relations), with no layout stored:
   rows stay hidden across a frame re-read;
 - a node kind unticked, then a layout run without it (a lens change, a layout picked,
   `re-layout`), then ticked back: the layout runs again and its nodes get their place —
-  38 sources in the column, 0 labels overlapping (before: all 38 on one point, or 12
-  labels overlapping). Two presses of `re-layout` give the same positions in every legend
+  38 sources inside the boxes that cite them (t342 P3), 0 labels overlapping (before: all 38
+  on one point, or 12 labels overlapping). Two presses of `re-layout` give the same positions in every legend
   state. On a lens without the unticked kind the bar still reads `1 hidden`, with
   `show all` beside it.
 
@@ -308,8 +341,9 @@ In the narrow panel that is a smaller, whole picture where the old one was a lar
 cropped one; two clicks on `+` (three on `everything`) give the old zoom back.
 
 Limits, deliberately not hidden: `nested` on a frame with several hundred un-nested nodes
-is a plain grid above the boxes (t342: only the linked ones now — the unlinked go to the band
-under the drawing) — and `auto` picks `nested` as soon as ONE node sits in a
+was a plain grid above the boxes (t342: the unlinked go to the band under the drawing, and
+since P2 each connected component of the linked ones is laid out on its own — "Components and
+sources in their box") — and `auto` picks `nested` as soon as ONE node sits in a
 box, so on the scratch fold `content` (17 nodes in 3 boxes, of 231) and `everything` (80
 in 19 boxes, of 447) come up that way too (counts from `smoke:live`, which reads without
 an access gate). The panel's inspector pane grows for a node with text, not the mirrors';
@@ -484,7 +518,172 @@ Sam's three picks, kept as they shipped in #45 and recorded here: the label cut 
 zoom step (labelFloor / `LABEL_ZOOM`, 0.5 at 100 % display scaling — see "Drawing the whole
 fold"); relation labels follow the same cut, the port names a port-colour line carries
 included; and the `unlinked N` chip's state is not saved — neither are the legend ticks nor
-the new `colour by` switch. Nothing of the three changed in hand-off A.
+the new `colour by` switch. Nothing of the three changed in hand-off A, nor in hand-off B.
+
+## Components and sources in their box (t342, work orders P2 and P3)
+
+**Before.** Under `nested` the linked nodes no box holds stood on one grid above the boxes,
+sorted by urn — 179 of them on the scratch fold under `urn:moos:user:sam`, lens
+`everything` — and the 38 knowledge sources the boxes cite stood in a column right of the
+drawing.
+
+**Components (P2).** The linked nodes outside every box are split into connected components —
+over every relation of the frame between two of them, ticked in the legend or not, so unticking
+a port does not rearrange the drawing — and each is laid out on its own
+(`src/ui/component-layout.js`):
+
+- breadth-first: the root is the node with the most neighbours (ties: the smaller urn), each
+  further layer the nodes one relation further out, in the order their parent was placed and
+  then by urn; a layer longer than about twice the square root of the component's size wraps;
+  every cell is as wide as the component's widest label box, so no two labels overlap;
+- a component of more than 30 nodes is then refined by Cytoscape's `cose` over that component
+  alone, seeded from the breadth-first placement; its iterations are bounded so that node pairs
+  × iterations stay at or under 1.5 million for the WHOLE FRAME — the components draw on that one
+  budget largest first, at most 100 iterations each and at least 30 (a component left fewer
+  stays breadth-first and spends nothing, so one above 316 nodes always does) — and it anneals
+  to its floor within them. (Until the t342 review the bound was per component, and ten
+  components of 170 nodes took 4.9 s of CPU in `runLayout`; with one budget per frame they take
+  1.3 s.) Label boxes it leaves
+  overlapping are then pushed apart (`separateLabels`: sweeps that move each overlapping pair
+  half the overlap apart, and, where a crowd remains, a 5 % spread from its centre between
+  rounds; the layout report counts what is left). There is never a cose over the whole frame
+  (see "First paint" for what one costs);
+- the components and the top-level boxes share the shelf rows, tallest first; the unlinked band
+  stays under everything, as before.
+
+The same frame always draws the same picture: components, layers and cose's input are taken in
+urn order (cose draws a random number only for two nodes on one point, which a breadth-first
+seed never has), and cose runs on a detached headless Cytoscape of its own, never on the
+panel's instance. It pulls toward the middle of its canvas and, with these options, it is
+chaotic — one seed coordinate moved by 1e-12 px moved nodes by up to 390 px (a 36- and a
+158-node ring with chords; the same seed twice gives the same picture) — so until the t342 review
+the panel's canvas reshaped the large component: 380 × 227 at the first paint, 380 × 155 once
+the legend settled, 1600 × 393 in a tab, each a different shape (the review measured up to
+147 px on the scratch fold in the browser; J's frame headless, up to 131 px), and the first
+re-layout after the canvas settled rearranged it. Now each node is a box of its measured label box on an instance whose
+size never changes, and label boxes are measured on a 1/4096 px grid (a bounding box carries
+rounding from where the node stands, which a second run used to amplify) — so a component's
+shape depends on the frame alone: the same in the panel, the popup and the tab, and on every
+run. `smoke:lens` J reads a frame in reverse order and gets every position back, lays it out
+again at two canvas sizes and twice on one instance.
+
+**Sources in their box (P3).** A `knowledge_item` no box holds is drawn inside the box that
+cites it — the box of a node one of its knowledge relations reaches, or that node itself when it
+is a box, so of two nested boxes the inner one wins. Cited by several boxes, it goes into the
+FIRST: the box with the most knowledge relations to it, then the smaller urn. Each other citing
+box shows `↗N` after its title — N of the sources it cites are drawn in another box — and the
+relation lines still run there. Inside a box the sources form their own grid under the box's own
+nodes, as smaller discs with a quieter label. The box is a presentation-only parent: node ids
+stay urns, no relation is added, nothing is written back, and the inspector lists a source's
+relations as before. With the legend open, the nodes group says how many sources sit in a box
+and what the marker means. With the nesting relation unticked (no boxes since a36b0b3) every
+source lays out with its component. No layout draws the column any more.
+
+**The other layouts.** `concentric` (rings by type rank), `breadthfirst` (a tree by depth) and
+`grid` (picked to be a grid) never put the linked part on a urn grid and are unchanged; ring,
+tree and grid keep the unlinked band of t342. `auto` is `nested` exactly when a box is drawn —
+the scratch fold — and `concentric` otherwise — hp-laptop's kernel (4.0.7) — as before, so the
+laptop's panel opens as it did; `nested` picked there lays its components out the new way.
+
+**First paint (`npm run bench:frame -- --layout --user urn:moos:user:sam`).** Each iteration is
+the road to the first drawing on the panel's own code: the `graph_state` read and parse, the
+real `selectFrame` (lens `everything`, identified as that urn), FrameGraph's real `drawingPlan`
+and its real `runLayout` with the real STYLE in headless Cytoscape — which measures no text, so
+labels count as zero-size and the canvas paint itself is not in it. Every step is reported in
+wall time, in the process's CPU time and in the main thread's (`process.threadCpuUsage`, in
+recent Node releases; Node 24 here). The budget, `FIRST_PAINT_BUDGET_MS` = **3000 ms**, holds
+the pilot's share — the main thread's CPU time of transform + plan + layout, p95 over the
+iterations (10 here; the first, cold one is the p95) — and the script exits 1 above it; a Node
+without `threadCpuUsage` holds it against the process's CPU time, which is higher, and says so.
+The read is the engine's and the network's share and is reported, not budgeted. CPU time rather
+than wall: other sessions kept this seat busy, and while it was saturated (load 100 %) the wall
+clock ran three to four times the CPU time without the code changing. The main thread rather
+than the whole process (hand-off B verification): the process's CPU time also counts V8's
+background compiler and garbage-collector threads, which do not hold the paint — at the cold
+first iteration it was 1.5 to 2.3 times the main thread's in every run below — and with the seat
+saturated it put two of the nine "after" runs below over 3000 ms (3 390 on scratch, 4 094 on
+hp-laptop `nested`; the main thread spent 1 984 and 2 250 ms), and one earlier scratch run at
+3 266, with the code unchanged. "Before" is d7a21f9's FrameGraph with `runLayout` exported and
+nothing else changed (`--framegraph`), the same bench, run back to back with "after", 10
+iterations each, the order alternating; three pairs per row, the seat at 11 to 100 % load. Each
+cell is the range over the three runs, in ms:
+
+| engine, layout | build | read wall p50 | layout main p50 / p95 | pilot's share main p50 / p95 | pilot's share process p95 |
+|---|---|---|---|---|---|
+| scratch, mtdc-2.1.0, 445 nodes · `auto` → `nested` (19 boxes) | before | 493–788 | 422–921 / 703–1 047 | 453–1 000 / 751–1 203 | 1 421–2 142 |
+| | after (8 components, 158 the largest, 100 iterations) | 538–836 | 579–1 235 / 1 328–1 766 | 610–1 329 / 1 500–1 984 | 2 390–3 390 |
+| hp-laptop, 4.0.7, 524 nodes · `auto` → `concentric` | before | 46–127 | 250–672 / 406–1 063 | 297–812 / 578–1 328 | 1 297–2 500 |
+| | after | 46–159 | 328–734 / 453–1 156 | 375–828 / 562–1 297 | 1 218–2 485 |
+| hp-laptop · `nested` picked (no box: 10 components, 287 the largest, 36 iterations) | before | 39–68 | 312–593 / 531–860 | 359–655 / 656–1 078 | 1 515–2 015 |
+| | after | 35–97 | 562–1 078 / 984–1 984 | 594–1 156 / 1 109–2 250 | 2 173–4 094 |
+
+Every one of the 18 runs stayed within the budget on the main thread — the largest pilot's share
+p95 2 250 ms (hp-laptop `nested`, after, the seat at 97 %), 1 984 ms on scratch. `auto` on
+hp-laptop's kernel draws the same `concentric` before and after, so those two rows differ by
+noise alone; read differences between before and after under that spread as noise too. Before
+this pass seven scratch pairs and six hp-laptop pairs had been taken on the process's CPU time,
+and every one of those runs stayed within the budget (largest p95 2 860 ms, hp-laptop `nested`,
+after).
+
+The layout's CPU is mostly Cytoscape applying the stylesheet to every element the first time
+(half or more of it in a CPU profile, before and after alike). In this pass, on the main thread,
+the layout's p50 grew by 94 to 453 ms on scratch and by 250 to 485 ms with `nested` picked on
+hp-laptop's kernel (three pairs each). In the earlier pairs, in process CPU: on scratch — the
+frame that opens `nested` — the layout's CPU at p50 grew by 30 to 490 ms across its seven
+pairs: the bounded cose (158 nodes, 100 iterations) adds work and the packer sheds some — it
+now reads each box's shown children and title once per run instead of once per candidate shape,
+and no longer builds the source column. With `nested` picked on hp-laptop's kernel, where the
+old drawing was one grid, the cose of its 287-node component (36 iterations) adds 0.2 to 0.65 s
+of CPU (six pairs); `auto` there is `concentric`, unchanged. The review round's changes — cose
+on a detached instance, label boxes on a grid, one budget per frame — cost nothing measurable:
+alternating 14 runs each in one process on one frame read once, `runLayout`'s CPU p50 was
+1 157 ms before them and 1 110 ms after on scratch, 1 110 and 1 204 ms on hp-laptop `nested` (a
+busier seat by then). The label pass is nearly free headless (labels have no size there); with
+label-sized boxes it took about 150 ms on that 287-node component (measured offline, 301
+overlapping pairs to 0). A cose over the whole frame, for comparison (headless, Cytoscape's
+default options, styles already applied): 7.2 s of CPU on the scratch fold without boxes,
+11.4 s with them, 13.1 s on hp-laptop's kernel (process CPU, a busy seat); on the main thread
+in this pass, the seat at 29 % load, 3.6, 4.9 and 6.7 s — each above the budget on its own,
+before any style or fit, which is the regression the budget is there to catch.
+
+**Looked at, not asserted** — the built `dist/preview-live.html` served from `127.0.0.1`,
+`?engine=` the scratch proxy (GET only), identified as `urn:moos:user:sam`, `everything`, the
+380 px panel (canvas 380 × 227 at the first paint, 380 × 155 once the panel settles), real label
+sizes, in headless Chrome; every layout run recorded from the page's Cytoscape instance and
+rendered with its `png()` — taken again after the review round:
+
+- 445 nodes, 19 boxes; 38 sources inside 12 boxes; 17 boxes carry a `↗N` marker (30 citations
+  of a source drawn elsewhere); 0 nodes in a column; 145 in the unlinked band;
+- outside the boxes 8 components (158, 6, 5, 3, 3, 2, 2, 1), the 158-node one cose-refined
+  (100 iterations); 0 overlapping label boxes among the 180 nodes outside a box once the label
+  pass has run;
+- every run kept every component's shape. In two sessions (a 1366 × 900 and a 1600 × 1100
+  window): the first paint (380 × 227 / 380 × 338), re-layouts at the settled panel (380 × 155 /
+  380 × 262), at the first paint's size again, and on a tab-wide canvas (1366 × 176 / 1600 × 288)
+  — 0 px change inside any component across all of them (before this round the review measured
+  the 158-node component changing by up to 147 px between the first two). Runs at one canvas
+  size give the same 445 positions whatever ran in between (`re-layout` twice: 0 differ);
+- the first paint's drawing is 5072 × 2716 model px, fitted at zoom 0.045 once the panel settles;
+  a re-layout there packs it for that canvas, 6301 × 2613 at 0.047 (the grid drawing of t342:
+  0.052 to 0.058): the components spread wider than the grid they replace. On a 1600 × 288 tab
+  canvas the two wider shelves added for P2 put the large component and the largest boxes on one
+  row: 6771 × 2313, fit zoom 0.11;
+- the legend's nodes group ends `38 sources drawn in the box that cites them · ↗N on 17 boxes:
+  N cited sources drawn in another box`, its tooltip giving the order rule;
+- the nesting relation unticked: 0 boxes, 0 sources in a box, 0 in a column; the 300 linked
+  nodes in 8 components (158, 121, 6, 5, 3, 3, 2, 2), the two largest cose-refined with 100 and
+  35 iterations — the frame's one budget —, all 72 linked sources among them, 0 overlapping
+  label boxes, a re-layout moving none; ticked again, the 19 boxes and 38 placed sources return,
+  every component in its shape;
+- looked at again in the hand-off B verification pass, on the scratch fold at seq 1030, at the
+  380 px panel and with the app widened to a 1600 px tab (canvas 1600 × 288), nesting on, off and
+  on again: the same counts as above; of the linked sources outside a box (34 with nesting on,
+  72 with it off) none is a component of its own and none stands right of every other linked
+  node; no console error.
+
+Not looked at: hp-laptop's kernel in the harness (`auto` draws `concentric` there, the code path
+unchanged; `nested` picked is timed above and covered by `smoke:lens` J) and the extension's
+side panel itself.
 
 ## Finding and inspecting in the knowledge graph (t337)
 
@@ -570,7 +769,9 @@ access posture, which is anon, 1 node.
   pan, the refit, the drag that pans, and (t342) the port-colour gradient and glyphs. Cytoscape needs a browser; "Drawing the knowledge
   graph" and "Drawing the whole fold" say what was looked at. What is asserted is what
   it is asked to draw: which
-  node sits in which box and which layout `auto` picks (`smoke:live`)
+  node sits in which box and which layout `auto` picks (`smoke:live`), and (t342 P2/P3) where
+  `nested` places the nodes outside a box and the sources — headless, so without label sizes
+  (`smoke:lens` J)
 - a mirror drawing what the panel asks for — the layout choice, the search fade, the
   centring on a relation row. `selftest.html` asserts that the scratch-view channel
   delivers; that a mirror then draws it was looked at ("Finding and inspecting…")
