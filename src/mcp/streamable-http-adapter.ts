@@ -8,7 +8,8 @@
  * are unchanged.
  *
  * READ-ONLY: it calls only the read tools `graph_state` / `node_lookup` and the read
- * endpoints `/healthz`, `/state/nodes`, `/state/relations/src`. There is NO apply path;
+ * endpoints `/healthz`, `/state/nodes`, `/state/relations/src` and (t342 P1/P6) the three
+ * GET `/operad/*` grammar routes. There is NO apply path;
  * the underlying client refuses to name `apply_rewrite` / `apply_program`. The four
  * rewrites (ADD/LINK/MUTATE/UNLINK) are unreachable from this build.
  *
@@ -129,15 +130,27 @@ export class StreamableHttpMcpAdapter implements McpAdapter, ToolDiscoveryAdapte
   async getFrame(request?: FrameRequest): Promise<HgFrame> {
     try {
       await this.client.initialize();
-      const [graphRpc, health] = await Promise.all([
+      // t342 P1/P6: the engine's grammar (GET /operad/*, cached per engine + ontology
+      // version) rides with the frame. It is keyed by the /healthz ontology_version, so it is
+      // read as soon as /healthz answers, beside graph_state. It never fails the frame (no
+      // routes, an error or a timeout -> `absent`; engineGrammar never throws) and holds it
+      // GRAMMAR_TIMEOUT_MS at most — once per GRAMMAR_RETRY_MS for a route that hangs.
+      const healthRead = this.client.healthz();
+      const grammarRead = healthRead.then(
+        (h) => this.client.engineGrammar(h),
+        () => undefined,
+      );
+      const [graphRpc, health, grammar] = await Promise.all([
         this.client.graphState(),
-        this.client.healthz(),
+        healthRead,
+        grammarRead,
       ]);
       const fold = parseGraphStateResult(graphRpc);
       const reported = (health as { kernel_urn?: unknown })?.kernel_urn;
       const frame = selectFrame(fold, {
         healthz: health,
         request,
+        grammar,
         // Explicit urn = the caller's EXPECTATION (mismatch warning material); defaulted
         // urn = no expectation, so the engine's own self-report is the honest identity —
         // and when it reports none, `this.engineUrn` already says so for a custom endpoint.

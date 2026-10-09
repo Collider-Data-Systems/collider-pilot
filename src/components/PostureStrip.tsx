@@ -30,6 +30,8 @@ import type { FrameProvenance } from "../mcp/types";
 import type { AccessPosture } from "../state/prefs";
 import type { StreamStatus } from "../state/use-fold-stream";
 import { glossaryTitle } from "../ui/glossary";
+import { KB_ONTOLOGY_VERSION, KB_VOCAB_VERSION } from "../ui/kb-vocab.js";
+import { OPERAD_PATHS, grammarGap } from "../mcp/engine-grammar.js";
 
 function Field({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
@@ -232,6 +234,24 @@ export function PostureStrip({
   const engineMismatch =
     typeof reported === "string" && reported.length > 0 && reported !== provenance.engine;
 
+  // t342 P1/P6: the grammar this frame was drawn with — the engine's operad version, where κ
+  // (the port colours) came from, and the knowledge vocabulary behind the relation-kind
+  // palette. Nothing of the engine's grammar is written into the pilot; this says which one
+  // the frame carries, or that it carries none.
+  const grammar = provenance.grammar;
+  const grammarText = !grammar
+    ? "none on this frame (a fixture, or cached before t342)"
+    : grammar.status === "engine"
+      ? `engine operad ${grammar.ontology_version} · ${grammar.pairs.length} port pairs · ${grammar.types.length} types`
+      : `${grammarGap(grammar)} (${grammar.reason}) — static drawer lists`;
+  const kappaText =
+    grammar?.status === "engine" && grammar.port_colors
+      ? `${grammar.source}${OPERAD_PATHS.portColors} · ${Object.keys(grammar.port_colors).length} ports · ` +
+        `rule ${grammar.color_rule ?? "not stated"} · source ${grammar.color_source ?? "not stated"}`
+      : grammar?.status === "engine"
+        ? `none (${grammar.port_colors_reason}) — relations drawn by relation kind`
+        : "none — relations drawn by relation kind";
+
   return (
     <section className="provenance posture-strip" aria-label="Frame posture">
       <button
@@ -401,6 +421,21 @@ export function PostureStrip({
               value={`${provenance.log_seq} · T=${provenance.t_day}`}
             />
             <Field label="ontology" value={provenance.ontology_version} />
+            <Field
+              label="grammar"
+              value={grammarText}
+              title="t342: the engine grammar this frame was read with (/operad/node-types, /operad/rewrite-categories), cached per engine and ontology version. The drawer's extra groups and the undeclared-pair marker come from it."
+            />
+            <Field
+              label="κ source"
+              value={kappaText}
+              title="t342: where the port colours (κ) of the relation ends came from. The pilot reads port_colors (and color_rule / color_source when the engine states them), never the matrix and never a relation's src_color / tgt_color."
+            />
+            <Field
+              label="kb-vocab"
+              value={`${KB_VOCAB_VERSION} (ontology ${KB_ONTOLOGY_VERSION}) · relation-kind palette`}
+              title="The knowledge vocabulary (src/ui/kb-vocab.json, Lean-emitted): the knowledge lens, the nesting relation and the colours of the relation-kind palette."
+            />
             <Field label="workspace" value={provenance.workspace} />
             <Field label="purpose" value={provenance.purpose} />
             <Field label="folded_at" value={provenance.folded_at} />

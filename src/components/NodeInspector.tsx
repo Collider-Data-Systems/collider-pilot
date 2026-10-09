@@ -7,11 +7,17 @@
  * t337: a node's `text` (a claim's content) is shown as a paragraph above the property
  * table, and a relation row reads from the selected node's own end — the converse port
  * name on an incoming relation, in the vocabulary's colour when it has one.
+ *
+ * t342 P1 (review): a row takes the colour the graph draws it in under the ACTIVE palette —
+ * in port colour (the default) κ of the port named from this node's end, in relation kind
+ * the vocabulary's colour — and its tooltip names which.
  */
 
 import { useRef, useState } from "react";
 import type { HgFrame, HgNode, HgProperties, HgRelation } from "../mcp/types";
-import { kbConversePort, kbPortStyle } from "../ui/kb-vocab.js";
+import { KB_VOCAB_VERSION, kbConversePort, kbPortStyle } from "../ui/kb-vocab.js";
+import { hasPortColours, paintRelation } from "../ui/port-colour.js";
+import type { RelationPalette } from "./FrameGraph";
 
 /** The property shown as a paragraph instead of a table row (t337). */
 const TEXT_PROPERTY = "text";
@@ -53,6 +59,7 @@ export function NodeInspector({
   onSelect,
   onNavigate,
   collapsible = false,
+  palette = "port",
 }: {
   frame: HgFrame;
   node: HgNode | null;
@@ -69,6 +76,8 @@ export function NodeInspector({
    * IS the detail surface.
    */
   collapsible?: boolean;
+  /** t342 P1 (review): the graph's palette, so a row is coloured as the graph draws it. */
+  palette?: RelationPalette;
 }) {
   const [open, setOpen] = useState(true);
   const paneRef = useRef<HTMLElement | null>(null);
@@ -104,6 +113,8 @@ export function NodeInspector({
   const incident = frameRelations.filter(
     (r) => r.source_urn === node.urn || r.target_urn === node.urn,
   );
+  const grammar = frame?.provenance?.grammar;
+  const portColour = palette === "port" && hasPortColours(grammar);
 
   // t337: shown once, in full, as a paragraph — and so left out of the table below.
   const rawText = node.properties[TEXT_PROPERTY];
@@ -164,16 +175,33 @@ export function NodeInspector({
               const outgoing = r.source_urn === node.urn;
               const otherUrn = outgoing ? r.target_urn : r.source_urn;
               // t337: an incoming relation is named from THIS node's end (its converse
-              // port); a knowledge port takes the colour the graph draws it in.
+              // port). t342 P1 (review): it takes the colour the graph draws that end in —
+              // κ of that port in port colour (a state end is the neutral grey), the
+              // vocabulary's colour of a knowledge port in relation kind.
               const port = outgoing ? r.label : conversePortOf(r);
-              const color = kbPortStyle(r.label)?.color;
+              const paint = portColour ? paintRelation(r, grammar) : null;
+              const kappa = paint && paint.palette === "port" ? paint : null;
+              const end = kappa ? (outgoing ? kappa.src : kappa.tgt) : null;
+              const color = end ? end.hue : kbPortStyle(r.label)?.color;
+              const colourNote = end
+                ? `port colour: ${end.state === "colour" ? end.family : end.state}` +
+                  (kappa?.pair === "undeclared" ? " · undeclared pair" : "")
+                : color
+                  ? `relation kind (kb-vocab ${KB_VOCAB_VERSION})`
+                  : null;
+              const rowTitle = [
+                port === r.label ? null : `${port} — the converse of ${r.label}`,
+                colourNote,
+              ]
+                .filter(Boolean)
+                .join(" · ");
               return (
                 <li key={r.urn}>
                   <span className="insp-rel-dir">{outgoing ? "→" : "←"}</span>
                   <span
                     className="insp-rel-label"
                     style={color ? { color } : undefined}
-                    title={port === r.label ? undefined : `${port} — the converse of ${r.label}`}
+                    title={rowTitle || undefined}
                   >
                     {port}
                   </span>

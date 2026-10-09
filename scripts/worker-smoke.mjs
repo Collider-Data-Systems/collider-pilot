@@ -186,6 +186,24 @@ assert(
   prov.engine_reported === prov.engine,
   `A16: the default engine self-reports what the frame claims (${prov.engine_reported})`,
 );
+// t342 P1/P6: the SHIPPED adapter reads the engine grammar (GET /operad/*) beside the frame
+// and stamps it into provenance — the drawer's engine groups and the port colours come from
+// it. An engine without the routes stamps `absent` with its reason; the frame still lands.
+const grammar = prov.grammar;
+assert(
+  !!grammar && (grammar.status === "engine" || grammar.status === "absent"),
+  `the frame carries the engine grammar (${grammar?.status}${grammar?.status === "engine" ? ` · ${grammar.ontology_version} · ${grammar.pairs.length} pairs · ${grammar.types.length} types · ${grammar.port_colors ? Object.keys(grammar.port_colors).length : "no"} coloured ports` : ` · ${grammar?.reason}`})`,
+);
+if (grammar?.status === "engine") {
+  assert(
+    grammar.ontology_version === prov.ontology_version,
+    `the grammar is the one the frame's engine runs (${grammar.ontology_version})`,
+  );
+}
+assert(
+  Array.isArray(prov.fold_vocab?.ports) && Array.isArray(prov.fold_vocab?.types),
+  `the frame carries its permitted-fold vocabulary (${prov.fold_vocab?.ports?.length} labels, ${prov.fold_vocab?.types?.length} types)`,
+);
 
 console.log("\n=== B2. GET_FRAME with ?surface= — the A16 acceptance, on the SHIPPED worker ===");
 // A window launched with ?surface=menno must report hp-z440.menno, not primary. The twin
@@ -216,6 +234,12 @@ if (twinUrl) {
   assert(mProv.engine === MENNO, "A16 ACCEPTANCE: ?surface=menno reports hp-z440.menno, not primary");
   assert(mProv.engine_reported === MENNO, "the connected engine SELF-reports menno (healthz kernel_urn)");
   assert(mProv.engine_url === twinUrl, "provenance.engine_url follows the VERIFIED transport candidate");
+  // t342 P1/P6: the grammar is cached per (engine, ontology_version) — a surfaced frame
+  // carries its OWN engine's grammar (or that engine's `absent`), never the default's.
+  assert(
+    mProv.grammar?.source === twinUrl,
+    `the surfaced frame's grammar was read from its own engine (${mProv.grammar?.status} · ${mProv.grammar?.ontology_version})`,
+  );
 } else {
   console.log("  SKIP: twin hp-z440.menno reachable on no candidate — surfaced-frame acceptance not exercised this run");
 }
@@ -247,6 +271,11 @@ if (z440Up) {
   assert(oProv.engine === Z440_PRIMARY, "provenance.engine follows the stored override");
   assert(oProv.engine_reported === Z440_PRIMARY, "the overridden engine SELF-reports (healthz kernel_urn)");
   assert(oProv.engine_url === Z440_ENGINE_URL, "provenance.engine_url follows the stored override");
+  // t342 P1/P6: the overridden engine's own grammar (or its `absent`), never the default's.
+  assert(
+    oProv.grammar?.source === Z440_ENGINE_URL,
+    `the override frame's grammar was read from the overridden engine (${oProv.grammar?.status} · ${oProv.grammar?.ontology_version})`,
+  );
   assert(over.frame.nodes.length > 0, "the fleet primary's Cowork slice carries nodes");
   // Clearing must restore the build default on the NEXT frame (the onChanged listener
   // drops the memo again).

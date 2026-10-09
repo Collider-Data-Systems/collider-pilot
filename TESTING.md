@@ -38,15 +38,35 @@ asserts that an unknown message type is *not* answered. It also carries the **A1
 acceptance**: `GET_FRAME` with `surface:"menno"` must come back with
 `provenance.engine === urn:moos:kernel:hp-z440.menno` (self-confirmed by the engine's
 healthz `kernel_urn`), an invalid key must fall back to the default engine, and — when the
-menno twin is not up — the surfaced case reports SKIP rather than silently passing.
+menno twin is not up — the surfaced case reports SKIP rather than silently passing. Since
+t342 (P1/P6) it also asserts that the shipped adapter stamps the engine's grammar into
+provenance — `status: "engine"` with the engine's own `ontology_version`, or `"absent"` with
+its reason — and the permitted fold's vocabulary (`fold_vocab`), which the drawer reads; and,
+where the twin (B2) or the Z440 primary (B3) answers, that a surfaced or overridden frame
+carries the grammar of ITS engine, never the default engine's (the cache is per engine).
 
 **`smoke:live`** proves the slice law twice: on a synthetic chain (ports narrow relations;
 hops expand only along retained ports) and on the **live fold** (the content lens loses no
 node or relation the legacy default showed; `["*"]` reaches the whole fold; hops widen a real
-focus monotonically). One assertion there earns its keep long-term: **every live relation
-label must be present in the UI's port vocabulary** — it caught `guards` and `participates`
-being unreachable, and it will fail the next time an ontology bump adds a port the UI cannot
-select. It also exercises the **A16 surface→channel→engine resolution** with the code the
+focus monotonically). Until t342 one assertion there earned its keep long-term: **every live
+relation label must be reachable in the drawer** — it caught `guards` and `participates`
+being unreachable. Since t342 (P6) the drawer's vocabulary is no hand copy in the script (that
+copy missed ten labels on hp-laptop's kernel, the whole substrate group among them): it is the
+real `drawerVocab` of `GraphControls.tsx` over the engine's own grammar — the static lens
+lists, then the types and source ports the engine declares on `/operad/node-types` and
+`/operad/rewrite-categories` (additional pairs included), then the permitted fold's own
+labels, which is how a label no operad declares stays reachable. That last group makes the
+reachability asserts hold by construction: they now guard `drawerVocab` itself, not the
+lists, and the gap they used to catch — a live label no list names — is a measured line
+instead (`live labels … reachable only because the fold carries them N [names]`). The same
+block asserts (d) every live type and every type the engine declares reachable, (h) every port a lens names
+declared — by the connected engine, by the knowledge vocabulary, or on the commented legacy
+list `LEGACY_PORTS` (`realizes`, `cites`, `curates`: in no operad and no live fold at t342) —
+and (i) the port colours of the live fold as FrameGraph DRAWS them — its real `toElements`,
+`STYLE` and `applyPalette` in headless Cytoscape: in port colour no relation in the
+relation-kind palette and each in its κ hue, two tones, glyphs and marker; switched to relation
+kind, none left in port colour (see "Port colours and the engine's grammar"). It
+also exercises the **A16 surface→channel→engine resolution** with the code the
 worker runs: candidate/alias mapping, the display_name engine-hint grammar, the local
 transport table (twins answer MCP on :9001–:9003, not :8080), the live directory chain
 against the t266 channel nodes, and — when the twin is up — that the resolved endpoint
@@ -87,6 +107,22 @@ nesting block reads 80 of its 122 nodes in 19 boxes, and the run then stops at
 `healthz carries kernel_urn`. That is the engine's statement about itself; the assertion
 was not relaxed for it.
 
+Measured at t342 (hand-off A) on two engines. The scratch kernel through its `:8086` proxy
+(both variables set to that origin; mtdc-2.1.0, log 1019, now reporting its `kernel_urn`):
+the whole run passes — 25 live labels and 31 live types reachable (all 25 labels in the static
+lists, 0 reachable only through the fold), all 56 declared types reachable, every lens port
+declared by the engine (36 names, `realizes` on the legacy list), 0 of 416 drawn relations in
+the relation-kind palette in port-colour mode, 0 left in port colour after the switch.
+hp-laptop's kernel (default env, 4.0.7, 597 relations, 597 drawn in κ, 0 after the switch):
+passes too — 7 live labels are the source port of no declared pair
+(`depends-on`, `focus`, `produces`, `scheduled-after`, `steers`, `summarizes`, `tagged`), the
+three of them the static lists lack form the drawer's `undeclared pair` group, and the eight
+knowledge ports are declared by the knowledge vocabulary, not by 4.0.7. Four access lines name
+what only the Z440 primary's fold holds — the seats `sam.kernel-proper` and `sam.moos-diary`
+and a member-of chain from `user:sam` to `group:sam` / `group:moos`. Where the fold holds no
+such seat or chain (the laptop kernel) that line reports SKIP instead of failing; on scratch
+all four still run and pass.
+
 **`smoke:llm`** covers the ToolSpec→OpenAI mapping, both recovery paths (structured
 `tool_calls` and strict content-JSON) with fenced/prose content *rejected*, the cloud-egress
 access gate, the declared-type check, and the semantic urn gate (`{urn:"t263"}` and ghost urns
@@ -104,10 +140,40 @@ E (t342) holds the opening view un-narrowed: `defaultSliceSpec()` is the `everyt
 sentinel (all types, all ports, latest t, 1 hop) — the access posture is the only gate a
 freshly opened panel applies. F (t342) holds the strip's counts honest on the real transform
 and a synthetic fold: `provenance.fold_counts` counts what the access posture alone withheld
-over the whole fold, and a narrower lens holds less without moving that number. G (t342)
+over the whole fold, and a narrower lens holds less without moving that number; and
+`provenance.fold_vocab`, the names the drawer offers from the fold, lists no type of a withheld
+node and no label of a relation touching one, for anon and identified, whatever the lens. G (t342)
 holds the unlinked band to the nodes no relation of the CURRENT frame touches — a seat whose
 only relation runs to a withheld seat is unlinked there — on the real `unlinkedUrns`, loaded
-from `FrameGraph.tsx` the way `smoke:live` loads it.
+from `FrameGraph.tsx` the way `smoke:live` loads it. H (t342 P1) is the port-colour fixture:
+a SYNTHETIC grammar (synthetic port names and colour families — no operad data enters this
+repo) through the real `engine-grammar.js` and `port-colour.js` gives one hue for a relation
+whose ends share a family, two tones for one whose ends do not, and each of the three states
+its own glyph on a neutral grey, never a hue — exempt (`⊣` / `▸⊣`), uncoloured (`○` / `○▸`),
+undeclared pair (dotted, `◇` midway); a family keeps its hue whatever order the engine lists
+its ports in; a frame without a grammar draws every relation by relation kind; what FrameGraph
+DRAWS — its real `toElements`, `STYLE` and `applyPalette` in headless Cytoscape — matches:
+every relation in its κ (hue or two tones, end glyphs, the undeclared marker, a grey end always
+with its state's glyph) and, switched, every one back in relation kind (a knowledge relation in
+its vocabulary colour); the node fills (types and claim kinds) share no colour with the eight
+hues, none of them nor the state grey is within OKLab ΔE 3 of a fill, and no close pair exists
+beyond those listed under "Limits" below (a new one fails); and no code under `src/` names
+`src_color` or `tgt_color`. I (t342 P6) runs the real `drawerVocab` on a synthetic grammar:
+the static groups first and unchanged, then one group of the types and source ports the
+engine declares, then the fold's undeclared labels (no target-only name, no `{placeholder}`
+the fold does not carry — one it carries on a declared pair is an engine port, not an
+undeclared one); an untick expands from all of it and ticking back returns to the sentinel;
+without a grammar the static lists stand alone and the note says so; the legacy list is one
+group of its own.
+H also holds the read itself on an injected fetch (offline): `color_rule` / `color_source` are
+read when the engine states them (K1) and "not stated" when it does not (today's
+`{matrix, port_colors}`); a body carrying only `matrix` colours nothing; a relation carrying an
+empty `src_color` / `tgt_color` paints, through the real `selectFrame`, exactly as one without
+them (0 exempt ends); three GETs per (engine, `ontology_version`), then the cache; a 404 on
+the node types is `absent` and cached; a 404 on the port colours alone keeps the engine's
+pairs and types (the drawer's engine groups stand) and draws relation kind; a route that does
+not answer is cut at the timeout — `absent`, marked unreachable, kept for the back-off only —
+and the check races a test deadline, so a timeout that stops cutting fails instead of hanging.
 
 **`selftest.html`** (open it from the extension: `chrome-extension://<id>/selftest.html`) is
 the one surface that can exercise what the harnesses fake — the worker seam with real
@@ -157,9 +223,13 @@ must hold before a frame appears:
 - the MCP origin is in `public/manifest.json` `host_permissions`. The kernel's MCP endpoint
   answers a CORS preflight with 405, so an unlisted origin fails with `Failed to fetch`.
   Listed at t337: `localhost` and `127.0.0.1` on `:8898` / `:8899` — the pairs the
-  measured runs used. A tailnet route to that kernel is not listed: its `:8086` origin
-  served only `/` and `/state`, not `/fold`, `/healthz`, `/log`, `/fold/stream` or `/sse`,
-  so the permission could not be exercised, and this repo is public;
+  measured runs used. A tailnet route to the scratch kernel is not listed: this repo is
+  public (a local manifest overlay is work order P5). Since t342 that kernel's `:8086`
+  read-only proxy serves `GET /healthz`, `/fold`, `/fold/stream`, `/log` and `/state/*`, the
+  MCP endpoint `/sse` (the read tools `smoke:live` calls), and exactly three operad routes —
+  `/operad/node-types`, `/operad/rewrite-categories`, `/operad/port-colors`; any other
+  `/operad/*` path answers 404. That is enough for `smoke:live` with both variables set to
+  that origin and for the live harness with `?engine=`;
 - an identity is stored and the posture is "Bring me in" — anon shows public nodes only;
 - the lens includes what you want to see.
 
@@ -309,6 +379,113 @@ panel, devicePixelRatio 1, the identity in the harness shim:
 
 Not looked at: the side panel's CACHED badge (it needs the extension) and `selftest.html`.
 
+## Port colours and the engine's grammar (t342, work orders P1 and P6)
+
+**The grammar is read, not written.** At frame load the worker's adapter (and the live
+harness, and `smoke:live`) reads `GET /healthz` and the three operad routes —
+`/operad/node-types`, `/operad/rewrite-categories`, `/operad/port-colors` — through
+`src/mcp/engine-grammar.js`, once per (engine, `ontology_version`) — in the adapter and the
+live harness as soon as `/healthz` answers, beside `graph_state` / `/fold` — and stamps the
+result into `provenance.grammar`, so the mirrors draw from the same grammar through the session
+store. Each GET is bounded (`GRAMMAR_TIMEOUT_MS`, 8 s), so a frame waits for its grammar 8 s at
+most; a route that does not answer gives `absent` marked unreachable (the legend, the drawer
+note and the audit drawer say "did not answer", not "serves no /operad/*"), and that answer is
+kept for `GRAMMAR_RETRY_MS` (60 s) — a hung route delays one frame per minute, not every
+fold-stream re-read.
+Read: the declared pairs (main and additional), the declared types, `port_colors`, and
+`color_rule` / `color_source` when the engine states them (K1 builds). Never read: `matrix`,
+a relation's `src_color` / `tgt_color` (empty on every relation today: read, they would make
+every end "exempt"), and the kernel's type law — the pilot checks pairs only; the workbench's
+check 8 rules on admission. An engine without the routes stamps `absent` with its reason; the
+frame still lands, the drawer offers its static lists and the graph draws relation kinds, and
+both say so. An engine that serves node types and rewrite categories but no port colours keeps
+both in the drawer and only the graph falls back to relation kind. No operad data, no colour
+map and no mtdc-only name is written into the repo; the measured counts below are by hue slot,
+not by the engine's family names.
+
+**The drawing** (decision 2: port colour by default). Every relation end is drawn in κ(port):
+one hue when both ends share a colour family, two tones split at the middle when they do not.
+Three states are not colours and get a glyph on a neutral grey, never a hue: exempt (`κ = ""`,
+only on 98f2ccc kernels with 4.0.x — one port on hp-laptop's kernel; a tee at the source
+end, a tee behind the arrow at the target end), uncoloured (the port is not in the map; a
+hollow circle / a circle before the arrow) and undeclared pair (dotted, a hollow diamond
+midway). Never by rewrite_category. The eight hues are the dark steps of the dataviz reference
+categorical palette, validated on the canvas colour `#0f0f12` for NEIGHBOURING slots
+(lightness band, chroma, CVD ΔE 8.4, normal-vision ΔE 19.3, contrast ≥ 3:1), assigned to the
+family names the engine reports in sorted order (slot n = the n-th name). A graph is not a
+stack: any two families can meet, and over all 28 slot pairs no ordering of eight hues clears
+those floors — the reference palette's own series cap — so a family is never told by hue
+alone: the port name rides on every port-colour line (held to the label cut) and the legend
+names each family with its count. Node fills stay the type palette and share no colour with
+them (`smoke:lens` H, which also holds the close pairs under "Limits" below). The legend's
+**colour by: port colour | relation kind** switch brings back the relation-kind palette — the
+knowledge vocabulary's colours and dashes, the default line for every other port — labelled
+as such. Like the legend ticks it is not saved. The inspector's relation rows follow the
+same switch: in port colour a row takes κ of the port named from the selected node's end (a
+state end the grey), in relation kind the vocabulary's colour, and the row's tooltip says which.
+
+**The drawer** (P6) offers the static groups, then `engine <ontology_version>`: the types and
+source ports the engine declares that no static group names, then `undeclared pair`: the
+permitted fold's labels the engine declares as no source port. A note above the groups says
+which. An untick expands from all of it (`specToggleType` / `specTogglePort` take the base).
+The audit drawer shows `grammar` (the engine operad version, its pair and type counts),
+`κ source` (where the port colours came from, with the rule and source the engine states)
+and `kb-vocab` (the relation-kind palette's vocabulary and its ontology).
+
+Measured at t342 by `smoke:live` (i), whole fold, port-colour palette (relation ends per hue
+slot — slot n is the n-th of the eight family names the engine reports, sorted, and draws in
+`KAPPA_HUES[n-1]`; both engines report the same eight names — then the three states, and the
+relations FrameGraph draws in the relation-kind palette):
+
+| engine | relations | slot 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | exempt ends | uncoloured ends | undeclared pairs | two-tone | drawn in relation kind |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| scratch, mtdc-2.1.0 | 416 | 50 | 0 | 0 | 374 | 66 | 60 | 86 | 196 | 0 | 0 | 0 | 0 | 0 |
+| hp-laptop, 4.0.7 | 597 | 20 | 0 | 0 | 0 | 233 | 128 | 70 | 741 | 2 | 0 | 56 | 3 | 0 |
+
+Drawer on mtdc-2.1.0: +19 types and 8 ports from the engine, all 56 types reachable; on
+4.0.7: +19 types and 7 ports, and `steers`, `summarizes`, `tagged` under `undeclared pair`.
+
+Looked at, not asserted — the built `dist/preview-live.html` served from `127.0.0.1`, in the
+desktop app's browser pane, 380 px panel, identified as `urn:moos:user:sam`, `everything`:
+
+- scratch (`?engine=` the `:8086` origin): all 332 drawn lines (412 relations in the frame,
+  80 of them boxes) carry the port-colour style, none the relation-kind one; switched to
+  relation kind, none does, `part-of` / `derived-from` are back in their vocabulary colour
+  (the latter dashed) without port text, `routes-to` the default line with its name;
+- hp-laptop's kernel: 579 lines in port colour; 3 two-tone (a gradient split at 50 %), 56
+  dotted with the diamond midway, the one exempt line grey on its source half with the tee
+  there and in its target family's hue on the other half; the drawer note reads `+19 types and
+  7 ports the engine declares (ontology 4.0.7) · 3 labels on no declared pair`; the audit
+  drawer reads `engine operad 4.0.7 · 35 port pairs · 56 types` and the `κ source` line.
+
+Limits, not hidden: hues follow the sorted family names, so an engine reporting another set
+of families would give some of them other hues (the legend names each, with its count); a
+ninth family would get no hue of its own (drawn grey, "no hue left"). Close colours, OKLab
+ΔE ×100 (the dataviz metric; `smoke:lens` H fails on any pair not listed here). κ against κ,
+under 15 over all slot pairs (the neighbouring-slot floor is 19.3): slots 2/8 7.1, 5/8 7.8,
+1/7 9.8, 2/4 10.6, 2/5 11.6, 3/6 11.9, 4/8 13.0 — on hp-laptop's kernel slots 5 and 8 are
+the two largest families (233 and 741 ends), told apart by the port name on the line and the
+legend, not by hue. κ against a node fill, under 10: slot 7 / `conjecture` claim kind 3.2,
+slot 5 / `claim` 5.7, slot 8 / `agent` 6.5, slot 5 / `agent` 7.2, slot 1 / `workstation`
+8.0, slot 3 / `standing` claim kind 8.6, slot 2 / `user` 8.7, slot 8 / `user` 8.8, slot 1 /
+`knowledge_item` 8.9, slot 4 / `user` 9.2, slot 2 / `agent` 9.3, slot 3 / `kernel` 9.3, slot
+7 / `grammar_fragment` 9.9 — kept apart by the mark (a line, not a disc) only. The state grey
+sits at 3.6 from the `superseded` claim kind and 4.4 from `domain_tag` (it marks a line end
+that also carries a glyph). The eight κ hues are the reference palette's documented steps
+and the fills the type palette of #45; with 26 fills around the hue circle no documented
+step clears ΔE 10 from all of them. A `{placeholder}` port (a template name in braces)
+is never offered from the engine; a fold that carries one as a label on its declared
+pair gets it in the drawer's engine group, as the graph draws it (declared) — neither fold
+carries one at t342.
+
+## Phase-1 open points (t342, decision 4)
+
+Sam's three picks, kept as they shipped in #45 and recorded here: the label cut falls at a
+zoom step (labelFloor / `LABEL_ZOOM`, 0.5 at 100 % display scaling — see "Drawing the whole
+fold"); relation labels follow the same cut, the port names a port-colour line carries
+included; and the `unlinked N` chip's state is not saved — neither are the legend ticks nor
+the new `colour by` switch. Nothing of the three changed in hand-off A.
+
 ## Finding and inspecting in the knowledge graph (t337)
 
 **Find** ranks urn and label as before (0-4, unchanged) and then, one rank below, the
@@ -390,7 +567,7 @@ access posture, which is anon, 1 node.
   (type the pair, apply, reload, read the audit drawer); `smoke:worker` covers the stored
   `pilot.engine` override only for a fleet engine
 - the graph drawing itself — boxes, relation styles, legend ticks, the kept zoom and
-  pan, the refit, the drag that pans. Cytoscape needs a browser; "Drawing the knowledge
+  pan, the refit, the drag that pans, and (t342) the port-colour gradient and glyphs. Cytoscape needs a browser; "Drawing the knowledge
   graph" and "Drawing the whole fold" say what was looked at. What is asserted is what
   it is asked to draw: which
   node sits in which box and which layout `auto` picks (`smoke:live`)

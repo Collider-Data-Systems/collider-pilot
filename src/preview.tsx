@@ -23,7 +23,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import type { HgFrame } from "./mcp/types";
 import { MockMcpAdapter } from "./mcp/mock-adapter";
 import { PostureStrip } from "./components/PostureStrip";
-import { FrameGraph } from "./components/FrameGraph";
+import { FrameGraph, type RelationPalette } from "./components/FrameGraph";
 import {
   GraphControls,
   collectFocusOptions,
@@ -55,6 +55,9 @@ const adapter = new MockMcpAdapter();
 function Preview() {
   const [frame, setFrame] = useState<HgFrame | null>(null);
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
+  // t342 P1 (review): the relation palette (decision 2: port colour by default), held here so
+  // the inspector colours its rows as the graph draws them. Not saved, like the legend ticks.
+  const [palette, setPalette] = useState<RelationPalette>("port");
 
   const [layout, setLayout] = useState<GraphLayoutName>(DEFAULT_GRAPH_LAYOUT);
   const [search, setSearch] = useState("");
@@ -127,11 +130,12 @@ function Preview() {
     setFocusSignal((s) => s + 1);
   }, []);
 
-  const toggleType = useCallback((ty: string) => {
-    setSpec((prev) => specToggleType(prev, ty));
+  // t342 P6: `all` is the drawer's expand-from-all base for this frame (drawerVocab).
+  const toggleType = useCallback((ty: string, all: readonly string[]) => {
+    setSpec((prev) => specToggleType(prev, ty, all));
   }, []);
-  const togglePort = useCallback((p: string) => {
-    setSpec((prev) => specTogglePort(prev, p));
+  const togglePort = useCallback((p: string, all: readonly string[]) => {
+    setSpec((prev) => specTogglePort(prev, p, all));
   }, []);
 
   const resetFilter = useCallback(() => {
@@ -197,6 +201,7 @@ function Preview() {
               />
             </ErrorBoundary>
             <GraphControls
+              frame={frame}
               search={search}
               onSearchChange={handleSearchChange}
               searchHint={searchHint}
@@ -231,6 +236,8 @@ function Preview() {
                 focusUrn={focusUrn}
                 focusSignal={focusSignal}
                 highlightUrns={highlightUrns}
+                palette={palette}
+                onPaletteChange={setPalette}
               />
             )}
             <NodeInspector
@@ -238,6 +245,7 @@ function Preview() {
               node={selectedNode}
               onSelect={setSelectedUrn}
               onNavigate={handleNavigate}
+              palette={palette}
               collapsible
             />
             <ErrorBoundary>

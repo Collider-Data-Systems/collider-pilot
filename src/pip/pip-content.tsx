@@ -30,7 +30,7 @@ import type { HgFrame, HgNode } from "../mcp/types";
 import type { GraphLayoutName } from "../state/prefs";
 import type { ScratchFocus } from "../state/scratch";
 import { PostureStrip } from "../components/PostureStrip";
-import { FrameGraph } from "../components/FrameGraph";
+import { FrameGraph, type RelationPalette } from "../components/FrameGraph";
 import { NodeInspector } from "../components/NodeInspector";
 
 export interface PipContentProps {
@@ -77,6 +77,9 @@ export function PipContent({
   // graph on it. Centring is therefore asked for from two places — here and the panel —
   // and the later request wins.
   const [ownFocus, setOwnFocus] = useState<ScratchFocus | null>(null);
+  // t342 P1 (review): the relation palette (decision 2: port colour by default), held here so
+  // the inspector colours its rows as the graph draws them. Not saved, like the legend ticks.
+  const [palette, setPalette] = useState<RelationPalette>("port");
   const handleNavigate = useCallback(
     (urn: string) => {
       onSelect(urn);
@@ -136,6 +139,8 @@ export function PipContent({
               focusUrn={centre?.urn ?? null}
               focusSignal={centre?.at ?? 0}
               highlightUrns={highlightUrns}
+              palette={palette}
+              onPaletteChange={setPalette}
             />
             {showInspector && (
               <NodeInspector
@@ -143,6 +148,7 @@ export function PipContent({
                 node={selectedNode}
                 onSelect={onSelect}
                 onNavigate={handleNavigate}
+                palette={palette}
               />
             )}
           </>
