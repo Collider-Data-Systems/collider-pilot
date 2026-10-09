@@ -11,6 +11,9 @@
  *   REST  GET   {engineUrl}/healthz         log_len, t_day, ontology_version (provenance)
  *   REST  GET   {engineUrl}/state/nodes/{urn}
  *   REST  GET   {engineUrl}/state/relations/src/{urn}
+ *   REST  GET   {engineUrl}/operad/node-types | /operad/rewrite-categories | /operad/port-colors
+ *               (t342 P1/P6: the engine's grammar, via engine-grammar.js, cached per
+ *               engine and ontology_version)
  *
  * READ-ONLY GUARANTEE: this client exposes ONLY read methods. It never constructs a
  * tools/call for `apply_rewrite` / `apply_program`, and never issues `POST /rewrites`
@@ -25,6 +28,8 @@
  *   - The server is effectively stateless per request (no mcp-session-id is returned),
  *     so there is no session global to persist or resume; reconnection is just retry.
  */
+
+import { readEngineGrammar } from "./engine-grammar.js";
 
 const PROTOCOL_VERSION = "2024-11-05";
 const CLIENT_INFO = { name: "collider-pilot", version: "0.1.0" };
@@ -265,6 +270,17 @@ export function createStreamableHttpClient(config = {}) {
     return Array.isArray(parsed) ? parsed : [];
   }
 
+  /**
+   * t342 P1/P6: the engine's grammar — the three GET /operad/* routes, read once per
+   * (engine, ontology_version) and cached (src/mcp/engine-grammar.js). Never throws: an
+   * engine without the routes answers `{ status: "absent", reason }`.
+   * @param {{ ontology_version?: unknown } | null | undefined} health - a /healthz reading
+   * @returns {Promise<import("./types").EngineGrammar>}
+   */
+  function engineGrammar(health) {
+    return readEngineGrammar({ engineUrl, healthz: health, fetchImpl, headers: accessHeaders });
+  }
+
   return {
     mcpBaseUrl,
     engineUrl,
@@ -277,5 +293,6 @@ export function createStreamableHttpClient(config = {}) {
     healthz,
     restNode,
     restRelationsBySrc,
+    engineGrammar,
   };
 }

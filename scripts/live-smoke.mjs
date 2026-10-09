@@ -11,11 +11,14 @@
  *
  *     initialize  ->  tools/call graph_state   (MCP :8080/sse)
  *                 ->  GET /healthz             (REST :8000)
+ *                 ->  GET /operad/node-types, /operad/rewrite-categories,
+ *                     /operad/port-colors      (REST :8000; t342 P1/P6, the engine grammar)
  *                 ->  selectFrame(...)         (pure transform + view_filter)
  *                 ->  tools/call node_lookup   (one node, to exercise that helper)
  *
- * READ-ONLY: the only tools named are `graph_state` and `node_lookup`; the only REST call
- * is GET /healthz. No apply_rewrite / apply_program / POST is ever issued.
+ * READ-ONLY: the only tools named are `graph_state` and `node_lookup`; the only REST calls
+ * are GETs (/healthz, the three /operad/* grammar routes, the A16 directory reads). No
+ * apply_rewrite / apply_program / POST /rewrites|/programs is ever issued.
  *
  * Run:  node scripts/live-smoke.mjs
  * Env:  PILOT_MCP_BASE_URL (default http://localhost:8080)
@@ -28,6 +31,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
+import cytoscape from "cytoscape";
 
 import { createStreamableHttpClient } from "../src/mcp/streamable-http-client.js";
 import {
@@ -67,7 +71,20 @@ import {
   KB_PORTS,
   KB_RELATIONS,
   KB_REWRITE_CATEGORY,
+  KB_VOCAB_VERSION,
+  kbPortStyle,
 } from "../src/ui/kb-vocab.js";
+// t342 P1/P6: the engine grammar and the port-colour painting — the modules the panel runs.
+import { grammarGap, grammarSummary } from "../src/mcp/engine-grammar.js";
+import {
+  END_GLYPHS,
+  KAPPA_HUES,
+  KAPPA_NEUTRAL,
+  UNDECLARED_MARKER,
+  hasPortColours,
+  kappaCensus,
+  kappaFamilies,
+} from "../src/ui/port-colour.js";
 
 /** Tiny assert — prints and exits non-zero on failure so this is a real gate. */
 function assert(cond, msg) {
@@ -124,14 +141,41 @@ function accessChecks(fold) {
   assert(samRes.role_topology.includes("urn:moos:user:sam"), "sam is in his own governs closure");
   assert(samRes.permitted_workspaces.length >= 1, "identified sam has a non-empty permitted set");
   // HELD INVARIANT (not-over-hidden): the fail-closed fixes must NOT drop sam's legit workspaces.
+  // t342 P6 (smoke:live on the laptop kernel, default env): these are the Z440 primary's seats
+  // and groups. A fold that does not hold the node at all (the laptop kernel has neither
+  // seat) cannot drop it, so the assertion is made where the node exists and reported as
+  // SKIP where it does not — never passed silently.
   for (const legit of ["urn:moos:session:sam.kernel-proper", "urn:moos:session:sam.moos-diary"]) {
+    if (!fold.nodes?.[legit]) {
+      console.log(`  SKIP  ${legit.split(":").pop()} is not in this fold — nothing to over-hide`);
+      continue;
+    }
     assert(
       samRes.permitted_workspaces.includes(legit),
       `sam's legit workspace ${legit.split(":").pop()} is still permitted (fixes don't over-hide)`,
     );
   }
   // t264: the member-of glue (ontology 4.0.4) — sam's closure now reaches his groups.
+  // The glue is a chain of member-of relations from user:sam to the group (direct or through
+  // another group); a fold that carries no such chain — the laptop kernel holds group:sam but
+  // no member-of from sam — has nothing for the closure to follow, and is reported as SKIP.
+  const memberOfReach = new Set(["urn:moos:user:sam"]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const r of Object.values(fold.relations ?? {})) {
+      if (r.src_port === "member-of" && memberOfReach.has(r.src_urn) && !memberOfReach.has(r.tgt_urn)) {
+        memberOfReach.add(r.tgt_urn);
+        grew = true;
+      }
+    }
+  }
   for (const g of ["urn:moos:group:sam", "urn:moos:group:moos"]) {
+    if (!fold.nodes?.[g] || !memberOfReach.has(g)) {
+      console.log(
+        `  SKIP  this fold carries no member-of chain from user:sam to ${g.split(":").pop()} — member-of closure not asserted`,
+      );
+      continue;
+    }
     assert(samRes.role_topology.includes(g), `member-of closure reaches ${g.split(":").pop()}`);
   }
   assert(
@@ -494,6 +538,9 @@ async function main() {
   console.log(
     `healthz OK      t_day=${health.t_day} log_len=${health.log_len} ontology=${health.ontology_version}`,
   );
+  // t342 P1/P6: the engine's grammar, read the way the worker's adapter reads it.
+  const grammar = await client.engineGrammar(health);
+  console.log(`grammar         ${grammarSummary(grammar)}`);
 
   // 3. pure transform + default view_filter selection (the REAL adapter transform)
   // t337: stamped the way the adapter stamps an engine nobody named — what the engine
@@ -554,7 +601,9 @@ async function main() {
 
   // t264 axes over the LIVE fold read through the REAL MCP transport (not a fixture):
   // this is the coverage the extension's own self-test provides in the browser realm.
-  liveAxisChecks(fold, health);
+  // t342 P6/P1: (d) the drawer vocabulary, (h) lens ports declared, (i) port colours — all
+  // through the REAL drawerVocab (GraphControls.tsx) and port-colour.js, on the engine grammar.
+  liveAxisChecks(fold, health, grammar, await loadGraphControls(), await loadFrameGraphRules());
 
   // t337: the identity stamped on an engine nobody named (pure — no engine needed).
   engineIdentityChecks();
@@ -728,7 +777,8 @@ function knowledgeVocabChecks() {
 }
 
 /**
- * Load `src/components/FrameGraph.tsx` for its two PURE exports. Type-stripped with
+ * Load `src/components/FrameGraph.tsx` for its PURE exports (t342: and toElements, STYLE and
+ * applyPalette, which drawCheck runs in headless Cytoscape). Type-stripped with
  * `ts.transpileModule` and written one directory below the source (so `../` specifiers
  * gain a level), next to the one TypeScript module it imports a VALUE from
  * (`state/prefs.ts`). React and Cytoscape resolve from node_modules and are only loaded:
@@ -1289,7 +1339,7 @@ async function textSearchChecks(fold, health) {
  * @param {any} fold
  * @param {any} health
  */
-function liveAxisChecks(fold, health) {
+function liveAxisChecks(fold, health, grammar, gc, fg) {
   console.log("\n=== t264 axes on the LIVE fold (real MCP read) ===");
   const sel = (view_filter) =>
     selectFrame(fold, { healthz: health, request: view_filter ? { view_filter } : undefined });
@@ -1330,23 +1380,60 @@ function liveAxisChecks(fold, health) {
     `ports actually narrows (${narrowed.relations.length} < ${all.relations.length})`,
   );
 
-  // (d) every port the drawer offers must be REACHABLE, i.e. the vocabulary closes over
-  // the live label set. This is the check that caught `guards` / `participates` missing.
-  const VOCAB = new Set([
-    "owns", "member-of", "governs", "delegates-to",
-    "parent-of", "child-of", "spouse-of", "sibling-of", // T7: WF01 kinship (ontology 4.0.5)
-    "opens-on", "has-occupant", "hosts", "routes-to", "spans", "realizes", "presents-as", "participates",
-    "provides-kb", "classifies", "pins-urn", "cites", "depends-on", "composes", "produces",
-    "causes", "triggers", "has-purpose", "curates", "scheduled-after", "focus", "guards",
-    // t337: the WF12 knowledge ports (ontology 4.0.8) — spread from the vocabulary the
-    // drawer's "knowledge" group is built from, so this check and the panel cannot disagree.
-    ...KB_PORTS,
-  ]);
-  const unreachable = liveLabels.filter((l) => !VOCAB.has(l));
+  // (d) every live relation label must be REACHABLE in the drawer. This is the check that
+  // caught `guards` / `participates` missing (t264). t342 P6: the drawer's vocabulary is no
+  // longer a hand copy here — that copy missed ten labels on the laptop kernel, the whole
+  // substrate group among them. It is the REAL drawerVocab() of GraphControls.tsx: the static
+  // lens lists plus what the engine declares (/operad/rewrite-categories with its additional
+  // pairs, /operad/node-types) plus the permitted fold's own names, which is how a label no
+  // operad declares stays reachable (it draws as "undeclared pair").
+  // t342 P6 (review): drawerVocab offers the fold's own names BY CONSTRUCTION, so the two
+  // reachability asserts below guard drawerVocab, not the lists. The gap the t264 check used
+  // to catch — a live label no list names — is now the measured "fold only" count, printed.
+  const vocab = gc.drawerVocab(grammar, all.provenance.fold_vocab);
+  line("drawer", vocab.note);
+  const staticPorts = new Set(gc.ALL_PORTS);
+  const engineSrc = new Set(grammar.status === "engine" ? grammar.pairs.map((p) => p.src_port) : []);
+  const foldOnly = liveLabels.filter((l) => !staticPorts.has(l) && !engineSrc.has(l)).sort();
+  line(
+    "live labels",
+    `${liveLabels.length}: in the static lists ${liveLabels.filter((l) => staticPorts.has(l)).length} · ` +
+      `engine-declared only ${liveLabels.filter((l) => !staticPorts.has(l) && engineSrc.has(l)).length} · ` +
+      `reachable only because the fold carries them ${foldOnly.length} ${JSON.stringify(foldOnly)}`,
+  );
+  const unreachable = liveLabels.filter((l) => !vocab.allPorts.includes(l));
   assert(
     unreachable.length === 0,
-    `every live relation label is in the port vocabulary (unreachable: ${JSON.stringify(unreachable)})`,
+    `drawerVocab offers every live relation label (${liveLabels.length} labels; unreachable: ${JSON.stringify(unreachable)})`,
   );
+  const liveTypes = [...new Set(all.nodes.map((n) => n.type_id))];
+  const typeMisses = liveTypes.filter((t) => !vocab.allTypes.includes(t));
+  assert(
+    typeMisses.length === 0,
+    `drawerVocab offers every live node type (${liveTypes.length} types; unreachable: ${JSON.stringify(typeMisses)})`,
+  );
+  if (grammar.status === "engine") {
+    const declaredMisses = grammar.types.filter((t) => !vocab.allTypes.includes(t));
+    assert(
+      declaredMisses.length === 0,
+      `all ${grammar.types.length} types the engine declares are reachable from the drawer (missing: ${JSON.stringify(declaredMisses)})`,
+    );
+    const srcMisses = grammar.src_ports.filter((p) => !vocab.allPorts.includes(p));
+    assert(
+      srcMisses.length === 0,
+      `all ${grammar.src_ports.length} source ports the engine declares are reachable (missing: ${JSON.stringify(srcMisses)})`,
+    );
+    // t342 P6 (review): one basis with the graph's marker — the source ports of the declared
+    // pairs, a `{placeholder}` included (a kernel can write a relation on one).
+    const offPair = liveLabels.filter((l) => !engineSrc.has(l)).sort();
+    line("off-pair labels", `${offPair.length} live label(s) the engine declares as no source port: ${JSON.stringify(offPair)}`);
+    assert(
+      vocab.undeclaredPorts.every((p) => offPair.includes(p)),
+      `the drawer's "undeclared pair" group holds only live labels on no declared pair (${JSON.stringify(vocab.undeclaredPorts)})`,
+    );
+  } else {
+    console.log(`  (${grammarGap(grammar)} — the drawer offers the static lists only, and says so: "${vocab.note}")`);
+  }
 
   // (e) hops widen a LIVE focus monotonically.
   const manifold = all.nodes.find((n) => n.type_id === "manifold");
@@ -1391,6 +1478,177 @@ function liveAxisChecks(fold, health) {
         `(${lens.ports.filter((p) => liveLabels.includes(p)).length} live-declared, ` +
         `${slice.nodes.length}n/${slice.relations.length}r${dead.length ? `, DEAD: ${dead.join(", ")}` : ""})`,
     );
+  }
+
+  // (h) t342 P6: NO LENS MAY NAME A PORT THAT NOTHING DECLARES. A lens port must be declared
+  // by the CONNECTED engine (either end of a pair in /operad/rewrite-categories, additional
+  // pairs included), or by the knowledge vocabulary (kb-vocab, declared ahead of the data for
+  // its ontology — the fleet below it does not declare those ports yet), or sit on the
+  // commented legacy list (GraphControls LEGACY_PORTS). smoke:lens is offline and cannot ask
+  // an engine, so this check lives here. The lenses are the REAL LENSES export.
+  if (grammar.status !== "engine") {
+    console.log(`  SKIP (h) lens ports declared: ${grammarGap(grammar)} (${grammar.reason})`);
+  } else {
+    const byEngine = new Set(grammar.ports);
+    const byKb = new Set(KB_RELATIONS.flatMap((r) => [r.src_port, r.tgt_port]));
+    const legacy = new Set(gc.LEGACY_PORTS);
+    const basis = { engine: 0, kb: 0, legacy: 0 };
+    const nothing = [];
+    for (const lens of gc.LENSES) {
+      for (const p of lens.ports) {
+        if (byEngine.has(p)) basis.engine += 1;
+        else if (byKb.has(p)) basis.kb += 1;
+        else if (legacy.has(p)) basis.legacy += 1;
+        else nothing.push(`${lens.id}:${p}`);
+      }
+    }
+    assert(
+      nothing.length === 0,
+      `every lens port is declared — engine ${grammar.ontology_version} ${basis.engine}, ` +
+        `kb-vocab ${KB_VOCAB_VERSION} only ${basis.kb}, legacy list ${basis.legacy}` +
+        (nothing.length ? ` · DECLARED BY NOTHING: ${nothing.join(", ")}` : ""),
+    );
+  }
+
+  // (i) t342 P1: PORT COLOURS on the live fold — every relation end coloured by κ(port) from
+  // the engine's /operad/port-colors (never a relation's src_color / tgt_color, never its WF),
+  // through the real port-colour.js. In the port-colour palette NO relation may fall back to
+  // the relation-kind palette while the engine serves its port colours.
+  // t342 P1 (review): the census is the paint PLAN and is printed as a measurement; the gate is
+  // what FrameGraph DRAWS — its real toElements, STYLE and applyPalette, in headless
+  // Cytoscape, on this frame (drawCheck, as in smoke:lens H).
+  const census = kappaCensus(all.relations, grammar);
+  const famText = kappaFamilies(grammar)
+    .map((f) => `${f.family} ${census.families[f.family] ?? 0}`)
+    .join(" · ");
+  line("κ ends", famText || "(no colour families)");
+  line(
+    "κ states",
+    `exempt ${census.exempt} ends · uncoloured ${census.uncoloured} ends · undeclared pair ` +
+      `${census.undeclared} relations · two-tone ${census.twoTone} of ${census.relations}`,
+  );
+  if (hasPortColours(grammar)) {
+    const drawn = drawCheck(fg, { ...all, provenance: { ...all.provenance, grammar } });
+    assert(
+      drawn.port.edges > 0 && drawn.port.kind === 0 && drawn.port.wrong.length === 0,
+      `drawn (headless Cytoscape, the real STYLE): 0 of ${drawn.port.edges} live relations use the relation-kind palette in ` +
+        `port-colour mode (got ${drawn.port.kind}${drawn.port.wrong.length ? `; drawn wrong: ${drawn.port.wrong.length}, e.g. ${drawn.port.wrong.slice(0, 5).join(", ")}` : ""})`,
+    );
+    assert(
+      drawn.kind.port === 0 && drawn.kind.wrong.length === 0,
+      `switched to relation kind: 0 of ${drawn.kind.edges} still in port colour, each in its vocabulary colour or the default line (got ${drawn.kind.port}, wrong ${drawn.kind.wrong.length})`,
+    );
+    const families = kappaFamilies(grammar);
+    assert(
+      families.length <= KAPPA_HUES.length &&
+        families.every((f, n) => f.hue === KAPPA_HUES[n]),
+      `${families.length} colour families, each on its own hue of the eight`,
+    );
+    const emptyColours = Object.values(fold.relations).filter(
+      (r) => r.src_color === "" || r.tgt_color === "",
+    ).length;
+    line(
+      "src/tgt_color",
+      `${emptyColours} relations carry an empty src_color/tgt_color; read, they would be ${emptyColours} exempt — not read`,
+    );
+  } else {
+    assert(
+      census.kind === census.relations,
+      `${grammarGap(grammar)}: all ${census.relations} relations fall back to the relation-kind palette`,
+    );
+  }
+}
+
+/**
+ * t342 P1 (review): what FrameGraph is asked to DRAW — its real toElements, STYLE and
+ * applyPalette in headless Cytoscape (no canvas, nothing mounts); the same check as
+ * smoke:lens H. In port colour every relation must carry the `kappa` class and its κ data and
+ * be drawn in them (its hue or two tones, its end glyphs, the undeclared-pair marker; a
+ * neutral end always with its state's glyph); after the switch to relation kind none may.
+ */
+function drawCheck(fg, frame) {
+  const rgb = (hex) => [0, 2, 4].map((i) => parseInt(String(hex).replace("#", "").slice(i, i + 2), 16)).join();
+  const col = (v) => (Array.isArray(v) ? v.join() : String(v));
+  const kappaRgb = new Set([...KAPPA_HUES, KAPPA_NEUTRAL].map(rgb));
+  const neutral = rgb(KAPPA_NEUTRAL);
+  const baseLine = fg.STYLE.find((s) => s.selector === "edge").style["line-color"];
+  const cy = cytoscape({
+    headless: true,
+    styleEnabled: true,
+    elements: fg.toElements(frame, new Map(), new Set()),
+    style: fg.STYLE,
+  });
+  const val = (e, k) => e.pstyle(k).value;
+  try {
+    fg.applyPalette(cy, true);
+    const port = { edges: 0, kind: 0, wrong: [] };
+    cy.edges().forEach((e) => {
+      port.edges += 1;
+      const d = e.data();
+      if (!e.hasClass("kappa") || typeof d.ks !== "string" || typeof d.kt !== "string") {
+        port.kind += 1;
+        return;
+      }
+      const [ks, kt] = [rgb(d.ks), rgb(d.kt)];
+      const stops = val(e, "line-gradient-stop-colors").map(col);
+      const undeclared = d.kpair === "undeclared";
+      const ok =
+        (ks === kt
+          ? val(e, "line-fill") === "solid" && col(val(e, "line-color")) === ks
+          : val(e, "line-fill") === "linear-gradient" && stops[0] === ks && stops[stops.length - 1] === kt) &&
+        kappaRgb.has(ks) && kappaRgb.has(kt) &&
+        val(e, "source-arrow-shape") === d.kss && val(e, "target-arrow-shape") === d.kts &&
+        // both ends of the uncoloured state are hollow, every other end filled (Copilot on #46)
+        val(e, "source-arrow-fill") === (d.kss === END_GLYPHS.source.uncoloured ? "hollow" : "filled") &&
+        val(e, "target-arrow-fill") === (d.kts === END_GLYPHS.target.uncoloured ? "hollow" : "filled") &&
+        (ks === neutral) === (d.kss !== END_GLYPHS.source.colour) &&
+        (kt === neutral) === (d.kts !== END_GLYPHS.target.colour) &&
+        val(e, "line-style") === (undeclared ? UNDECLARED_MARKER.lineStyle : "solid") &&
+        val(e, "mid-target-arrow-shape") === (undeclared ? UNDECLARED_MARKER.midGlyph : "none");
+      if (!ok) port.wrong.push(String(d.label));
+    });
+    fg.applyPalette(cy, false);
+    const kind = { edges: 0, port: 0, wrong: [] };
+    cy.edges().forEach((e) => {
+      kind.edges += 1;
+      if (e.hasClass("kappa")) {
+        kind.port += 1;
+        return;
+      }
+      const want = rgb(kbPortStyle(e.data("label"))?.color ?? baseLine);
+      if (col(val(e, "line-color")) !== want || val(e, "line-fill") !== "solid") {
+        kind.wrong.push(String(e.data("label")));
+      }
+    });
+    return { port, kind };
+  } finally {
+    cy.destroy();
+  }
+}
+
+/**
+ * t342 P6: load `src/components/GraphControls.tsx` for its exports (LENSES, LEGACY_PORTS,
+ * drawerVocab), type-stripped as lens-smoke reads it — beside the source so its relative
+ * imports resolve. Nothing renders.
+ */
+async function loadGraphControls() {
+  const js = ts.transpileModule(
+    readFileSync(new URL("../src/components/GraphControls.tsx", import.meta.url), "utf8"),
+    {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+        jsx: ts.JsxEmit.ReactJSX,
+      },
+    },
+  ).outputText;
+  const components = fileURLToPath(new URL("../src/components/", import.meta.url));
+  const dir = mkdtempSync(join(components, ".live-smoke-"));
+  try {
+    writeFileSync(join(dir, "GraphControls.mjs"), js.replaceAll('from "../', 'from "../../'));
+    return await import(pathToFileURL(join(dir, "GraphControls.mjs")).href);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 

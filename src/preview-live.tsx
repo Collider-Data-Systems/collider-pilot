@@ -24,7 +24,8 @@
  *   any CORS-open engine. The Settings "engine" picker does NOT steer this page: it writes
  *   the shimmed `pilot.engine`, which only the extension's worker reads.
  *
- * READ-ONLY: only GET requests (the REST snapshot + the GET-only EventSource). No apply.
+ * READ-ONLY: only GET requests (the REST snapshot, t342 the three /operad/* grammar routes,
+ * and the GET-only EventSource). No apply.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -38,9 +39,10 @@ import {
   DEFAULT_ENGINE_URL,
 } from "./mcp/transform.js";
 import { readRequestedMode, ANON_USER_URN } from "./mcp/access.js";
+import { readEngineGrammar } from "./mcp/engine-grammar.js";
 import { PILOT_ACCESS_KEY, type PilotAccessConfig } from "./state/access-identity";
 import { PostureStrip } from "./components/PostureStrip";
-import { FrameGraph } from "./components/FrameGraph";
+import { FrameGraph, type RelationPalette } from "./components/FrameGraph";
 import {
   GraphControls,
   buildFrameRequest,
@@ -199,13 +201,23 @@ async function simulateWorkerSeam(
 async function fetchLiveFrame(request?: FrameRequest): Promise<HgFrame> {
   // Strip inbound access + re-inject the trusted identity, exactly as the worker does.
   const sanitized = await simulateWorkerSeam(request);
-  const [foldRes, healthRes] = await Promise.all([
+  // t342 P1/P6: the engine grammar, as the worker's adapter reads it (GET /operad/*, cached
+  // per engine + ontology version; an engine without the routes gives `absent`) — keyed by
+  // the /healthz ontology version, so read as soon as /healthz answers, beside /fold.
+  const healthRead = fetch(`${ENGINE_URL}/healthz`).then(async (res) =>
+    res.ok ? ((await res.json()) as Record<string, unknown>) : {},
+  );
+  const grammarRead = healthRead.then(
+    (h) => readEngineGrammar({ engineUrl: ENGINE_URL, healthz: h }),
+    () => undefined,
+  );
+  const [foldRes, health, grammar] = await Promise.all([
     fetch(`${ENGINE_URL}/fold`),
-    fetch(`${ENGINE_URL}/healthz`),
+    healthRead,
+    grammarRead,
   ]);
   if (!foldRes.ok) throw new Error(`GET /fold -> HTTP ${foldRes.status}`);
   const foldJson = await foldRes.json();
-  const health = healthRes.ok ? await healthRes.json() : {};
   // /fold returns { nodes:[…], relations:[…] }; selectFrame's Object.values handles arrays.
   const fold = { nodes: foldJson.nodes ?? {}, relations: foldJson.relations ?? {} };
   // t337: on the default engine the stamp is unchanged. A `?engine=` target is named by
@@ -215,6 +227,7 @@ async function fetchLiveFrame(request?: FrameRequest): Promise<HgFrame> {
   return selectFrame(fold, {
     healthz: health,
     request: sanitized,
+    grammar,
     ...(ENGINE_URL === DEFAULT_ENGINE_URL
       ? {}
       : {
@@ -231,6 +244,9 @@ async function fetchLiveFrame(request?: FrameRequest): Promise<HgFrame> {
 function PreviewLive() {
   const [frame, setFrame] = useState<HgFrame | null>(null);
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
+  // t342 P1 (review): the relation palette (decision 2: port colour by default), held here so
+  // the inspector colours its rows as the graph draws them. Not saved, like the legend ticks.
+  const [palette, setPalette] = useState<RelationPalette>("port");
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
   /**
@@ -407,11 +423,12 @@ function PreviewLive() {
     [spec, accessMode, viewScope, commitSlice],
   );
 
-  const toggleType = useCallback((ty: string) => {
-    setSpec((prev) => specToggleType(prev, ty));
+  // t342 P6: `all` is the drawer's expand-from-all base for this frame (drawerVocab).
+  const toggleType = useCallback((ty: string, all: readonly string[]) => {
+    setSpec((prev) => specToggleType(prev, ty, all));
   }, []);
-  const togglePort = useCallback((p: string) => {
-    setSpec((prev) => specTogglePort(prev, p));
+  const togglePort = useCallback((p: string, all: readonly string[]) => {
+    setSpec((prev) => specTogglePort(prev, p, all));
   }, []);
   const handleTChange = useCallback((t: string) => {
     setSpec((prev) => ({ ...prev, t }));
@@ -561,6 +578,7 @@ function PreviewLive() {
               />
             </ErrorBoundary>
             <GraphControls
+              frame={frame}
               search={search}
               onSearchChange={handleSearchChange}
               searchHint={searchHint}
@@ -596,6 +614,8 @@ function PreviewLive() {
                 focusUrn={focusUrn}
                 focusSignal={focusSignal}
                 highlightUrns={highlightUrns}
+                palette={palette}
+                onPaletteChange={setPalette}
               />
             )}
             <ErrorBoundary>
@@ -612,6 +632,7 @@ function PreviewLive() {
               node={selectedNode}
               onSelect={handleSelect}
               onNavigate={handleNavigate}
+              palette={palette}
               collapsible
             />
           </>

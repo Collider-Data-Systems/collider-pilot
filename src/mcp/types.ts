@@ -170,6 +170,68 @@ export interface FoldCounts extends FoldCount {
   relations: FoldCount;
 }
 
+/** t342 P1/P6: one port pair the engine declares (a rewrite_category's main or additional pair). */
+export interface GrammarPair {
+  src_port: string;
+  tgt_port: string;
+  rewrite_category: string;
+}
+
+/**
+ * t342 P1/P6: the engine's grammar as the frame was read with it — `/operad/node-types`,
+ * `/operad/rewrite-categories` and `/operad/port-colors`, read at run time by
+ * `src/mcp/engine-grammar.js` and cached per (engine, ontology_version). Nothing of it is
+ * written into this repo. `absent` is an engine without those routes (or unreachable ones):
+ * the drawer then offers its static lists and the graph the relation-kind palette.
+ */
+export type EngineGrammar =
+  | {
+      status: "engine";
+      /** The REST base the grammar was read from. */
+      source: string;
+      ontology_version: string;
+      /** Every declared pair, main and additional, de-duplicated. */
+      pairs: GrammarPair[];
+      /** The declared source ports (a relation's label is its src_port), placeholders out. */
+      src_ports: string[];
+      /** Every declared port name, either end, placeholders out. */
+      ports: string[];
+      /** The declared node types. */
+      types: string[];
+      /**
+       * κ: port -> colour family. `""` is the exemption of 98f2ccc kernels on 4.0.x. Null
+       * (t342 P6 review): the engine serves its pairs and types but no port colours — the drawer
+       * keeps them, the graph draws relation kinds.
+       */
+      port_colors: Record<string, string> | null;
+      /** Why `port_colors` is null; null when it is not. */
+      port_colors_reason: string | null;
+      /** K1's `color_rule` / `color_source`, null when the engine does not state them. */
+      color_rule: string | null;
+      color_source: string | null;
+    }
+  | {
+      status: "absent";
+      source: string;
+      ontology_version: string;
+      reason: string;
+      /**
+       * t342 P1/P6 (review): the routes did not answer this time (a timeout, a network failure, a
+       * 5xx) — not an engine without them. Asked again after GRAMMAR_RETRY_MS.
+       */
+      unreachable?: boolean;
+    };
+
+/**
+ * t342 P6: the relation labels and node types present in the PERMITTED fold, whatever the
+ * lens, focus or t — so a label the engine declares nowhere stays reachable in the drawer
+ * after a narrower lens has left it out of the frame.
+ */
+export interface FoldVocab {
+  ports: string[];
+  types: string[];
+}
+
 /**
  * Provenance header Steinberger requires: every frame states exactly which engine,
  * log position, workspace/session, purpose, and view_filter it came from.
@@ -224,6 +286,13 @@ export interface FrameProvenance {
    * t342 — the strip then omits the counts.
    */
   fold_counts?: FoldCounts;
+  /**
+   * t342 P1/P6: the engine grammar this frame was read with (see EngineGrammar). Absent on
+   * fixture frames and on frames cached before t342 — the graph then draws relation kinds.
+   */
+  grammar?: EngineGrammar;
+  /** t342 P6: labels and types in the permitted fold, whatever the lens (see FoldVocab). */
+  fold_vocab?: FoldVocab;
 }
 
 /** A projected frame: provenance + the selected nodes and relations. */

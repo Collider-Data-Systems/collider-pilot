@@ -32,6 +32,8 @@
  * @typedef {import("./types").AccessScope} AccessScope
  * @typedef {import("./types").AccessResolution} AccessResolution
  * @typedef {import("./types").FoldCounts} FoldCounts
+ * @typedef {import("./types").FoldVocab} FoldVocab
+ * @typedef {import("./types").EngineGrammar} EngineGrammar
  */
 
 import { resolveAccess, accessKeepSet } from "./access.js";
@@ -451,6 +453,8 @@ export function applyViewFilter(nodes, relations, viewFilter, tPinned, accessKee
  * @property {AccessResolution} [serverAccess] - a server-computed resolution to trust+echo
  *                                               (future A2); when present the local
  *                                               resolveAccess call is skipped.
+ * @property {EngineGrammar} [grammar]    - t342 P1/P6: the engine grammar the frame is read
+ *                                          with (src/mcp/engine-grammar.js), stamped verbatim
  */
 
 /**
@@ -520,6 +524,20 @@ export function selectFrame(fold, opts) {
     },
   };
 
+  // t342 P6: the labels and types of the PERMITTED fold, whatever the lens, focus or t — the
+  // drawer offers them, so a label the engine declares nowhere stays reachable after a
+  // narrower lens left it out of the frame. Access still applies: a withheld node's type and
+  // a withheld relation's label are not listed. Counting only, like fold_counts.
+  const permittedNodes = allNodes.filter((n) => !withheld.has(n.urn));
+  const permittedRelations = allRelations.filter(
+    (r) => !withheld.has(r.source_urn) && !withheld.has(r.target_urn),
+  );
+  /** @type {FoldVocab} */
+  const foldVocab = {
+    ports: [...new Set(permittedRelations.map((r) => r.label))].sort(),
+    types: [...new Set(permittedNodes.map((n) => n.type_id))].sort(),
+  };
+
   // workspace = first in-scope node that is a session; else first scope urn.
   const sessionScope = viewFilter.scope_urns.find(
     (u) => fold.nodes?.[u]?.type_id === "session",
@@ -552,6 +570,10 @@ export function selectFrame(fold, opts) {
     // Stamp the derived access fiber (or leave undefined when no access scope was requested).
     ...(accessResolution ? { access: accessResolution } : {}),
     fold_counts: foldCounts,
+    fold_vocab: foldVocab,
+    // t342 P1/P6: the grammar rides with the frame, so every surface that draws it — the
+    // panel, the mirrors through the session store — colours and offers the same vocabulary.
+    ...(opts.grammar ? { grammar: opts.grammar } : {}),
   };
 
   return { provenance, nodes, relations };

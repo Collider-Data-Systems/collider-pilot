@@ -68,6 +68,14 @@ gate re-fires and passes. This has cost a red check at least once (`#42`).
   says. **`npm run smoke:lens` enforces both** (`scripts/lens-smoke.mjs`), and it exists because
   prose did not: the `substrate` lens drifted in `#42`, and the check found a second, pre-existing
   drift in the `topology` tooltip on its first run.
+- **The engine's grammar is read, never written here (t342).** The drawer adds, at run time,
+  the types and source ports the connected engine declares (`/operad/*`, through
+  `src/mcp/engine-grammar.js`) and the fold's undeclared labels — `drawerVocab` in
+  `GraphControls.tsx`; relation ends are coloured by the engine's port colours
+  (`src/ui/port-colour.js`). Never add operad data, a port-colour map or an mtdc-only port or
+  type name to this public repo by hand. A port a lens names must be declared by the
+  connected engine or the knowledge vocabulary, or sit on the commented `LEGACY_PORTS` list:
+  `npm run smoke:live` (h) enforces it, `smoke:lens` H and I hold the rules offline.
 - **Verify slices through the real shared transform.** `applyViewFilter` lives in
   `src/mcp/transform.js` and the access law in `src/mcp/access.js`; both are imported by the
   smokes so they exercise the shipped law, not a copy. A hand-rolled check against a fixture of

@@ -57,7 +57,7 @@ import {
   type AccessPosture,
 } from "./state/prefs";
 import { PostureStrip } from "./components/PostureStrip";
-import { FrameGraph } from "./components/FrameGraph";
+import { FrameGraph, type RelationPalette } from "./components/FrameGraph";
 import {
   GraphControls,
   buildFrameRequest,
@@ -183,6 +183,9 @@ function isFullTabSupported(): boolean {
 function SidePanel() {
   const [frame, setFrame] = useState<HgFrame | null>(null);
   const [selectedUrn, setSelectedUrn] = useState<string | null>(null);
+  // t342 P1 (review): the relation palette (decision 2: port colour by default), held here so
+  // the inspector colours its rows as the graph draws them. Not saved, like the legend ticks.
+  const [palette, setPalette] = useState<RelationPalette>("port");
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
   /**
@@ -471,11 +474,12 @@ function SidePanel() {
   );
 
   // Advanced edits: stage in the spec; Apply commits.
-  const toggleType = useCallback((ty: string) => {
-    setSpec((prev) => specToggleType(prev, ty));
+  // t342 P6: `all` is the drawer's expand-from-all base for this frame (drawerVocab).
+  const toggleType = useCallback((ty: string, all: readonly string[]) => {
+    setSpec((prev) => specToggleType(prev, ty, all));
   }, []);
-  const togglePort = useCallback((p: string) => {
-    setSpec((prev) => specTogglePort(prev, p));
+  const togglePort = useCallback((p: string, all: readonly string[]) => {
+    setSpec((prev) => specTogglePort(prev, p, all));
   }, []);
   const handleTChange = useCallback((t: string) => {
     setSpec((prev) => ({ ...prev, t }));
@@ -709,6 +713,7 @@ function SidePanel() {
         {frame && (
           <>
             <GraphControls
+              frame={frame}
               search={search}
               onSearchChange={handleSearchChange}
               searchHint={searchHint}
@@ -741,6 +746,8 @@ function SidePanel() {
                 focusUrn={focusUrn}
                 focusSignal={focusSignal}
                 highlightUrns={highlightUrns}
+                palette={palette}
+                onPaletteChange={setPalette}
               />
             )}
             {/* t264: the engine jsonl, live. Self-hides on mock frames. */}
@@ -764,6 +771,7 @@ function SidePanel() {
               node={selectedNode}
               onSelect={handleSelect}
               onNavigate={handleNavigate}
+              palette={palette}
               collapsible
             />
             <ErrorBoundary>

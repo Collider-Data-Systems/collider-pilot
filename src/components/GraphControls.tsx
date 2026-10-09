@@ -27,8 +27,16 @@
 
 import { useState } from "react";
 import type { AccessPosture } from "../state/prefs";
-import type { AccessScope, FrameRequest, HgFrame, ViewFilter } from "../mcp/types";
+import type {
+  AccessScope,
+  EngineGrammar,
+  FoldVocab,
+  FrameRequest,
+  HgFrame,
+  ViewFilter,
+} from "../mcp/types";
 import { KB_NODE_TYPES, KB_ONTOLOGY_VERSION, KB_PORTS } from "../ui/kb-vocab.js";
+import { grammarGap, isPlaceholderPort } from "../mcp/engine-grammar.js";
 
 /* -------------------------------------------------------------------------- */
 /* Lens presets — named (types × ports) slices matching the doctrine strata   */
@@ -256,6 +264,19 @@ export const TYPE_GROUPS: { label: string; types: string[] }[] = [
   },
 ];
 
+/**
+ * t342 P6 LEGACY PORTS: names the drawer offered by hand that NO operad declares — not the
+ * laptop kernel's 4.0.7, not scratch's mtdc-2.1.0 — and that NO live fold carries (measured
+ * t342 on both). Kept in their own group, not deleted: a fold written before they fell out
+ * of the grammar may still hold one, and the `topology` lens still names `realizes`. Every
+ * other port a lens names must be declared by the connected engine (or by the knowledge
+ * vocabulary) — `smoke:live` (h) fails on one that is neither declared nor listed here.
+ *   - realizes : placement, named by the topology lens; in no rewrite_category.
+ *   - cites    : content/flow; in no rewrite_category (WF12 has `derived-from` for provenance).
+ *   - curates  : content/flow; in no rewrite_category.
+ */
+export const LEGACY_PORTS: readonly string[] = ["realizes", "cites", "curates"];
+
 /** Relation ports offered in the advanced drawer, grouped by family. */
 export const PORT_GROUPS: { label: string; ports: string[] }[] = [
   { label: "identity/authority", ports: ["owns", "member-of", "governs", "delegates-to"] },
@@ -269,7 +290,6 @@ export const PORT_GROUPS: { label: string; ports: string[] }[] = [
       "hosts",
       "routes-to",
       "spans",
-      "realizes",
       "presents-as",
       "participates",
     ],
@@ -297,14 +317,12 @@ export const PORT_GROUPS: { label: string; ports: string[] }[] = [
       "provides-kb",
       "classifies",
       "pins-urn",
-      "cites",
       "depends-on",
       "composes",
       "produces",
       "causes",
       "triggers",
       "has-purpose",
-      "curates",
       "scheduled-after",
       "focus",
       "guards",
@@ -315,6 +333,9 @@ export const PORT_GROUPS: { label: string; ports: string[] }[] = [
   // ANY other port expanded from an ALL_PORTS that lacked them, silently dropping every
   // knowledge relation from the frame (measured: 178 -> 0).
   { label: "knowledge", ports: [...KB_PORTS] },
+  // t342 P6: the legacy list (see LEGACY_PORTS) — still offered, so a fold that carries one
+  // can select it and the `topology` lens keeps every port it names reachable.
+  { label: "legacy", ports: [...LEGACY_PORTS] },
 ];
 
 /**
@@ -354,6 +375,139 @@ export function defaultSliceSpec(): SliceSpec {
 export const ALL_TYPES: string[] = TYPE_GROUPS.flatMap((g) => g.types);
 export const ALL_PORTS: string[] = PORT_GROUPS.flatMap((g) => g.ports);
 
+/* -------------------------------------------------------------------------- */
+/* t342 P6 — the drawer's vocabulary: static lists + what the engine declares */
+/* -------------------------------------------------------------------------- */
+
+/** The groups the drawer shows for one frame, and what an untick expands from. */
+export interface DrawerVocab {
+  typeGroups: { label: string; types: string[]; title?: string }[];
+  portGroups: { label: string; ports: string[]; title?: string }[];
+  /** Every type / port the drawer offers — the expand-from-all base of an untick. */
+  allTypes: string[];
+  allPorts: string[];
+  /** Labels in the permitted fold that are the source port of no declared pair. */
+  undeclaredPorts: string[];
+  /** "engine": the frame's grammar came from the engine; "static": it did not. */
+  source: "engine" | "static";
+  /** One sentence for the drawer: where the extra groups came from, or why there are none. */
+  note: string;
+}
+
+/**
+ * t342 P6: the drawer's groups for a frame. The static TYPE_GROUPS / PORT_GROUPS (the lens
+ * invariant, smoke:lens A-C) come first, unchanged; then, read at RUN TIME:
+ *   - the node types and source ports the ENGINE declares (`/operad/node-types`,
+ *     `/operad/rewrite-categories` + AdditionalPortPairs) that no static group names — one
+ *     extra group each, named by the engine's ontology version. No mtdc-only name is written
+ *     into this repo: on mtdc-2.1.0 this group is how all 56 types become reachable;
+ *   - the labels and types of the permitted fold that neither the static lists nor the engine
+ *     name — so a live label no operad declares (`tagged`, `summarizes`, `steers` on the
+ *     laptop kernel) stays reachable; its relations draw as "undeclared pair" (P1).
+ * Only SOURCE ports are offered from the engine: a relation's label is its src_port, so a
+ * name that is only ever a target end labels nothing. A `{placeholder}` port is not a name
+ * the engine group offers — unless the fold carries it as a label: then it is a declared
+ * source port, in the engine group, not "undeclared pair" (t342 P6 review: one basis with the
+ * graph's pair check, the source ports of `grammar.pairs`).
+ * Without an engine grammar the static lists stand alone (plus the fold's own names), and
+ * the note says so. `smoke:live` (d) checks the live fold through this same function.
+ */
+export function drawerVocab(
+  grammar: EngineGrammar | null | undefined,
+  foldVocab?: FoldVocab | null,
+): DrawerVocab {
+  const engine = grammar?.status === "engine" ? grammar : null;
+  const foldPorts = Array.isArray(foldVocab?.ports) ? foldVocab.ports : [];
+  const foldTypes = Array.isArray(foldVocab?.types) ? foldVocab.types : [];
+  const staticTypes = new Set(ALL_TYPES);
+  const staticPorts = new Set(ALL_PORTS);
+  const engineTypes = engine ? engine.types.filter((t) => !staticTypes.has(t)) : [];
+  // Every declared source port, placeholders included — the basis isDeclaredPair uses.
+  const declaredSrc = new Set(engine ? engine.pairs.map((p) => p.src_port) : []);
+  const foldPlaceholders = foldPorts.filter((p) => isPlaceholderPort(p) && declaredSrc.has(p));
+  const enginePorts = engine
+    ? [...new Set([...engine.src_ports, ...[...new Set(foldPlaceholders)].sort()])].filter(
+        (p) => !staticPorts.has(p),
+      )
+    : [];
+  const declaredTypes = new Set(engine ? engine.types : []);
+  const foldOnlyTypes = [...new Set(foldTypes)]
+    .filter((t) => !staticTypes.has(t) && !declaredTypes.has(t))
+    .sort();
+  const foldOnlyPorts = [...new Set(foldPorts)]
+    .filter((p) => !staticPorts.has(p) && !declaredSrc.has(p))
+    .sort();
+  const ov = engine?.ontology_version ?? grammar?.ontology_version ?? "unknown";
+  const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+  const typeGroups = [
+    ...TYPE_GROUPS,
+    ...(engineTypes.length
+      ? [
+          {
+            label: `engine ${ov}`,
+            types: engineTypes,
+            title: `Node types the connected engine declares (/operad/node-types, ontology ${ov}) that the static groups above do not name.`,
+          },
+        ]
+      : []),
+    ...(foldOnlyTypes.length
+      ? [
+          {
+            label: engine ? "in this fold, undeclared" : "in this fold",
+            types: foldOnlyTypes,
+            title: engine
+              ? "Node types in the permitted fold that the engine's /operad/node-types does not declare."
+              : "Node types in the permitted fold that the static groups above do not name.",
+          },
+        ]
+      : []),
+  ];
+  const portGroups = [
+    ...PORT_GROUPS,
+    ...(enginePorts.length
+      ? [
+          {
+            label: `engine ${ov}`,
+            ports: enginePorts,
+            title: `Source ports the connected engine declares (/operad/rewrite-categories with its additional pairs, ontology ${ov}) that the static groups above do not name.`,
+          },
+        ]
+      : []),
+    ...(foldOnlyPorts.length
+      ? [
+          {
+            label: engine ? "undeclared pair" : "in this fold",
+            ports: foldOnlyPorts,
+            title: engine
+              ? "Relation labels in the permitted fold that are the source port of no pair the engine declares. The graph draws them as an undeclared pair (dotted, with a diamond midway)."
+              : "Relation labels in the permitted fold that the static groups above do not name.",
+          },
+        ]
+      : []),
+  ];
+  // Without an engine grammar the drawer is the static lists plus what the permitted fold adds
+  // (the "in this fold" groups above); the note says which.
+  const staticNote =
+    foldOnlyTypes.length || foldOnlyPorts.length
+      ? `static lists + ${plural(foldOnlyTypes.length, "type")} and ${plural(foldOnlyPorts.length, "port")} from the permitted fold`
+      : "static lists only";
+  const note = engine
+    ? `+${plural(engineTypes.length, "type")} and ${plural(enginePorts.length, "port")} the engine declares (ontology ${ov})` +
+      (foldOnlyPorts.length ? ` · ${plural(foldOnlyPorts.length, "label")} on no declared pair` : "")
+    : grammar && grammar.status === "absent"
+      ? `${grammarGap(grammar)} (${grammar.reason}) — ${staticNote}`
+      : `no engine grammar on this frame — ${staticNote}`;
+  return {
+    typeGroups,
+    portGroups,
+    allTypes: typeGroups.flatMap((g) => g.types),
+    allPorts: portGroups.flatMap((g) => g.ports),
+    undeclaredPorts: engine ? foldOnlyPorts : [],
+    source: engine ? "engine" : "static",
+    note,
+  };
+}
+
 const sameSet = (a: string[], b: string[]) =>
   a.length === b.length && b.every((x) => a.includes(x));
 
@@ -381,12 +535,20 @@ export function specWithLens(spec: SliceSpec, lensId: string): SliceSpec {
  * array is the transform's legacy "fall back to the default slice" signal, so a
  * 0-type UI state would silently request a 4-type frame. Refusing the final untick
  * keeps the UI and the request telling the same story.
+ *
+ * t342 P6: `all` is what the drawer offers for THIS frame (drawerVocab().allTypes — the
+ * static groups plus the engine's and the fold's own types). Expanding ["*"] from the static
+ * list alone would drop every engine-only type the moment one box is unticked.
  */
-export function specToggleType(spec: SliceSpec, ty: string): SliceSpec {
-  const base = spec.types.includes("*") ? [...ALL_TYPES] : [...spec.types];
+export function specToggleType(
+  spec: SliceSpec,
+  ty: string,
+  all: readonly string[] = ALL_TYPES,
+): SliceSpec {
+  const base = spec.types.includes("*") ? [...all] : [...spec.types];
   const next = base.includes(ty) ? base.filter((t) => t !== ty) : [...base, ty];
   if (next.length === 0) return spec; // never emit [] — it would silently mean "default"
-  const types = sameSet(next, ALL_TYPES) ? ["*"] : next;
+  const types = sameSet(next, [...all]) ? ["*"] : next;
   return { ...spec, types, lens: matchLens(types, spec.ports) };
 }
 
@@ -395,12 +557,18 @@ export function specToggleType(spec: SliceSpec, ty: string): SliceSpec {
  * Same last-item guard as types (Copilot #21 catch, mirrored): [] means ALL ports in
  * the transform, so unticking the final port would silently flip the slice from
  * "one port" to "every port".
+ *
+ * t342 P6: `all` as for specToggleType (drawerVocab().allPorts).
  */
-export function specTogglePort(spec: SliceSpec, p: string): SliceSpec {
-  const base = spec.ports.length === 0 ? [...ALL_PORTS] : [...spec.ports];
+export function specTogglePort(
+  spec: SliceSpec,
+  p: string,
+  all: readonly string[] = ALL_PORTS,
+): SliceSpec {
+  const base = spec.ports.length === 0 ? [...all] : [...spec.ports];
   const next = base.includes(p) ? base.filter((x) => x !== p) : [...base, p];
   if (next.length === 0) return spec; // never emit [] — it would silently mean "all"
-  const ports = sameSet(next, ALL_PORTS) ? [] : next;
+  const ports = sameSet(next, [...all]) ? [] : next;
   return { ...spec, ports, lens: matchLens(spec.types, ports) };
 }
 
@@ -497,8 +665,12 @@ export interface GraphControlsProps {
   spec: SliceSpec;
   /** Lens tap: parent sets spec to the lens's types/ports (or keeps custom edits). */
   onLensChange: (lensId: string) => void;
-  onToggleType: (type: string) => void;
-  onTogglePort: (port: string) => void;
+  /**
+   * t342 P6: `all` is the drawer's expand-from-all base for this frame — pass it on to
+   * specToggleType / specTogglePort.
+   */
+  onToggleType: (type: string, all: readonly string[]) => void;
+  onTogglePort: (port: string, all: readonly string[]) => void;
   onTChange: (value: string) => void;
   onHopsChange: (hops: number) => void;
   onApplyFilter: () => void;
@@ -533,6 +705,11 @@ export interface GraphControlsProps {
    * hops / posture) never silently commits them without the user noticing.
    */
   dirty?: boolean;
+  /**
+   * t342 P6: the current frame — its engine grammar and permitted-fold vocabulary feed the
+   * drawer's extra groups (drawerVocab). Absent or without a grammar: static lists only.
+   */
+  frame?: HgFrame | null;
 }
 
 export function GraphControls({
@@ -558,8 +735,11 @@ export function GraphControls({
   showGraph,
   onToggleGraphVisible,
   dirty = false,
+  frame = null,
 }: GraphControlsProps) {
   const identified = accessMode === "identified";
+  // t342 P6: the drawer's groups for this frame — static lists + what the engine declares.
+  const vocab = drawerVocab(frame?.provenance?.grammar, frame?.provenance?.fold_vocab);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const typeSet = new Set(spec.types);
   const allTypes = typeSet.has("*");
@@ -788,15 +968,21 @@ export function GraphControls({
           <div className="gc-adv-note">
             node types {allTypes && <em>(everything — untick to narrow)</em>}
           </div>
-          {TYPE_GROUPS.map((g) => (
-            <div key={g.label} className="gc-types gc-type-group">
+          <div
+            className={`gc-adv-note gc-vocab-note${vocab.source === "engine" ? "" : " is-static"}`}
+            title="t342: the groups after the static ones are read from the connected engine at run time (/operad/node-types, /operad/rewrite-categories) and from the permitted fold; none of them is written into the pilot."
+          >
+            {vocab.note}
+          </div>
+          {vocab.typeGroups.map((g) => (
+            <div key={g.label} className="gc-types gc-type-group" title={g.title}>
               <span className="gc-group-label">{g.label}</span>
               {g.types.map((ty) => (
                 <label key={ty} className="gc-check" title={ty}>
                   <input
                     type="checkbox"
                     checked={allTypes || typeSet.has(ty)}
-                    onChange={() => onToggleType(ty)}
+                    onChange={() => onToggleType(ty, vocab.allTypes)}
                   />
                   <span>{ty}</span>
                 </label>
@@ -806,15 +992,15 @@ export function GraphControls({
           <div className="gc-adv-note">
             relation ports {allPorts && <em>(everything — untick to narrow)</em>}
           </div>
-          {PORT_GROUPS.map((g) => (
-            <div key={g.label} className="gc-types gc-type-group">
+          {vocab.portGroups.map((g) => (
+            <div key={g.label} className="gc-types gc-type-group" title={g.title}>
               <span className="gc-group-label">{g.label}</span>
               {g.ports.map((p) => (
                 <label key={p} className="gc-check" title={p}>
                   <input
                     type="checkbox"
                     checked={allPorts || portSet.has(p)}
-                    onChange={() => onTogglePort(p)}
+                    onChange={() => onTogglePort(p, vocab.allPorts)}
                   />
                   <span>{p}</span>
                 </label>

@@ -26,11 +26,20 @@
  * zoom and the selection, `find` matches and the hovered node keep a label enlarged to stay
  * readable (EXEMPT_LABELS). The nodes no relation of the frame touches sit in one band under
  * the linked drawing — the `unlinked N` chip in the bar hides or shows it.
+ *
+ * PORT COLOUR (t342 P1, decision 2): by default every relation END is coloured by κ(port),
+ * the colour family the engine's `/operad/port-colors` gives it — one hue when both ends
+ * share a family, two tones when they do not; exempt, uncoloured and undeclared-pair ends
+ * carry glyphs, never a hue (src/ui/port-colour.js). κ comes from the frame's grammar, read
+ * from the engine at run time; nothing of it is written here. The legend's "colour by" switch
+ * goes back to the RELATION KIND palette — the knowledge vocabulary's colours and the default
+ * line — which is also what a frame without an engine grammar draws, and the legend says so.
+ * Node fills stay the type palette, which shares no colour with the eight κ hues.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import cytoscape from "cytoscape";
-import type { HgFrame, HgNode } from "../mcp/types";
+import type { EngineGrammar, HgFrame, HgNode } from "../mcp/types";
 import type { GraphLayoutName } from "../state/prefs";
 import { DEFAULT_GRAPH_LAYOUT } from "../state/prefs";
 import {
@@ -42,7 +51,22 @@ import {
   kbConversePort,
   kbPortStyle,
   kbRelation,
+  KB_VOCAB_VERSION,
 } from "../ui/kb-vocab.js";
+import {
+  KAPPA_NEUTRAL,
+  KAPPA_STATES,
+  UNDECLARED_MARKER,
+  hasPortColours,
+  kappaCensus,
+  kappaRelationData,
+  kappaFamilies,
+  paintRelation,
+} from "../ui/port-colour.js";
+import { grammarGap, grammarSummary } from "../mcp/engine-grammar.js";
+
+/** t342 P1 (decision 2): the relation palette — port colour (the default) or relation kind. */
+export type RelationPalette = "port" | "kind";
 
 // t264: the slice can now render EVERY fold type (lenses/advanced) — color the spine
 // and content families distinctly; anything unlisted gets the neutral default.
@@ -74,6 +98,11 @@ const TYPE_COLOR: Record<string, string> = {
   endpoint: "#67e8f9",
 };
 const DEFAULT_COLOR = "#a0a0b0";
+/**
+ * t342 P1: every colour a node is filled with by type (claims add their vocabulary kind
+ * colours). `smoke:lens` H holds these apart from the eight κ hues of the relation ends.
+ */
+export const NODE_FILLS: readonly string[] = [...Object.values(TYPE_COLOR), DEFAULT_COLOR];
 /** The default relation line colour (also the legend swatch of a non-vocabulary port). */
 const RELATION_COLOR = "#3a3a48";
 
@@ -321,7 +350,8 @@ function claimKind(node: HgNode): string | null {
 const nodeKindKey = (typeId: string, kind?: string | null) =>
   kind ? `${typeId} · ${kind}` : typeId;
 
-function toElements(
+/** Exported (t342 P1 review) so the smokes draw exactly these elements with STYLE. */
+export function toElements(
   frame: HgFrame,
   parents: Map<string, string>,
   unlinked: ReadonlySet<string>,
@@ -353,6 +383,9 @@ function toElements(
   });
   // Cytoscape "edges" == mo:os relations. Guard against dangling endpoints.
   const nodeUrns = new Set(frameNodes.map((n) => n.urn));
+  // t342 P1: each end's κ hue and glyph, and the pair state, from the frame's engine grammar
+  // (port-colour.js). Carried on every drawn relation; the `kappa` class decides whether they draw.
+  const grammar = frame.provenance?.grammar;
   const edges: cytoscape.ElementDefinition[] = relationsOf(frame)
     .filter((r) => nodeUrns.has(r.source_urn) && nodeUrns.has(r.target_urn))
     // t337: a nesting relation the box already shows is not drawn again as a line.
@@ -365,6 +398,7 @@ function toElements(
         target: r.target_urn,
         label: r.label,
         type_id: r.type_id,
+        ...(kappaRelationData(paintRelation(r, grammar)) ?? {}),
       },
       ...(boxes.size > 0 ? { pannable: true } : {}),
     }));
@@ -387,11 +421,16 @@ function structureKey(elements: cytoscape.ElementDefinition[]): string {
     .join("\n");
 }
 
+/** t342 P1: the relation data the port-colour style reads (port-colour.js kappaRelationData). */
+const KAPPA_KEYS = ["ks", "kt", "kss", "kts", "kpair"];
+
 /** Update the data styling reads, in place — no element is added, removed or moved. */
 function syncData(cy: cytoscape.Core, el: cytoscape.ElementDefinition): void {
   const ele = cy.getElementById(String(el.data.id));
   if (ele.empty()) return;
-  for (const key of el.group === "nodes" ? ["label", "type_id", "kind"] : ["label", "type_id"]) {
+  // t342 P1: the κ data too — a re-read under another grammar recolours in place.
+  const keys = el.group === "nodes" ? ["label", "type_id", "kind"] : ["label", "type_id", ...KAPPA_KEYS];
+  for (const key of keys) {
     const next = el.data[key];
     if (ele.data(key) === next) continue;
     if (next === undefined) ele.removeData(key);
@@ -404,6 +443,11 @@ interface LegendRelationRow {
   count: number;
   /** How many of them are shown as a box instead of a line. */
   boxed: number;
+  /** t342 P1: the port-colour hues of the row's first relation (null: relation kind only). */
+  ks: string | null;
+  kt: string | null;
+  /** t342 P1: how many of them sit on a pair the engine does not declare. */
+  undeclared: number;
 }
 interface LegendNodeRow {
   key: string;
@@ -426,10 +470,15 @@ function legendOf(
   const frameNodes = nodesOf(frame);
   const typeOf = new Map(frameNodes.map((n) => [n.urn, n.type_id]));
   const ports = new Map<string, LegendRelationRow>();
+  const grammar = frame.provenance?.grammar;
   for (const r of relationsOf(frame)) {
     if (!typeOf.has(r.source_urn) || !typeOf.has(r.target_urn)) continue;
-    const row = ports.get(r.label) ?? { port: r.label, count: 0, boxed: 0 };
+    const paint = kappaRelationData(paintRelation(r, grammar));
+    const row =
+      ports.get(r.label) ??
+      { port: r.label, count: 0, boxed: 0, ks: paint?.ks ?? null, kt: paint?.kt ?? null, undeclared: 0 };
     row.count += 1;
+    if (paint?.kpair === "undeclared") row.undeclared += 1;
     if (r.label === KB_NESTING_PORT && parents.get(r.source_urn) === r.target_urn) row.boxed += 1;
     ports.set(r.label, row);
   }
@@ -868,7 +917,8 @@ const KB_RELATION_WIDTH = [1.6, 2.4, 3];
 
 // Type coloring via attribute selectors keeps color OUT of node data (derived, not
 // stored). Base rule first; per-type rules have higher specificity and win.
-const STYLE: cytoscape.StylesheetStyle[] = [
+/** Exported (t342 P1 review): `smoke:lens` H and `smoke:live` (i) draw headless with it. */
+export const STYLE: cytoscape.StylesheetStyle[] = [
   {
     selector: "node",
     style: {
@@ -1003,9 +1053,47 @@ const STYLE: cytoscape.StylesheetStyle[] = [
       },
     };
   }),
+  // t342 P1 PORT COLOUR (the default palette, decision 2): each end in κ(port) — one hue, or
+  // two tones split at the middle — and the three non-colour states as glyphs on a neutral
+  // grey, never a hue (port-colour.js: source ⊣ / ○, target ▸⊣ / ○▸, undeclared pair dotted
+  // with a hollow ◇ midway). The class `kappa` is on every relation while the palette is port
+  // colour; without it the relation-kind rules above draw. The port name is on the line here
+  // (the colour no longer names a knowledge port), held to the label cut like every label.
+  {
+    selector: "edge.kappa",
+    style: {
+      width: 1.6,
+      label: "data(label)",
+      "line-color": "data(ks)",
+      "line-fill": (e: cytoscape.EdgeSingular) =>
+        e.data("ks") === e.data("kt") ? "solid" : "linear-gradient",
+      "line-gradient-stop-colors": (e: cytoscape.EdgeSingular) =>
+        `${e.data("ks")} ${e.data("ks")} ${e.data("kt")} ${e.data("kt")}`,
+      "line-gradient-stop-positions": "0 50 50 100",
+      "line-style": (e: cytoscape.EdgeSingular) =>
+        e.data("kpair") === "undeclared" ? UNDECLARED_MARKER.lineStyle : "solid",
+      "source-arrow-shape": "data(kss)",
+      "source-arrow-color": "data(ks)",
+      "source-arrow-fill": (e: cytoscape.EdgeSingular) =>
+        e.data("kss") === "circle" ? "hollow" : "filled",
+      "target-arrow-shape": "data(kts)",
+      "target-arrow-color": "data(kt)",
+      // the uncoloured state is hollow at both ends (Cytoscape fills every arrow by default)
+      "target-arrow-fill": (e: cytoscape.EdgeSingular) =>
+        e.data("kts") === "circle-triangle" ? "hollow" : "filled",
+      "mid-target-arrow-shape": (e: cytoscape.EdgeSingular) =>
+        e.data("kpair") === "undeclared" ? UNDECLARED_MARKER.midGlyph : "none",
+      "mid-target-arrow-color": KAPPA_NEUTRAL,
+      "mid-target-arrow-fill": "hollow",
+    } as unknown as cytoscape.Css.Edge,
+  },
   {
     selector: "edge:selected",
-    style: { "line-color": "#6366f1", "target-arrow-color": "#6366f1" },
+    style: {
+      "line-color": "#6366f1",
+      "target-arrow-color": "#6366f1",
+      "line-fill": "solid", // t342 P1: a two-tone relation is selected in one colour too
+    },
   },
   {
     // t342: below the cut these still carry their label — the selection, a `find` match
@@ -1045,8 +1133,30 @@ const STYLE: cytoscape.StylesheetStyle[] = [
   },
 ];
 
+/**
+ * t342 P1: the palette — every relation drawn in port colour (the `kappa` class, STYLE
+ * `edge.kappa`), or none (relation kind). Exported (t342 P1 review): the smokes draw with it.
+ */
+export function applyPalette(cy: cytoscape.Core, portColour: boolean): void {
+  cy.batch(() => {
+    cy.edges().toggleClass("kappa", portColour);
+  });
+}
+
 /** A legend line swatch: the relation's colour and dash, as the graph draws it. */
-function relationSwatch(port: string): { background: string; height: number } {
+function relationSwatch(
+  row: LegendRelationRow,
+  portColour: boolean,
+): { background: string; height: number } {
+  // t342 P1: in port colour, the row's first relation — one hue, or its two tones.
+  if (portColour && row.ks && row.kt) {
+    return {
+      background:
+        row.ks === row.kt ? row.ks : `linear-gradient(90deg, ${row.ks} 0 50%, ${row.kt} 50% 100%)`,
+      height: 2,
+    };
+  }
+  const port = row.port;
   const s = kbPortStyle(port);
   if (!s) return { background: RELATION_COLOR, height: 2 };
   return {
@@ -1058,12 +1168,31 @@ function relationSwatch(port: string): { background: string; height: number } {
 }
 
 /** The legend tooltip for a port: both port names, the count, what the vocabulary says. */
-function relationTitle({ port, count, boxed }: LegendRelationRow): string {
+function relationTitle({ port, count, boxed, undeclared }: LegendRelationRow): string {
   const converse = kbConversePort(port);
   const names = converse && converse !== port ? `${port} / ${converse}` : port;
   const drawn = boxed > 0 ? ` (${boxed} drawn as boxes, ${count - boxed} as lines)` : "";
   const says = kbRelation(port)?.description;
-  return `${names} · ${count}${drawn}${says ? ` — ${says}` : ""}`;
+  // t342 P1: the pair state, a pair check only (the workbench's check 8 rules on admission).
+  const pairs = undeclared > 0 ? ` · ${undeclared} on a pair the engine does not declare` : "";
+  return `${names} · ${count}${drawn}${pairs}${says ? ` — ${says}` : ""}`;
+}
+
+/** t342 P1: the legend's palette rows — the κ families present and the three states. */
+function kappaLegend(frame: HgFrame, grammar: EngineGrammar | undefined) {
+  const typeOf = new Set(nodesOf(frame).map((n) => n.urn));
+  const drawn = relationsOf(frame).filter(
+    (r) => typeOf.has(r.source_urn) && typeOf.has(r.target_urn),
+  );
+  const census = kappaCensus(drawn, grammar);
+  return {
+    census,
+    families: kappaFamilies(grammar).map(({ family, hue }) => ({
+      family,
+      hue,
+      ends: census.families[family] ?? 0,
+    })),
+  };
 }
 
 /** The legend opens by itself only where it has the room (a tab, not the side panel). */
@@ -1077,6 +1206,8 @@ export function FrameGraph({
   focusUrn = null,
   focusSignal = 0,
   highlightUrns = null,
+  palette: paletteProp,
+  onPaletteChange,
 }: {
   frame: HgFrame;
   selectedUrn: string | null;
@@ -1095,6 +1226,12 @@ export function FrameGraph({
    * with every relation that touches a faded node. Empty / null / absent fades nothing.
    */
   highlightUrns?: readonly string[] | ReadonlySet<string> | null;
+  /**
+   * t342 P1 (review): the palette, when the surface holds it, so the inspector beside the
+   * graph colours its relation rows as the graph draws them. Absent, the graph keeps its own.
+   */
+  palette?: RelationPalette;
+  onPaletteChange?: (palette: RelationPalette) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
@@ -1151,6 +1288,19 @@ export function FrameGraph({
   // starts closed, so the canvas keeps its height. The toggle overrides this either way
   // (null = not toggled yet).
   const [legendChoice, setLegendChoice] = useState<boolean | null>(null);
+  // t342 P1 (decision 2): the palette — port colour by default, relation kind on the
+  // legend's switch. Not saved, like the legend ticks (decision 4: chip state unsaved).
+  // Without an engine grammar the frame can only be drawn by relation kind.
+  const grammar = frame.provenance?.grammar;
+  const portColourAvailable = hasPortColours(grammar);
+  const [ownPalette, setOwnPalette] = useState<RelationPalette>("port");
+  const palette = paletteProp ?? ownPalette;
+  const setPalette = (next: RelationPalette) => {
+    setOwnPalette(next);
+    onPaletteChange?.(next);
+  };
+  const portColour = palette === "port" && portColourAvailable;
+  const kappa = useMemo(() => kappaLegend(frame, grammar), [frame, grammar]);
   const legendOpen =
     legendChoice ?? (wide === true && plan.legend.relations.some((row) => isKbPort(row.port)));
 
@@ -1263,6 +1413,13 @@ export function FrameGraph({
       setGraphError(`graph render failed: ${String(err)}`);
     }
   }, [plan, drawn, legendDecided]);
+
+  // t342 P1: the palette — every relation drawn in port colour, or none (relation kind).
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    applyPalette(cy, portColour);
+  }, [portColour, plan, drawn, legendDecided]);
 
   // Apply the legend's unticked ports / kinds (and re-apply after any frame change: an
   // in-place data update can move a node to another kind).
@@ -1482,6 +1639,75 @@ export function FrameGraph({
           count and a checkbox that hides it client-side. */}
       {legendOpen && (
         <div className="graph-legend">
+          {/* t342 P1: which palette draws the relations, and what its colours and glyphs mean. */}
+          <div className="legend-group legend-palette" role="group" aria-label="Colour relations by">
+            <span className="legend-title">colour by</span>
+            <button
+              type="button"
+              className={`mini-btn legend-palette-btn${portColour ? " is-on" : ""}`}
+              aria-pressed={portColour}
+              disabled={!portColourAvailable}
+              onClick={() => setPalette("port")}
+              title={
+                portColourAvailable
+                  ? `Port colour: each relation end in the colour family κ(port) the engine gives its port — ${grammarSummary(grammar)}`
+                  : `Port colours are not available: ${grammarSummary(grammar)}`
+              }
+            >
+              port colour
+            </button>
+            <button
+              type="button"
+              className={`mini-btn legend-palette-btn${portColour ? "" : " is-on"}`}
+              aria-pressed={!portColour}
+              onClick={() => setPalette("kind")}
+              title={`Relation kind: the knowledge vocabulary's colours (kb-vocab ${KB_VOCAB_VERSION}) for the knowledge ports, the default line for every other port`}
+            >
+              relation kind
+            </button>
+            {!portColourAvailable && (
+              <span className="legend-note" title={grammarSummary(grammar)}>
+                {`${grammarGap(grammar) ?? "no port colours"} — drawn by relation kind`}
+              </span>
+            )}
+          </div>
+          {portColour && (
+            <div className="legend-group" title={grammarSummary(grammar)}>
+              <span className="legend-title">end colour</span>
+              {kappa.families.map((f) => (
+                <span
+                  key={f.family}
+                  className={`legend-item legend-kappa${f.ends === 0 ? " is-empty" : ""}`}
+                  title={`${f.family} · ${f.ends} relation end${f.ends === 1 ? "" : "s"} in this frame${f.hue ? "" : " · no hue left (more than eight colour families)"}`}
+                >
+                  <i className="legend-dot" style={{ background: f.hue ?? KAPPA_NEUTRAL }} />
+                  {f.family}
+                  <span className="legend-count">{f.ends}</span>
+                </span>
+              ))}
+              {KAPPA_STATES.map((st) => {
+                const n =
+                  st.state === "exempt"
+                    ? kappa.census.exempt
+                    : st.state === "uncoloured"
+                      ? kappa.census.uncoloured
+                      : kappa.census.undeclared;
+                return (
+                  <span
+                    key={st.state}
+                    className="legend-item legend-kappa-state"
+                    title={`${st.label} · ${n} ${st.state === "undeclared" ? "relation" : "relation end"}${n === 1 ? "" : "s"} — ${st.title}`}
+                  >
+                    <span className="legend-glyph" aria-hidden="true">
+                      {st.glyph}
+                    </span>
+                    {st.label}
+                    <span className="legend-count">{n}</span>
+                  </span>
+                );
+              })}
+            </div>
+          )}
           <div className="legend-group">
             <span className="legend-title">relations</span>
             {relationRows.map((row) => (
@@ -1491,12 +1717,22 @@ export function FrameGraph({
                   checked={!hiddenPorts.has(row.port)}
                   onChange={() => setHiddenPorts((prev) => toggleIn(prev, row.port))}
                 />
-                <i className="legend-line" style={relationSwatch(row.port)} />
+                <i className="legend-line" style={relationSwatch(row, portColour)} />
                 {row.port}
+                {portColour && row.undeclared > 0 && (
+                  <span className="legend-glyph" aria-label="undeclared pair">
+                    ◇
+                  </span>
+                )}
                 <span className="legend-count">{row.count}</span>
               </label>
             ))}
             {relationRows.length === 0 && <span className="legend-note">none in this frame</span>}
+            {!portColour && (
+              <span className="legend-note">
+                relation kind · knowledge ports in the kb-vocab {KB_VOCAB_VERSION} colours
+              </span>
+            )}
           </div>
           <div className="legend-group">
             <span className="legend-title">nodes</span>

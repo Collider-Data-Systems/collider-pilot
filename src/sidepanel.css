@@ -492,6 +492,34 @@ body {
   color: var(--text-muted);
   font-style: italic;
 }
+/* t342 P1: the palette switch (port colour | relation kind) and the κ rows. */
+.legend-palette .legend-palette-btn {
+  margin-left: 0;
+  padding: 1px 6px;
+  font-size: 9px;
+}
+.legend-palette .legend-palette-btn.is-on {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+.legend-palette .legend-palette-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.legend-kappa,
+.legend-kappa-state {
+  cursor: default;
+}
+.legend-kappa.is-empty {
+  opacity: 0.45;
+}
+/* A state glyph is text in the ink colour — never a hue. */
+.legend-glyph {
+  flex: none;
+  font-family: var(--mono);
+  color: var(--text-secondary);
+}
 
 /* Inspector */
 .inspector {
@@ -1258,6 +1286,15 @@ body {
 .gc-btn-ghost:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+/* t342 P6: where the drawer's extra groups came from (the engine, or static lists only). */
+.gc-adv-note.gc-vocab-note {
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+}
+.gc-adv-note.gc-vocab-note.is-static {
+  color: var(--warning);
 }
 .gc-note {
   margin-top: 6px;

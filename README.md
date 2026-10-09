@@ -139,10 +139,22 @@ Under `nested` a claim sits inside its field, a field inside its topic, a topic
 inside its module — one box per node, a field or topic before a module, and a
 classification scheme is never a box. The boxes are packed deterministically from the
 measured label sizes, so no label overlaps another, and the sources stand in one column
-beside them. Every other knowledge relation is a line in the vocabulary's colour — dashed
-or thick as the vocabulary says, with no port text on it and no arrowhead when it is
-self-converse — and a claim takes the colour of its kind. Under any other layout the
-graph is flat and the nesting relation is a line like the rest.
+beside them. Under the relation-kind palette every other knowledge relation is a line in
+the vocabulary's colour — dashed or thick as the vocabulary says, with no port text on it and
+no arrowhead when it is self-converse; a claim always takes the colour of its kind. Under any
+other layout the graph is flat and the nesting relation is a line like the rest.
+
+**Port colours (t342).** By default each relation END is drawn in the colour family its port
+has on the engine's `/operad/port-colors` (κ): one hue when both ends share a family, two
+tones when they do not, and three states that are no colour get a glyph instead — exempt
+(`κ = ""`), uncoloured (a port the map does not know) and undeclared pair (a pair the engine's
+`/operad/rewrite-categories` does not declare; dotted). The legend's `colour by` switch goes
+back to the relation-kind palette above. The grammar is read from the engine at run time
+(`src/mcp/engine-grammar.js`, cached per engine and ontology version) and the advanced drawer
+adds what it declares — types and ports the static lists do not name, and the fold's labels
+on no declared pair — so all 56 types of mtdc-2.1.0 can be selected. Nothing of the operad is
+written into this repo; an engine without `/operad/*` is drawn by relation kind and the
+legend and the drawer say so (TESTING.md, "Port colours and the engine's grammar").
 
 Under the graph a bar holds the legend toggle — it states the frame's node and relation
 totals — zoom `−` / `+`, `fit` and `re-layout`. `fit` always shows everything: the zoom
@@ -212,6 +224,8 @@ src/state/scratch.ts               chrome.storage.session helpers (selection + f
 src/state/use-mirror-view.ts       what a mirror follows besides frame + selection: the stored layout choice and the scratch view (t337)
 src/ui/kb-vocab.json               knowledge vocabulary (ontology 4.0.8) — Lean-emitted, copied verbatim, never edited here (t337)
 src/ui/kb-vocab.js                 SHARED typed accessor over it: knowledge ports, per-port style, converse names, nesting port, claim kinds (t337)
+src/mcp/engine-grammar.js          SHARED read of the engine's grammar: GET /operad/node-types, /rewrite-categories, /port-colors, cached per engine + ontology version (t342)
+src/ui/port-colour.js              SHARED pure painter: each relation end by κ(port), the three non-colour states, the eight hues (t342)
 src/components/                    PostureStrip (strip + audit drawer) · SettingsPanel · GraphControls · FrameGraph (Cytoscape) · NodeInspector · ActionsPanel + ConfirmActionModal
 src/tools/types.ts                 controlled-tools contract: ToolKind/ToolChannel, ToolSpec, AffordancePack, ToolCall, PendingAction (Phase 4)
 src/tools/tool-call.ts             structured ToolCall validator (args_schema JSON-shape check; NO text parsing) (Phase 4)
