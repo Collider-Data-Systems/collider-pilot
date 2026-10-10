@@ -49,6 +49,16 @@ the engine's and the network's share: reported, not budgeted. Without `--layout`
 Phase 5 read baseline. `TESTING.md` "First paint" has the budget's definition and the measured
 numbers.
 
+**A second measure, not a gate (t342 hand-off C):** `npm run probe:ui -- [--engine <REST base>]
+[--user <urn>]` (`scripts/ui-probe.mjs`) loads the BUILT `dist/preview-live.html` in headless
+Chrome over the DevTools protocol — it serves `dist/` itself and seeds one identity in the
+harness's storage shim — and reads the hand-off C done-whens from the rendered DOM and the page's
+own Cytoscape: the opening zoom against the label cut and the identity's node inside the canvas
+(PIL-5), WCAG 1.4.3 contrast over every text item (PIL-6), a `find` hit's relations lit and in
+view, from the opening view and from `fit` (PIL-7), the strip's words and what is cut at 380 px (PIL-8), the legend's tooltips against
+the insider terms and whether it grows (PIL-9), the `<button>` tags with a `data-testid` (PIL-10)
+and a re-layout with a selection (PIL-12). GET only; the numbers are in `TESTING.md` "Hand-off C".
+
 **CI is a subset, not the gate.** `.github/workflows/build-test.yml` runs what a GitHub runner can
 honestly execute: typecheck, build, a dist sanity check, `smoke:llm`, `smoke:lens`. `smoke:worker` and
 `smoke:live` need a live Z440 kernel and stay local. **CI green is not a substitute.** If you are

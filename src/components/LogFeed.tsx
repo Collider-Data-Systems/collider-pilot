@@ -235,6 +235,7 @@ export function LogFeed({
               key={k}
               type="button"
               className={`log-kind-btn ${kind === k ? "is-on" : ""} k-${k.toLowerCase()}`}
+              data-testid={`log-kind-${k.toLowerCase()}`}
               aria-pressed={kind === k}
               onClick={(ev) => {
                 ev.preventDefault(); // keep the <summary> from toggling
@@ -270,6 +271,7 @@ export function LogFeed({
                 <button
                   type="button"
                   className="log-subject is-link"
+                  data-testid="log-subject"
                   title={`${urn} — select it (mirrors follow)`}
                   onClick={() => onSelect(urn)}
                 >

@@ -45,6 +45,16 @@
  * column right of the drawing; a source several boxes cite sits in one (sourcePlacement says
  * which) and the others carry a `↗N` marker on their title. With the nesting relation unticked
  * no box is drawn, and the sources lay out with their components. The column is gone.
+ *
+ * HAND-OFF C (t342, PIL-5/7/9/10/12): the panel OPENS on the identity's own node at a zoom where
+ * labels show (openOn; `fit` is one click away) instead of on the whole fold at a zoom where
+ * nothing could be read; a `find` match keeps its own relations and their other ends lit and
+ * fits them into view (PIL-7); the legend speaks the six words the pilot, the Workbench and the
+ * manual share — colour family, port end, no colour, exempt, pair not declared, port on no pair —
+ * with no κ, hash, path or src_port in a tooltip, and it grows instead of scrolling (PIL-9);
+ * every control carries a `data-testid` and the canvas an aria-label that sums up the frame
+ * (PIL-10); and a selection no longer changes the measured label boxes, so a re-layout with a
+ * node selected draws the same picture as without one (PIL-12, withPlainLabels).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -61,7 +71,6 @@ import {
   kbConversePort,
   kbPortStyle,
   kbRelation,
-  KB_VOCAB_VERSION,
 } from "../ui/kb-vocab.js";
 import {
   KAPPA_NEUTRAL,
@@ -73,7 +82,6 @@ import {
   kappaFamilies,
   paintRelation,
 } from "../ui/port-colour.js";
-import { grammarGap, grammarSummary } from "../mcp/engine-grammar.js";
 import {
   breadthFirstPlacement,
   coseBudgets,
@@ -198,10 +206,16 @@ function labelCut(cy: cytoscape.Core): number {
  *   - While it is above 1 a box is sized around its nodes without their labels — the other
  *     labels are not drawn then, and an enlarged one would otherwise swell its box.
  */
-const EXEMPT_LABELS = "node:selected, node.found, node.hovered, edge:selected";
+// t342 PIL-7: a `find` match's own relations (`edge.near`) and their other ends (`node.near`)
+// keep their labels too — they are what the match is read with.
+const EXEMPT_LABELS =
+  "node:selected, node.found, node.hovered, node.near, edge:selected, edge.near";
 // cy.scratch keys: the current enlargement, and "a layout or fit is measuring".
 const EXEMPT_SCALE = "pilotExemptScale";
 const LABELS_PLAIN = "pilotLabelsPlain";
+// The plain and the selected node border (STYLE `node` / `node:selected`).
+const NODE_BORDER = 2;
+const SELECTED_BORDER = 3;
 
 function exemptScaleAt(cy: cytoscape.Core, zoom: number): number {
   return zoom > labelCut(cy) ? 1 : 2 ** (Math.ceil(2 * Math.log2(READ_ZOOM / zoom)) / 2);
@@ -226,19 +240,32 @@ function followZoom(cy: cytoscape.Core): void {
   if (cy.scratch(LABELS_PLAIN) !== true) setExemptScale(cy, exemptScaleAt(cy, cy.zoom()));
 }
 
-/** Run a measurement (layout, fit, readZoom) with every label at its plain size. */
+/**
+ * Run a measurement (layout, fit, readZoom) with every label at its plain size — and, t342
+ * PIL-12, every node at its plain border: the selected node's wider border (SELECTED_BORDER)
+ * entered its measured label box, so a re-layout with a selection packed a different picture
+ * (59 of 444 positions on the scratch fold; the #47 review saw a component shift by about
+ * 300 px). STYLE `node:selected` reads the plain border while this measures.
+ */
 function withPlainLabels<T>(cy: cytoscape.Core, run: () => T): T {
   const outer = cy.scratch(LABELS_PLAIN) === true;
   cy.scratch(LABELS_PLAIN, true);
   setExemptScale(cy, 1);
+  if (!outer) restyleSelected(cy);
   try {
     return run();
   } finally {
     if (!outer) {
       cy.scratch(LABELS_PLAIN, false);
       followZoom(cy);
+      restyleSelected(cy);
     }
   }
+}
+
+/** Re-run the style of the selected nodes (their border follows LABELS_PLAIN). */
+function restyleSelected(cy: cytoscape.Core): void {
+  (cy.nodes(":selected") as unknown as { updateStyle(): void }).updateStyle();
 }
 
 /** An element's plain label font and wrap width, as STYLE sets them. */
@@ -728,7 +755,20 @@ interface LabelBox {
  */
 const onGrid = (v: number) => Math.round(v * 4096) / 4096;
 
+/**
+ * t342 PIL-12: headless Cytoscape measures no text, so a label box there is the node disc alone
+ * and an overlap check over it holds nothing. A headless check (`smoke:lens` J) may supply the
+ * measure through this cy.scratch key — a function from a node to its LabelBox — and the layout
+ * then packs, refines and counts overlaps on label-sized boxes. The panel never sets it.
+ */
+export const LABEL_MEASURE = "pilotLabelBox";
+
 function labelBox(n: cytoscape.NodeSingular): LabelBox {
+  const supplied: unknown = n.cy().scratch(LABEL_MEASURE);
+  if (typeof supplied === "function") {
+    const s = (supplied as (node: cytoscape.NodeSingular) => LabelBox)(n);
+    return { w: onGrid(s.w), h: onGrid(s.h), dx: onGrid(s.dx), dy: onGrid(s.dy) };
+  }
   const bb = n.boundingBox({ includeLabels: true, includeOverlays: false });
   const at = n.position();
   return { w: onGrid(bb.w), h: onGrid(bb.h), dx: onGrid(at.x - bb.x1), dy: onGrid(at.y - bb.y1) };
@@ -1179,6 +1219,13 @@ interface FittedView {
   y: number;
 }
 
+/** Whether the view is exactly where the last fit (or open) left it: the user has not moved it. */
+function viewUntouched(cy: cytoscape.Core, fitted: FittedView | null): boolean {
+  if (fitted === null) return false;
+  const pan = cy.pan();
+  return cy.zoom() === fitted.zoom && pan.x === fitted.x && pan.y === fitted.y;
+}
+
 /**
  * Fit everything shown into the view (t337). Cytoscape clamps a fit at the zoom floor and
  * then cuts nodes off, so the floor is lowered first when this fit needs less than MIN_ZOOM.
@@ -1199,6 +1246,82 @@ function fitPlain(cy: cytoscape.Core): FittedView {
   cy.fit(shown, FIT_PADDING);
   const pan = cy.pan();
   return { zoom: cy.zoom(), x: pan.x, y: pan.y };
+}
+
+/** The zoom at which `eles` fit the canvas with the fit padding (Infinity for nothing). */
+function zoomToFit(cy: cytoscape.Core, eles: cytoscape.CollectionReturnValue): number {
+  const bb = eles.boundingBox({ includeLabels: true, includeOverlays: false });
+  return Math.min((cy.width() - 2 * FIT_PADDING) / bb.w, (cy.height() - 2 * FIT_PADDING) / bb.h);
+}
+
+/**
+ * t343 (review of hand-off C, PIL-7): the view that fits `eles` with the fit padding, at most
+ * `maxZoom` — the zoom AND the pan from ONE box, measured as the labels are styled now, so the
+ * caller wraps it in withPlainLabels for the plain sizes. The styles are applied first
+ * (applyStyles): Cytoscape re-measures a label for a bounding box only once its restyle has
+ * reached the element, so a box read straight after setExemptScale still carries the
+ * enlarged label.
+ */
+function fitOf(
+  cy: cytoscape.Core,
+  eles: cytoscape.CollectionReturnValue,
+  maxZoom: number,
+): FittedView {
+  applyStyles(cy);
+  const bb = eles.boundingBox({ includeLabels: true, includeOverlays: false });
+  const zoom = Math.min(
+    maxZoom,
+    (cy.width() - 2 * FIT_PADDING) / bb.w,
+    (cy.height() - 2 * FIT_PADDING) / bb.h,
+  );
+  return {
+    zoom,
+    x: (cy.width() - zoom * (bb.x1 + bb.x2)) / 2,
+    y: (cy.height() - zoom * (bb.y1 + bb.y2)) / 2,
+  };
+}
+
+/**
+ * t342 PIL-5: the identity's OWN node in this frame — the user the frame was read for (the
+ * trusted identity of an identified posture), when the frame holds it — or null: anon, no
+ * identity stored, or a lens that leaves the user out. The panel opens centred on it.
+ */
+export function identityUrn(frame: HgFrame | null): string | null {
+  const scope = frame?.provenance?.access?.scope;
+  if (!scope || scope.mode !== "identified" || scope.identity_source !== "trusted-storage") {
+    return null;
+  }
+  const user = scope.user;
+  if (typeof user !== "string" || user.length === 0) return null;
+  return nodesOf(frame).some((n) => n.urn === user) ? user : null;
+}
+
+/**
+ * t342 PIL-5: open the view on one node — centred on it, at a zoom where labels are drawn:
+ * the zoom at which the node's neighbourhood (itself, its relations, their other ends) fits,
+ * never below the zoom step above the label cut (OPEN_ZOOM_MIN: 0.75 at 100 % display
+ * scaling) and never above READ_ZOOM. Until hand-off C the panel opened on the whole fold —
+ * zoom 0.045 on the scratch fold in the side panel, 1.3 px nodes and no label — and `fit`
+ * is still one click away. Null when the node is not drawn (the legend hides it, or it is a
+ * box): the caller fits instead.
+ */
+function openOn(cy: cytoscape.Core, urn: string): FittedView | null {
+  const el = cy.getElementById(urn);
+  if (el.empty() || !el.isNode() || el.isParent() || !el.visible()) return null;
+  return withPlainLabels(cy, () => {
+    applyStyles(cy);
+    const hood = el.closedNeighborhood().filter(":visible");
+    const zoom = Math.min(READ_ZOOM, Math.max(openZoomMin(cy), zoomToFit(cy, hood)));
+    cy.zoom(zoom);
+    cy.center(el);
+    const pan = cy.pan();
+    return { zoom: cy.zoom(), x: pan.x, y: pan.y };
+  });
+}
+
+/** The lowest zoom the view opens at: one zoom step above the label cut (labelCut). */
+function openZoomMin(cy: cytoscape.Core): number {
+  return labelCut(cy) * ZOOM_STEP;
 }
 
 /**
@@ -1282,7 +1405,7 @@ export const STYLE: cytoscape.StylesheetStyle[] = [
       "text-margin-y": 4,
       width: 26,
       height: 26,
-      "border-width": 2,
+      "border-width": NODE_BORDER,
       "border-color": "#0f0f12",
     },
   },
@@ -1361,7 +1484,10 @@ export const STYLE: cytoscape.StylesheetStyle[] = [
   {
     selector: "node:selected",
     style: {
-      "border-width": 3,
+      // t342 PIL-12: the plain border while a layout or fit measures (withPlainLabels), so the
+      // selection never changes a measured label box and a re-layout draws the same picture.
+      "border-width": (ele: cytoscape.NodeSingular) =>
+        ele.cy().scratch(LABELS_PLAIN) === true ? NODE_BORDER : SELECTED_BORDER,
       "border-color": "#ffffff",
       "background-blacken": -0.2,
     },
@@ -1527,8 +1653,29 @@ function relationTitle({ port, count, boxed, undeclared }: LegendRelationRow): s
   const drawn = boxed > 0 ? ` (${boxed} drawn as boxes, ${count - boxed} as lines)` : "";
   const says = kbRelation(port)?.description;
   // t342 P1: the pair state, a pair check only (the workbench's check 8 rules on admission).
-  const pairs = undeclared > 0 ? ` · ${undeclared} on a pair the engine does not declare` : "";
+  // t342 PIL-9: in the shared words — "pair not declared".
+  const pairs = undeclared > 0 ? ` · ${undeclared} with a pair not declared` : "";
   return `${names} · ${count}${drawn}${pairs}${says ? ` — ${says}` : ""}`;
+}
+
+/** The shared name of a non-colour state (KAPPA_STATES), for the inspector and the legend. */
+export function kappaStateLabel(state: string): string {
+  return KAPPA_STATES.find((st) => st.state === state)?.label ?? state;
+}
+
+/**
+ * t342 PIL-9: the legend's own words for where the colours come from — plain, so no κ, no
+ * route and no hash reaches a tooltip (the audit drawer keeps the technical line).
+ */
+function plainGrammar(grammar: EngineGrammar | undefined): string {
+  if (!grammar) return "no engine grammar on this frame (a fixture, or a frame cached before t342)";
+  if (grammar.status !== "engine") {
+    return grammar.unreachable
+      ? "the engine's grammar did not answer"
+      : "the engine serves no grammar";
+  }
+  if (!grammar.port_colors) return `the engine (ontology ${grammar.ontology_version}) serves no port colours`;
+  return `ontology ${grammar.ontology_version} · ${kappaFamilies(grammar).length} colour families over ${Object.keys(grammar.port_colors).length} ports`;
 }
 
 /** t342 P1: the legend's palette rows — the κ families present and the three states. */
@@ -1561,6 +1708,7 @@ export function FrameGraph({
   highlightUrns = null,
   palette: paletteProp,
   onPaletteChange,
+  restored = false,
 }: {
   frame: HgFrame;
   selectedUrn: string | null;
@@ -1585,6 +1733,12 @@ export function FrameGraph({
    */
   palette?: RelationPalette;
   onPaletteChange?: (palette: RelationPalette) => void;
+  /**
+   * t343 (review of hand-off C): the frame on screen was restored from the session scratch
+   * and the opening read has not landed. The one-shot opening on the identity's own node
+   * (PIL-5) waits for the first frame that is not.
+   */
+  restored?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
@@ -1631,6 +1785,11 @@ export function FrameGraph({
   // The viewport as the last fit left it. While that still is the viewport the user has
   // not zoomed or panned, and a change of the canvas size fits again (the init effect).
   const fittedRef = useRef<FittedView | null>(null);
+  // t342 PIL-5: the node that view is opened on (openOn) — null when it is a plain fit — so a
+  // canvas that changes size while the view is untouched opens on it again rather than fitting.
+  const openedOnRef = useRef<string | null>(null);
+  // t342 PIL-5: whether this instance has drawn its first frame — the one it opens on.
+  const openedRef = useRef(false);
   // null until the container has been measured (the init effect): the first build waits
   // for it, so the first layout runs against the canvas size the legend leaves it. The
   // effects below list `legendDecided` so they run again right after that first build.
@@ -1720,12 +1879,17 @@ export function FrameGraph({
     const container = containerRef.current;
     const Observer = container.ownerDocument.defaultView?.ResizeObserver ?? ResizeObserver;
     const observer = new Observer(() => {
-      const fitted = fittedRef.current;
-      const pan = cy.pan();
-      const untouched =
-        fitted !== null && cy.zoom() === fitted.zoom && pan.x === fitted.x && pan.y === fitted.y;
+      const untouched = viewUntouched(cy, fittedRef.current);
       cy.resize();
-      if (untouched) fittedRef.current = fitShown(cy);
+      // t342 PIL-5: a view opened on a node opens on it again at the new size. t343 (review):
+      // a node it cannot open on now (hidden by a legend row) falls to the fit and stays
+      // there — the next resize fits again rather than opening on it.
+      if (untouched) {
+        const on = openedOnRef.current;
+        const opened = on ? openOn(cy, on) : null;
+        fittedRef.current = opened ?? fitShown(cy);
+        if (!opened) openedOnRef.current = null;
+      }
     });
     observer.observe(container);
 
@@ -1757,15 +1921,35 @@ export function FrameGraph({
         cy.add(plan.elements);
         applyHidden(cy, hiddenRef.current.ports, hiddenRef.current.kinds);
         fittedRef.current = runLayout(cy, drawn);
+        openedOnRef.current = null;
         laidOutHiddenRef.current = hiddenRef.current.kinds;
         builtRef.current = built;
+      }
+      // t342 PIL-5: the first LIVE frame this instance draws opens on the identity's own node
+      // at a zoom where labels show (openOn); every later structure — a lens change — fits, as
+      // before, and `fit` in the bar is one click away. t343 (review): a frame restored from
+      // the session scratch (`restored`) is drawn at the fit and does not count — the side
+      // panel shows it before its opening read lands, and that read's frame differs in
+      // structure whenever anything changed since the panel was last open, so it was rebuilt
+      // and fitted above with the one shot already spent. A live frame with the restored
+      // one's structure kept the picture in place above and opens on the node now — unless
+      // the user has moved the view meanwhile (viewUntouched).
+      if (!openedRef.current && !restored) {
+        openedRef.current = true;
+        const me = identityUrn(frame);
+        const opened = me && viewUntouched(cy, fittedRef.current) ? openOn(cy, me) : null;
+        if (me && opened) {
+          fittedRef.current = opened;
+          openedOnRef.current = me;
+        }
       }
       setGraphError(null);
     } catch (err) {
       builtRef.current = null;
       setGraphError(`graph render failed: ${String(err)}`);
     }
-  }, [plan, drawn, legendDecided]);
+    // t343 (review): `restored` re-runs it too, so the opening never waits on a later frame.
+  }, [plan, drawn, legendDecided, restored]);
 
   // t342 P1: the palette — every relation drawn in port colour, or none (relation kind).
   useEffect(() => {
@@ -1785,6 +1969,7 @@ export function FrameGraph({
     if ([...laidOutHiddenRef.current].some((kind) => !hiddenKinds.has(kind))) {
       try {
         fittedRef.current = runLayout(cy, drawn);
+        openedOnRef.current = null;
       } catch (err) {
         setGraphError(`graph render failed: ${String(err)}`);
       }
@@ -1803,16 +1988,23 @@ export function FrameGraph({
     if (!cy) return;
     const lit = new Set(highlightKey ? highlightKey.split("\n") : []);
     cy.batch(() => {
-      cy.elements().removeClass("faded found");
+      cy.elements().removeClass("faded found near");
       const hits = cy.nodes().filter((n) => lit.has(n.id()));
       // A set that names no node of THIS frame fades nothing — a mirror gets the frame and
       // the search through two store keys, and the two can be of different frames.
       if (hits.empty()) return;
       hits.addClass("found"); // t342: a match keeps its label at any zoom
+      // t342 PIL-7: a match's own relations and their other ends stay lit (class `near`, with
+      // their labels: EXEMPT_LABELS) — until hand-off C every relation of a faded node faded,
+      // so the one relation a match has was drawn at opacity 0.12. Every other relation fades.
+      const own = hits.connectedEdges();
+      const ends = own.connectedNodes().not(hits);
+      own.addClass("near");
+      ends.addClass("near");
       // The boxes a match sits in stay lit, so the match can be placed at a glance.
-      const out = cy.nodes().not(hits.union(hits.ancestors()));
+      const out = cy.nodes().not(hits.union(hits.ancestors()).union(ends));
       out.addClass("faded");
-      out.connectedEdges().addClass("faded");
+      cy.edges().not(own).addClass("faded");
     });
   }, [highlightKey, plan, drawn, legendDecided]);
 
@@ -1842,6 +2034,21 @@ export function FrameGraph({
       // t337: a node the legend hides has no place to centre on (Cytoscape would go to the
       // model origin).
       if (el.empty() || !el.visible()) return;
+      // t342 PIL-7: a `find` match (class `found`, applied by the highlight effect above in the
+      // same commit) is brought into view WITH its own relations and their other ends: the
+      // neighbourhood is fitted, at READ_ZOOM at most. The surface that searched is the one
+      // that moves — a mirror gets the fade alone, as before.
+      if (el.hasClass("found") && el.isNode()) {
+        const hood = el.closedNeighborhood().filter(":visible");
+        // t343 (review): the pan comes from the same plain measurement as the zoom — Cytoscape
+        // resolved `center: { eles }` from the hood's box at animation start, with the labels
+        // enlarged for the view the find was typed from (23x at the fit of the fold), which
+        // put the hit above the canvas from the `fit` view and made the landing zoom depend
+        // on the previous view (0.17 against 0.49 for the same hit on the scratch fold).
+        const view = withPlainLabels(cy, () => fitOf(cy, hood, READ_ZOOM));
+        cy.animate({ zoom: view.zoom, pan: { x: view.x, y: view.y } }, { duration: 200 });
+        return;
+      }
       // t337: in a drawing with boxes the fitted view is an overview — labels of a few
       // px — so centring there also zooms in to where the node can be read. A drawing
       // without boxes centres at the current zoom, as before.
@@ -1859,13 +2066,16 @@ export function FrameGraph({
   // zoom in / out one step about the middle of the canvas.
   const handleFit = useCallback(() => {
     const cy = cyRef.current;
-    if (cy) fittedRef.current = fitShown(cy);
+    if (!cy) return;
+    fittedRef.current = fitShown(cy);
+    openedOnRef.current = null;
   }, []);
   const handleRelayout = useCallback(() => {
     const cy = cyRef.current;
     if (!cy) return;
     try {
       fittedRef.current = runLayout(cy, drawn);
+      openedOnRef.current = null;
       laidOutHiddenRef.current = hiddenRef.current.kinds;
     } catch (err) {
       setGraphError(`graph render failed: ${String(err)}`);
@@ -1898,11 +2108,29 @@ export function FrameGraph({
   const hiddenCount = hiddenPorts.size + hiddenKinds.size;
   // t342: the unlinked band is shown unless its chip has hidden it.
   const bandShown = !hiddenKinds.has(UNLINKED_KEY);
+  // t342 PIL-10: the canvas's accessible name sums up the frame it draws.
+  const boxCount = plan.legend.nodes.filter((row) => row.box).length;
+  const canvasLabel =
+    `Graph of ${countOf(nodeTotal, "node")} and ${countOf(relationTotal, "relation")}, ` +
+    `${drawn} layout` +
+    (drawn === "nested" && plan.sourcesInBoxes > 0
+      ? `, ${countOf(plan.sourcesInBoxes, "source")} drawn in the box that cites them`
+      : "") +
+    (boxCount > 0 ? `, boxes of ${countOf(boxCount, "kind")}` : "") +
+    (plan.unlinked > 0 ? `, ${plan.unlinked} unlinked in a band` : "") +
+    (portColour ? ", relation ends coloured by port" : ", relations coloured by kind") +
+    (hiddenCount > 0 ? `, ${hiddenCount} legend rows hidden` : "");
 
   return (
     <div className={`graph-wrap${legendOpen ? " legend-open" : ""}`}>
       {graphError && <div className="pilot-state error">{graphError}</div>}
-      <div className="graph-canvas" ref={containerRef} />
+      <div
+        className="graph-canvas"
+        ref={containerRef}
+        role="group"
+        aria-label={canvasLabel}
+        data-testid="graph-canvas"
+      />
       {/* t337: an empty canvas says why — under anon it is the posture, not a fault. */}
       {nodeTotal === 0 && !graphError && (
         <div className="graph-empty">
@@ -1917,6 +2145,7 @@ export function FrameGraph({
         <button
           type="button"
           className="graph-legend-toggle"
+          data-testid="legend-toggle"
           aria-expanded={legendOpen}
           onClick={() => setLegendChoice(!legendOpen)}
           title={
@@ -1931,6 +2160,7 @@ export function FrameGraph({
           <button
             type="button"
             className="mini-btn"
+            data-testid="legend-show-all"
             onClick={handleShowAll}
             title="Tick every legend row again and show the unlinked band — a row unticked on one lens stays unticked on the others"
           >
@@ -1941,6 +2171,7 @@ export function FrameGraph({
           <button
             type="button"
             className={`mini-btn graph-unlinked${bandShown ? " is-on" : ""}`}
+            data-testid="unlinked-band"
             aria-pressed={bandShown}
             onClick={() => setHiddenKinds((prev) => toggleIn(prev, UNLINKED_KEY))}
             title={
@@ -1955,6 +2186,7 @@ export function FrameGraph({
         <button
           type="button"
           className="mini-btn"
+          data-testid="zoom-out"
           onClick={() => handleZoom(1 / ZOOM_STEP)}
           title="Zoom out"
           aria-label="Zoom out"
@@ -1964,6 +2196,7 @@ export function FrameGraph({
         <button
           type="button"
           className="mini-btn"
+          data-testid="zoom-in"
           onClick={() => handleZoom(ZOOM_STEP)}
           title="Zoom in"
           aria-label="Zoom in"
@@ -1973,14 +2206,16 @@ export function FrameGraph({
         <button
           type="button"
           className="mini-btn"
+          data-testid="fit"
           onClick={handleFit}
-          title="Fit everything shown into the view (double-click a box to bring just that box into view)"
+          title="Fit everything shown into the view (the panel opens on your own node; double-click a box to bring just that box into view)"
         >
           fit
         </button>
         <button
           type="button"
           className="mini-btn"
+          data-testid="re-layout"
           onClick={handleRelayout}
           title={`Run the ${drawn} layout again over what is shown, then fit`}
         >
@@ -1993,18 +2228,21 @@ export function FrameGraph({
       {legendOpen && (
         <div className="graph-legend">
           {/* t342 P1: which palette draws the relations, and what its colours and glyphs mean. */}
+          {/* t342 PIL-9: plain words in every tooltip here — the audit drawer keeps the
+              technical line (κ, the route, the rule the engine states). */}
           <div className="legend-group legend-palette" role="group" aria-label="Colour relations by">
             <span className="legend-title">colour by</span>
             <button
               type="button"
               className={`mini-btn legend-palette-btn${portColour ? " is-on" : ""}`}
+              data-testid="colour-by-port"
               aria-pressed={portColour}
               disabled={!portColourAvailable}
               onClick={() => setPalette("port")}
               title={
                 portColourAvailable
-                  ? `Port colour: each relation end in the colour family κ(port) the engine gives its port — ${grammarSummary(grammar)}`
-                  : `Port colours are not available: ${grammarSummary(grammar)}`
+                  ? `Port colour: each end of a relation in the colour family the engine gives its port — ${plainGrammar(grammar)}`
+                  : `Port colours are not available: ${plainGrammar(grammar)}`
               }
             >
               port colour
@@ -2012,26 +2250,31 @@ export function FrameGraph({
             <button
               type="button"
               className={`mini-btn legend-palette-btn${portColour ? "" : " is-on"}`}
+              data-testid="colour-by-kind"
               aria-pressed={!portColour}
               onClick={() => setPalette("kind")}
-              title={`Relation kind: the knowledge vocabulary's colours (kb-vocab ${KB_VOCAB_VERSION}) for the knowledge ports, the default line for every other port`}
+              title="Relation kind: the knowledge vocabulary's colours for the knowledge ports, the default line for every other port"
             >
               relation kind
             </button>
             {!portColourAvailable && (
-              <span className="legend-note" title={grammarSummary(grammar)}>
-                {`${grammarGap(grammar) ?? "no port colours"} — drawn by relation kind`}
+              <span className="legend-note" title={plainGrammar(grammar)}>
+                {`${plainGrammar(grammar)} — drawn by relation kind`}
               </span>
             )}
           </div>
           {portColour && (
-            <div className="legend-group" title={grammarSummary(grammar)}>
-              <span className="legend-title">end colour</span>
+            <div
+              className="legend-group"
+              title={`Colour families: the engine gives each port a family, and each end of a relation takes its port's colour — ${plainGrammar(grammar)}`}
+            >
+              <span className="legend-title">colour family</span>
               {kappa.families.map((f) => (
                 <span
                   key={f.family}
                   className={`legend-item legend-kappa${f.ends === 0 ? " is-empty" : ""}`}
-                  title={`${f.family} · ${f.ends} relation end${f.ends === 1 ? "" : "s"} in this frame${f.hue ? "" : " · no hue left (more than eight colour families)"}`}
+                  data-testid={`legend-family-${f.family}`}
+                  title={`${f.family} · ${f.ends} port end${f.ends === 1 ? "" : "s"} in this frame${f.hue ? "" : " · no colour of its own (more than eight colour families)"}`}
                 >
                   <i className="legend-dot" style={{ background: f.hue ?? KAPPA_NEUTRAL }} />
                   {f.family}
@@ -2049,7 +2292,8 @@ export function FrameGraph({
                   <span
                     key={st.state}
                     className="legend-item legend-kappa-state"
-                    title={`${st.label} · ${n} ${st.state === "undeclared" ? "relation" : "relation end"}${n === 1 ? "" : "s"} — ${st.title}`}
+                    data-testid={`legend-state-${st.state}`}
+                    title={`${st.label} · ${n} ${st.state === "undeclared" ? "relation" : "port end"}${n === 1 ? "" : "s"} — ${st.title}`}
                   >
                     <span className="legend-glyph" aria-hidden="true">
                       {st.glyph}
@@ -2064,7 +2308,12 @@ export function FrameGraph({
           <div className="legend-group">
             <span className="legend-title">relations</span>
             {relationRows.map((row) => (
-              <label key={row.port} className="legend-item" title={relationTitle(row)}>
+              <label
+                key={row.port}
+                className="legend-item"
+                data-testid={`legend-port-${row.port}`}
+                title={relationTitle(row)}
+              >
                 <input
                   type="checkbox"
                   checked={!hiddenPorts.has(row.port)}
@@ -2073,7 +2322,7 @@ export function FrameGraph({
                 <i className="legend-line" style={relationSwatch(row, portColour)} />
                 {row.port}
                 {portColour && row.undeclared > 0 && (
-                  <span className="legend-glyph" aria-label="undeclared pair">
+                  <span className="legend-glyph" aria-label={kappaStateLabel("undeclared")}>
                     ◇
                   </span>
                 )}
@@ -2083,14 +2332,19 @@ export function FrameGraph({
             {relationRows.length === 0 && <span className="legend-note">none in this frame</span>}
             {!portColour && (
               <span className="legend-note">
-                relation kind · knowledge ports in the kb-vocab {KB_VOCAB_VERSION} colours
+                relation kind · knowledge ports in the vocabulary's colours
               </span>
             )}
           </div>
           <div className="legend-group">
             <span className="legend-title">nodes</span>
             {nodeRows.map((row) => (
-              <label key={row.key} className="legend-item" title={`${row.key} · ${row.count}`}>
+              <label
+                key={row.key}
+                className="legend-item"
+                data-testid={`legend-kind-${row.key}`}
+                title={`${row.key} · ${row.count}`}
+              >
                 <input
                   type="checkbox"
                   checked={!hiddenKinds.has(row.key)}

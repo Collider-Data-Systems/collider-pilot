@@ -20,11 +20,18 @@
 
   --text-primary: #f0f0f5;
   --text-secondary: #a0a0b0;
-  --text-muted: #606070;
+  /* t342 PIL-6: #8b8b9b reaches 4.5:1 on the four panel backgrounds (5.17 on --bg-secondary,
+     5.02 on the strip, 5.71 on --bg-primary, 4.52 on --bg-tertiary); #606070 was 2.81 / 3.10. */
+  --text-muted: #8b8b9b;
 
   --accent: #6366f1;
   --accent-hover: #7c7ff7;
   --accent-muted: rgba(99, 102, 241, 0.14);
+  /* t342 PIL-6: a button's white text on the accent was 4.47:1; on this it is 5.35. */
+  --accent-button: #5558e6;
+  /* t342 PIL-6: a link in the accent was 3.88:1 on --bg-secondary; these reach 6.06 / 7.57. */
+  --link: #8b8dff;
+  --link-hover: #a0a3ff;
 
   --success: #22c55e;
   --warning: #eab308;
@@ -197,14 +204,14 @@ body {
 .prov-toggle[aria-expanded="true"] {
   margin-bottom: 8px;
 }
+/* t342 PIL-8: the summary wraps instead of cutting (it was one nowrap line with an ellipsis). */
 .prov-summary {
   flex: 1 1 auto;
   font-family: var(--mono);
   font-size: 10px;
   color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   min-width: 0;
 }
 .prov-toggle .prov-badge {
@@ -215,31 +222,25 @@ body {
 }
 /* t342: the posture strip's summary needs 240px; where the badges leave less (a docked side
    panel is 380px) it takes its own line under them instead of shrinking to a few letters.
-   Inside it the counts never shrink; the tail after them (engine · seq · T · ontology) only
-   takes the room left over (basis 0), so an ellipsis cuts it first and who/where only when
-   who/where and the counts alone do not fit. */
+   t342 PIL-8: inside it two lines — who, where and the counts in words; then the engine, the
+   log position and the version — each wrapping where the panel is narrower, never cut (the
+   tail used to be cut to 80 of 291 px at 380 px). */
 .posture-strip .prov-toggle {
   flex-wrap: wrap;
   row-gap: 4px;
 }
 .posture-strip .prov-toggle .prov-summary {
   display: flex;
+  flex-direction: column;
   flex: 1 1 240px;
+  gap: 1px;
 }
-.prov-summary > .prov-who {
-  flex: 0 1 auto;
-  min-width: 3ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.prov-summary > .prov-counts {
-  flex: none;
+.prov-summary > .prov-line {
+  display: block;
+  white-space: normal;
 }
 .prov-summary > .prov-rest {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--text-muted);
 }
 .prov-badge {
   font-size: 9px;
@@ -276,8 +277,9 @@ body {
   flex-direction: column;
   min-width: 0;
 }
+/* t342 PIL-6: an audit-drawer label is at least 11 px (it was 9). */
 .prov-label {
-  font-size: 9px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
@@ -343,7 +345,7 @@ body {
 .retry-btn,
 .pilot-state .retry-btn {
   padding: 6px 14px;
-  background: var(--accent);
+  background: var(--accent-button); /* t342 PIL-6 */
   color: #fff;
   border: none;
   border-radius: var(--radius-sm);
@@ -361,14 +363,17 @@ body {
   display: flex;
   flex-direction: column;
 }
-/* An open legend takes its rows from the panel, not from the canvas. */
+/* An open legend takes its rows from the panel, not from the canvas. t342 PIL-9: the legend
+   grows to its content, so the wrap never shrinks below the canvas's minimum plus the bar and
+   the whole legend (the panel scrolls); with room to spare it still grows into it. */
 .graph-wrap.legend-open {
+  flex: 1 0 auto;
   min-height: 290px;
 }
 .graph-canvas {
   position: relative;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 155px; /* t342 PIL-9: the side panel's settled canvas height, kept under an open legend */
   background:
     radial-gradient(circle at 1px 1px, #1c1c24 1px, transparent 0) 0 0 / 22px
       22px;
@@ -427,16 +432,17 @@ body {
 .graph-legend-toggle[aria-expanded="true"]::before {
   content: "▾ ";
 }
+/* t342 PIL-9: the legend grows to its content (it was a 110 px scroll box showing a quarter of
+   its rows); the panel scrolls, as it does for the drawer and the audit. The canvas keeps its
+   minimum height (.graph-wrap.legend-open). */
 .graph-legend {
-  flex: 0 1 auto;
-  max-height: 110px;
-  overflow-y: auto;
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 2px 8px 6px;
   background: var(--bg-secondary);
-  font-size: 9px;
+  font-size: 11px; /* t342 PIL-6: the legend rows are labels, at least 11 px (it was 9) */
   color: var(--text-secondary);
 }
 .legend-group {
@@ -445,10 +451,11 @@ body {
   align-items: center;
   gap: 2px 10px;
 }
+/* t342 PIL-6: a legend group's title is at least 11 px (it was 8). */
 .legend-title {
   flex: none;
-  width: 52px;
-  font-size: 8px;
+  width: 84px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -496,7 +503,7 @@ body {
 .legend-palette .legend-palette-btn {
   margin-left: 0;
   padding: 1px 6px;
-  font-size: 9px;
+  font-size: 10px; /* t342 PIL-6 */
 }
 .legend-palette .legend-palette-btn.is-on {
   color: var(--text-primary);
@@ -511,7 +518,12 @@ body {
 .legend-kappa-state {
   cursor: default;
 }
+/* t342 PIL-6: a family with no end in the frame is quiet in the ink colour (opacity 0.45 left
+   its name at 2.4:1); only its dot fades. */
 .legend-kappa.is-empty {
+  color: var(--text-muted);
+}
+.legend-kappa.is-empty .legend-dot {
   opacity: 0.45;
 }
 /* A state glyph is text in the ink colour — never a hue. */
@@ -542,10 +554,10 @@ body {
   margin-bottom: 10px;
 }
 .insp-type {
-  font-size: 10px;
+  font-size: 11px; /* t342 PIL-6: a label at least 11 px, in the link blue (the accent was 3.88:1) */
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--accent);
+  color: var(--link);
   font-weight: 700;
 }
 .insp-name {
@@ -555,8 +567,9 @@ body {
 .insp-section {
   margin-bottom: 12px;
 }
+/* t342 PIL-6: an inspector section title is at least 11 px (it was 10). */
 .insp-section-title {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -623,7 +636,7 @@ body {
   font-size: 11px;
 }
 .insp-rel-dir {
-  color: var(--accent);
+  color: var(--link); /* t342 PIL-6: the accent was 3.88:1 */
   font-weight: 700;
 }
 .insp-rel-label {
@@ -644,7 +657,7 @@ body {
 .insp-rel-target {
   background: transparent;
   border: none;
-  color: var(--accent);
+  color: var(--link); /* t342 PIL-6: a link reaches 4.5:1 */
   cursor: pointer;
   font-size: 11px;
   padding: 0;
@@ -654,8 +667,14 @@ body {
   white-space: nowrap;
 }
 .insp-rel-target:hover {
-  color: var(--accent-hover);
+  color: var(--link-hover);
   text-decoration: underline;
+}
+/* t342 PIL-6: the port's colour as a dot beside its name, which is written in ink. */
+.insp-rel-dot {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 5px;
 }
 
 /* Scrollbar */
@@ -1181,8 +1200,9 @@ body {
 .gc-search {
   flex: 1 1 auto;
 }
+/* t342 PIL-6: a control's label is at least 11 px (it was 8). */
 .gc-label {
-  font-size: 8px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1195,6 +1215,13 @@ body {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   font-size: 11px;
+}
+/* t342 PIL-6: a placeholder in the muted ink (the browser's default grey was 3.29:1). */
+.gc-input::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
 }
 .gc-input {
   width: 100%;
@@ -1213,9 +1240,10 @@ body {
 .gc-filter {
   margin-top: 8px;
 }
+/* t342 PIL-6: the drawer's summary is at least 11 px (it was 9). */
 .gc-filter-summary {
   cursor: pointer;
-  font-size: 9px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1253,7 +1281,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: 11px; /* t342 PIL-6: a drawer tick's label is at least 11 px (it was 10) */
   font-family: var(--mono);
   color: var(--text-secondary);
   cursor: pointer;
@@ -1271,9 +1299,9 @@ body {
   font-weight: 600;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  background: var(--accent);
+  background: var(--accent-button); /* t342 PIL-6: white text at 5.35:1 (4.47 on the accent) */
   color: #fff;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--accent-button);
 }
 .gc-btn:hover {
   background: var(--accent-hover);
@@ -1337,7 +1365,7 @@ body {
 }
 .gc-seg.is-on {
   background: var(--accent-muted);
-  color: var(--accent-hover);
+  color: var(--link); /* t342 PIL-6: 5.2:1 on the muted accent (the accent-hover was 4.44) */
 }
 
 /* Identity editor (A3) — now inside the SettingsPanel; hint also used by GraphControls. */
@@ -1677,11 +1705,12 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
+/* t342 PIL-6: a settings section title is at least 11 px (it was 10). */
 .settings-section-title {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1689,7 +1718,7 @@ body {
 .settings-section-title .gc-identity-urn,
 .settings-section-title .gc-identity-none {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px; /* t342 PIL-6: in a section title, at least 11 px (it was 10) */
   text-transform: none;
   letter-spacing: 0;
 }
@@ -1735,9 +1764,10 @@ body {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* t342 PIL-6: a drawer note is at least 11 px (it was 9). */
 .gc-adv-note {
   margin: 8px 0 4px;
-  font-size: 9px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1751,9 +1781,10 @@ body {
   margin-bottom: 4px;
   align-items: baseline;
 }
+/* t342 PIL-6: a drawer group's label is at least 11 px (it was 8). */
 .gc-group-label {
-  flex: 0 0 92px;
-  font-size: 8px;
+  flex: 0 0 110px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
@@ -1842,7 +1873,7 @@ body {
   letter-spacing: 0.04em;
 }
 .log-kind.k-add { color: var(--success); }
-.log-kind.k-link { color: var(--accent-hover); }
+.log-kind.k-link { color: var(--link); } /* t342 PIL-6: 4.5:1 on the is-on background too */
 .log-kind.k-mutate { color: var(--warning); }
 .log-kind.k-unlink { color: var(--error); }
 .log-wf {
@@ -1865,12 +1896,13 @@ body {
   text-align: left;
   padding: 0;
 }
+/* t342 PIL-6: a link reaches 4.5:1 (--link; the accent was 3.88 on this background). */
 .log-subject.is-link {
-  color: var(--accent);
+  color: var(--link);
   cursor: pointer;
 }
 .log-subject.is-link:hover {
-  color: var(--accent-hover);
+  color: var(--link-hover);
   text-decoration: underline;
 }
 .log-actor {
@@ -2197,7 +2229,7 @@ body {
 .gc-filter-state {
   margin-left: 6px;
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 11px; /* t342 PIL-6: inside the drawer's label, at least 11 px (it was 9) */
   color: var(--text-secondary);
   text-transform: none;
   letter-spacing: 0;

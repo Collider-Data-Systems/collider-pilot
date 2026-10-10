@@ -13,7 +13,8 @@
     "smoke:live": "node scripts/live-smoke.mjs",
     "smoke:llm": "node scripts/llm-smoke.mjs",
     "smoke:lens": "node scripts/lens-smoke.mjs",
-    "bench:frame": "node scripts/bench-frame-read.mjs"
+    "bench:frame": "node scripts/bench-frame-read.mjs",
+    "probe:ui": "node scripts/ui-probe.mjs"
   },
   "dependencies": {
     "cytoscape": "^3.30.2",

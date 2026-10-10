@@ -68,26 +68,31 @@ export const END_GLYPHS = Object.freeze({
 /** The marker of an undeclared pair: a dotted line with a hollow diamond midway. */
 export const UNDECLARED_MARKER = Object.freeze({ lineStyle: "dotted", midGlyph: "diamond" });
 
-/** The three non-colour states, as the legend names them. */
+/**
+ * The three non-colour states, as the legend names them. t342 PIL-9: the labels are the words
+ * the pilot, the Workbench and the manual share — "no colour", "exempt", "pair not declared" —
+ * and the tooltips are plain: no κ, no commit hash, no API path, no src_port. The `state` keys
+ * are the code's own and did not change.
+ */
 export const KAPPA_STATES = Object.freeze([
   Object.freeze({
     state: "exempt",
     label: "exempt",
     glyph: "⊣",
-    title: 'κ = "" — the port is exempt from the colour gate (98f2ccc kernels on ontology 4.0.x)',
+    title: "the engine leaves this port out of its colouring (its colour family is empty)",
   }),
   Object.freeze({
     state: "uncoloured",
-    label: "uncoloured",
+    label: "no colour",
     glyph: "○",
-    title: "the port is not in the engine's /operad/port-colors map",
+    title: "the engine's colour table has no family for this port",
   }),
   Object.freeze({
     state: "undeclared",
-    label: "undeclared pair",
+    label: "pair not declared",
     glyph: "◇",
     title:
-      "(src_port, tgt_port) is on no pair the engine's /operad/rewrite-categories declares — a pair check only; the workbench's check 8 rules on admission",
+      "the two ports of this relation are on no pair the engine declares — a pair check only; the Workbench rules on admission",
   }),
 ]);
 

@@ -206,7 +206,7 @@ export function classifyMcpTool(raw: RawMcpTool): ToolSpec {
     expected_effect:
       kind === "read"
         ? "Read-only tool discovered on the engine (catalog entry; run via the read path)."
-        : "Mutating tool discovered on the engine (catalog entry only — not wired to any executable path here).",
+        : "Mutating tool discovered on the engine (catalog entry only — not connected to any executable path here).",
     source: "mcp",
     actionable: false,
   };
