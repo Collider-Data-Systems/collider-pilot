@@ -8,8 +8,9 @@
  *   LIVE/MOCK · READ-ONLY · ACCESS tier · user · workspace · in-frame/fold · access −N ·
  *   engine · seq · T-day · ontology
  *
- * (t342: on a narrow panel the summary takes its own line under the badges, and the counts in
- * it never shrink — the tail after them is what an ellipsis cuts.)
+ * (t342: on a narrow panel the summary takes its own line under the badges. t342 PIL-8: it is
+ * written in words — "445 of 452 nodes · 7 hidden by access" — with the engine, the log
+ * position and the version on a second line, and nothing in it is cut at 380 px.)
  *
  * — and an expandable AUDIT drawer holds the complete key-value block (access resolution,
  * engine/endpoint/purpose/folded_at grid, view_filter echo) for when provenance must be
@@ -257,6 +258,7 @@ export function PostureStrip({
       <button
         type="button"
         className="prov-top prov-toggle"
+        data-testid="audit-toggle"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         title={open ? "Collapse the provenance audit drawer" : "Expand the full provenance audit drawer"}
@@ -269,45 +271,54 @@ export function PostureStrip({
           READ-ONLY
         </span>
         {accessBadge}
-        {/* t342: three parts — who/where, the counts (never shrink), the rest (what room is left).
-            The separators are no-break spaces: a flex item drops plain leading spaces. */}
+        {/* t342 PIL-8: the summary in words, on two lines that wrap rather than cut — who and
+            where, then the counts with their unit ("445 of 452 nodes · 7 hidden by access");
+            the engine, the log position and the version on the second line. Until hand-off C
+            it read "445/452 · access −7 · … · seq 1030 · T=342 · …" on one line, and at the
+            panel's width the tail was cut to 80 of 291 px. Plain spaces separate the parts:
+            each line is a block, so nothing drops them. */}
         <span className="prov-summary">
-          <span
-            className="prov-who"
-            title={
-              `${access?.scope?.user ?? "anon"} · ${whereTitle}` +
-              (counts ? ` · ${counts.in_frame}/${counts.total} nodes in frame` : "")
-            }
-          >
-            {stripUser} · {whereText}
-          </span>
-          {(counts || publicOnly) && (
-            <span className="prov-counts">
-              {counts && (
-                <span title={countsTitle}>
-                  {"\u00a0"}· {counts.in_frame}/{counts.total}
-                  {!publicOnly && counts.withheld_by_access > 0 && ` · access −${counts.withheld_by_access}`}
-                </span>
-              )}
-              {identityMissing ? (
-                <span title={'"Bring me in" is on, but no identity is stored, so the posture failed closed to anon. Set a user urn in Settings.'}>
-                  {"\u00a0"}· no identity — Settings
-                </span>
-              ) : (
-                publicOnly && (
-                  <span title="Bring me in (the access toggle in the panel) draws the workspaces the identity saved in Settings permits.">
-                    {"\u00a0"}· Bring me in
-                  </span>
-                )
-              )}
+          <span className="prov-line">
+            <span
+              className="prov-who"
+              title={
+                `${access?.scope?.user ?? "anon"} · ${whereTitle}` +
+                (counts ? ` · ${counts.in_frame} of ${counts.total} nodes in the frame` : "")
+              }
+            >
+              {stripUser} · {whereText}
             </span>
-          )}
+            {(counts || publicOnly) && (
+              <span className="prov-counts">
+                {counts && (
+                  <span title={countsTitle}>
+                    {" "}· {counts.in_frame} of {counts.total} nodes
+                    {!publicOnly &&
+                      counts.withheld_by_access > 0 &&
+                      ` · ${counts.withheld_by_access} hidden by access`}
+                  </span>
+                )}
+                {identityMissing ? (
+                  <span title={'"Bring me in" is on, but no identity is stored, so the posture failed closed to anon. Set a user urn in Settings.'}>
+                    {" "}· no identity — Settings
+                  </span>
+                ) : (
+                  publicOnly && (
+                    <span title="Bring me in (the access toggle in the panel) draws the workspaces the identity saved in Settings permits.">
+                      {" "}· Bring me in
+                    </span>
+                  )
+                )}
+              </span>
+            )}
+          </span>
+          {" "}
           <span
-            className="prov-rest"
-            title={`engine read: ${engineRead} · log_seq ${provenance.log_seq} · T=${provenance.t_day} · ontology ${provenance.ontology_version}`}
+            className="prov-line prov-rest"
+            title={`engine read: ${engineRead} · log position ${provenance.log_seq} · day T=${provenance.t_day} · ontology ${provenance.ontology_version}`}
           >
-            {"\u00a0"}· {urnShort(engineRead)} · seq {provenance.log_seq} · T={provenance.t_day} ·{" "}
-            {provenance.ontology_version}
+            engine {urnShort(engineRead)} · log {provenance.log_seq} · day {provenance.t_day} ·{" "}
+            version {provenance.ontology_version}
           </span>
         </span>
         <span className="prov-audit-toggle" aria-hidden="true">

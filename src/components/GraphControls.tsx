@@ -23,6 +23,11 @@
  * Presentational + controlled: every VALUE comes in as a prop and every change is lifted
  * to the panel via a callback. The only local state is the advanced drawer's open flag.
  * No I/O, no adapter here.
+ *
+ * t342 hand-off C: `find` applies as you type, so Apply sits with the drawer it serves — the
+ * staged type / port / t edits of `view_filter · advanced` (PIL-7); every control carries a
+ * `data-testid` (PIL-10); the fold's labels on no declared pair are the "port on no pair"
+ * group, one of the six words the pilot, the Workbench and the manual share (PIL-9).
  */
 
 import { useState } from "react";
@@ -476,10 +481,11 @@ export function drawerVocab(
     ...(foldOnlyPorts.length
       ? [
           {
-            label: engine ? "undeclared pair" : "in this fold",
+            // t342 PIL-9: "port on no pair", the shared word (it was "undeclared pair").
+            label: engine ? "port on no pair" : "in this fold",
             ports: foldOnlyPorts,
             title: engine
-              ? "Relation labels in the permitted fold that are the source port of no pair the engine declares. The graph draws them as an undeclared pair (dotted, with a diamond midway)."
+              ? "Relation labels in the permitted fold that are the source port of no pair the engine declares. The graph draws such a relation as a pair not declared (dotted, with a diamond midway)."
               : "Relation labels in the permitted fold that the static groups above do not name.",
           },
         ]
@@ -780,6 +786,7 @@ export function GraphControls({
           <button
             type="button"
             className={`gc-seg ${!identified ? "is-on" : ""}`}
+            data-testid="access-anon"
             aria-pressed={!identified}
             onClick={() => onAccessModeChange("anon")}
             title="Stay anon — see only public workspaces (the default, fail-closed)"
@@ -789,6 +796,7 @@ export function GraphControls({
           <button
             type="button"
             className={`gc-seg ${identified ? "is-on" : ""}`}
+            data-testid="access-identified"
             aria-pressed={identified}
             onClick={() => onAccessModeChange("identified")}
             title="Bring me in — resolve my trusted identity (worker-only) and show my permitted workspaces"
@@ -799,6 +807,7 @@ export function GraphControls({
         <button
           type="button"
           className={`gc-seg gc-graph-toggle ${showGraph ? "is-on" : ""}`}
+          data-testid="graph-inline-toggle"
           aria-pressed={showGraph}
           onClick={onToggleGraphVisible}
           title={
@@ -824,6 +833,7 @@ export function GraphControls({
             key={l.id}
             type="button"
             className={`gc-seg gc-lens ${spec.lens === l.id ? "is-on" : ""}`}
+            data-testid={`lens-${l.id}`}
             aria-pressed={spec.lens === l.id}
             onClick={() => onLensChange(l.id)}
             title={l.title}
@@ -880,6 +890,7 @@ export function GraphControls({
         <button
           type="button"
           className="gc-btn gc-btn-ghost gc-focus-sel"
+          data-testid="focus-selection"
           disabled={!selectedUrn}
           onClick={() => selectedUrn && onScopeChange(selectedUrn)}
           title={
@@ -898,48 +909,22 @@ export function GraphControls({
           <input
             className="gc-input"
             type="search"
+            data-testid="find"
             value={search}
             placeholder="urn, label or text…"
             onChange={(e) => onSearchChange(e.target.value)}
             title={
-              "Select + center the best node matching this urn or label — or, failing those, " +
-              "its text (label / title / name / text / pointer). Every node that does not " +
-              "match fades in the graph; clear the box to bring them back."
+              "Applies as you type: select + center the best node matching this urn or label — " +
+              "or, failing those, its text (label / title / name / text / pointer). Every node " +
+              "that does not match fades in the graph; the match's own relations and their " +
+              "other ends stay lit and are brought into view; clear the box to bring the rest back."
             }
           />
         </label>
-        <label className="gc-field">
-          <span className="gc-label">t_day ≤</span>
-          <input
-            className="gc-input gc-t-input"
-            type="number"
-            value={spec.t}
-            placeholder="(all)"
-            onChange={(e) => onTChange(e.target.value)}
-            title={
-              "Drops nodes whose own `t_day` PROPERTY exceeds this value. It is NOT a fold-at-t " +
-              "time machine: nodes that carry no t_day are unaffected, and on a typical fold that " +
-              "is the large majority of them, so a bound can change nothing at all. A true time " +
-              "bound would replay the log to a sequence (GET /fold?to=<log_seq>) — not wired to " +
-              "this control. Blank = no bound."
-            }
-          />
-        </label>
-        <button
-          type="button"
-          className={`gc-btn${dirty ? " is-dirty" : ""}`}
-          onClick={onApplyFilter}
-          title={
-            dirty
-              ? "Staged type/port/t edits are not in the frame yet — Apply to re-request"
-              : "Re-request the frame under the current slice"
-          }
-        >
-          Apply{dirty ? " •" : ""}
-        </button>
         <button
           type="button"
           className="gc-btn gc-btn-ghost gc-reset"
+          data-testid="reset"
           onClick={onResetFilter}
           title="Back to the opening view: the everything lens, no focus, 1 hop, latest t"
         >
@@ -962,9 +947,48 @@ export function GraphControls({
           title="The raw view_filter axes. Every control in this block — posture, lens, focus, hops, t — composes the view_filter this frame was read under; the audit drawer echoes it verbatim."
         >
           view_filter <span className="gc-filter-sub">· advanced</span>{" "}
-          <span className="gc-filter-state">{stateEcho}</span>
+          <span className="gc-filter-state">
+            {stateEcho}
+            {dirty && " · staged edits — open to apply"}
+          </span>
         </summary>
         <div className="gc-filter-body">
+          {/* t342 PIL-7: Apply sits with what it applies — the staged edits of this drawer (the
+              type and port ticks, and the t bound below). `find` needs no Apply: it works as
+              you type, so Apply no longer stands beside it. */}
+          <div className="gc-row gc-apply-row">
+            <label className="gc-field">
+              <span className="gc-label">t_day ≤</span>
+              <input
+                className="gc-input gc-t-input"
+                type="number"
+                data-testid="t-day"
+                value={spec.t}
+                placeholder="(all)"
+                onChange={(e) => onTChange(e.target.value)}
+                title={
+                  "Drops nodes whose own `t_day` PROPERTY exceeds this value. It is NOT a fold-at-t " +
+                  "time machine: nodes that carry no t_day are unaffected, and on a typical fold that " +
+                  "is the large majority of them, so a bound can change nothing at all. A true time " +
+                  "bound would replay the log to a sequence (GET /fold?to=<log_seq>) — not connected to " +
+                  "this control. Blank = no bound. Staged until Apply."
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className={`gc-btn${dirty ? " is-dirty" : ""}`}
+              data-testid="apply"
+              onClick={onApplyFilter}
+              title={
+                dirty
+                  ? "Staged type/port/t edits are not in the frame yet — Apply to re-request"
+                  : "Re-request the frame under the current slice (the ticks and the t bound here are staged until applied)"
+              }
+            >
+              Apply{dirty ? " •" : ""}
+            </button>
+          </div>
           <div className="gc-adv-note">
             node types {allTypes && <em>(everything — untick to narrow)</em>}
           </div>

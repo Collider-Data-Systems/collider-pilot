@@ -167,20 +167,32 @@ floor of 0.2 drops to what the fit needs, on every layout. The legend lists ever
 port and node kind in the frame with its count and a checkbox that hides it without
 re-reading the frame. It opens by itself only in a window at least 640 px wide and on a
 frame that draws knowledge relations (their lines carry no port text); everywhere else it
-starts closed and the canvas keeps its height. An unticked row stays unticked on the other
+starts closed and the canvas keeps its height. Open, it grows to its rows (the panel
+scrolls) instead of scrolling inside a 110 px box, and it speaks the six words the pilot, the
+Workbench and the manual share — *colour family*, *port end*, *no colour*, *exempt*, *pair
+not declared*, *port on no pair* — with no κ, commit hash, route or `src_port` in a tooltip
+(t342 hand-off C). An unticked row stays unticked on the other
 lenses — the bar counts them and `show all` ticks every row back — and ticking back a node
 kind the layout last ran without runs the layout again, so its nodes get a place.
 
 **The whole fold (t342).** Every surface opens on `everything` (Sam, t342: "I need the view
-not narrowed at opening"). Node and relation labels are not drawn below a zoom step — 0.5
+not narrowed at opening"), and since hand-off C the first drawing opens *centred on your own
+node* — the user the frame was read for — at a zoom where labels are drawn (the zoom at
+which its neighbourhood fits, never below the step above the label cut, never above 1), with
+`fit` one click away; a frame without that node (anon, or a lens that leaves it out) still
+opens on the fit. In the side panel the frame restored from the last session shows at the fit
+until the live read lands; that frame then opens on the node, unless the view was moved
+meanwhile (t343). Node and relation labels are not drawn below a zoom step — 0.5
 at 100 % and 200 % display scaling, 0.8 at 125 %, 0.67 at 150 % — box titles always are,
 and the selection, `find` matches and the hovered node keep a label enlarged to stay
 readable, without moving anything. The nodes no relation of the frame touches sit in one
 band under the linked drawing, on every layout; the bar's `unlinked N` chip hides or shows
 it, counts as one of the legend's hidden rows (`1 hidden`) and comes back with `show all`.
-The strip's `444/447 · access −3` counts what is in the frame and what the access posture
-alone left out — not what is on the canvas, and not protection (see TESTING.md, "Drawing
-the whole fold").
+The strip says what is in the frame in words — `445 of 452 nodes · 7 hidden by access`,
+with the engine, the log position and the version on a second line (t342 hand-off C; it
+read `445/452 · access −7 · …` on one line before, cut at the panel's width) — counting what
+the access posture alone left out, not what is on the canvas, and not protection (see
+TESTING.md, "Drawing the whole fold").
 
 A frame re-read that brings the same node and relation ids updates the drawing in place
 and keeps the zoom and pan. When the canvas changes size — the legend opens, the window is
@@ -189,13 +201,19 @@ fit. In a drawing with boxes a drag that starts on a box or on a relation line p
 view (a node is still dragged), and a double-click on a box brings that box into view. An
 empty canvas says so, and names the anon posture when that is why.
 
-**Finding and reading.** `find` matches urn and label first and then a node's text
-(`label` / `title` / `name` / `text` / `pointer`): the best hit is selected, the hint says
-when it matched inside a property (`2 matches · showing claim · in text`), and every node
-that did not match fades until the box is cleared — the boxes a match sits in stay lit.
+**Finding and reading.** `find` applies as you type and matches urn and label first and then
+a node's text (`label` / `title` / `name` / `text` / `pointer`): the best hit is selected, the
+hint says when it matched inside a property (`2 matches · showing claim · in text`), and
+every node that did not match fades until the box is cleared — the boxes a match sits in, the
+match's own relations and their other ends stay lit, and the hit is brought into view with
+them (t342 hand-off C: the one relation a match had was drawn at opacity 0.12 before, its
+other end off the canvas). `Apply` therefore no longer stands beside `find`: it sits in the
+`view_filter · advanced` drawer with the staged type / port ticks and the `t_day ≤` bound it
+applies.
 The inspector shows a node's `text` as a paragraph above its property table, names an
-incoming relation by its converse port (`← has-part`), colours a knowledge port as the
-graph draws it, and a click on a relation row selects the other node, centres the graph on
+incoming relation by its converse port (`← has-part`), writes the port name in ink with a dot
+in the colour the graph draws that end in (a name written in its hue failed 4.5:1), and a
+click on a relation row selects the other node, centres the graph on
 it and shows it from the top of the inspector. In a drawing with boxes, centring — a find
 hit, a relation row — also zooms in to where the node can be read (zoom 1; a box: as far
 as the whole box fits); a drawing without boxes centres at the current zoom, as before. In
@@ -207,6 +225,15 @@ follow a change while open, with the same nesting, colours and legend. The panel
 fade and the centre request of an inspector row reach them through a second session-store
 key beside the scratch, `pilot.scratchView.v1` (same per-surface scope; panel to mirrors
 only). A find hit does not move a mirror's view.
+
+Every button in the six components the probe reads (PostureStrip, SettingsPanel, GraphControls, FrameGraph, LogFeed and NodeInspector; the actions panel and the confirm modal are outside that scope), and the controls named here, carry a `data-testid` (the lens buttons
+`lens-<id>`, `find`, `apply`, `reset`, the legend rows `legend-port-<port>` /
+`legend-kind-<kind>` / `legend-family-<family>`, the colour-by switch `colour-by-port` /
+`colour-by-kind`, the bar's `fit` / `re-layout` / `zoom-in` / `zoom-out`, the header's
+`reload-frame`) and the canvas an `aria-label` that sums up the frame it draws, so a script can
+drive the page (t342 hand-off C; `npm run probe:ui` does). Text in the muted ink and every
+link reach WCAG 4.5:1 on the panel's backgrounds; the control and section labels are at least
+11 px (the strip, the lens segments and the log rows keep their 8 to 10 px).
 
 The live harness takes `preview-live.html?engine=<REST base URL>` to read a different
 engine. [TESTING.md](TESTING.md) has the measured numbers and the limits.
