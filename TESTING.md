@@ -709,6 +709,16 @@ relations drawn, `auto` → `nested`), hp-laptop the fold at log 1607 (4.0.7, 52
 | PIL-10 ids code can find | every `<button>` in the six components carries a `data-testid`; the canvas has an `aria-label` | **0 of 27** `<button>` tags; aria-label none | **27 of 27** (in the DOM, drawers open: PostureStrip 1/1, SettingsPanel 2/2, GraphControls 12/12, FrameGraph 8/8, LogFeed 193/193 — one per log row — NodeInspector 0/0 with nothing selected); the canvas: `Graph of 445 nodes and 413 relations, nested layout, 38 sources drawn in the box that cites them, boxes of 2 kinds, 145 unlinked in a band, relation ends coloured by port` |
 | PIL-12 the #47 review | re-layout with a selection moves that component's centroid under 20 px; a planted overlap fails J headless, or J prints SKIP; J asserts the `↗N` count | the 158-node component's centroid moved **37.77 px** (158 of its 158 nodes, 445 of 445 in the frame); J's overlap count held on discs; `↗N` not asserted as drawn | centroid **0 px**, 0 nodes moved (the same picture as without a selection); J: 0 overlapping pairs on 90 × 40 label boxes and one planted overlap counted as 1, SKIP printed if the hook is absent; `↗N` drawn on exactly 1 box (box-b, ↗2). hp-laptop: SKIP (concentric has no component) |
 
+**Changed after the Copilot review on #48 (t343, the Z440 seat).** (1) PIL-5: whether the user has
+moved the view is read before a rebuild replaces the fit; after a rebuild the view is always at the
+new fit, so the old check could not see a move made on a restored frame whose live structure differed.
+A first frame has no fit yet and counts as untouched. (2) PIL-6: the hover state was not covered, and
+white text on `--accent-hover` is 3.37:1. Buttons now hover to `--accent-button-hover` `#4a4ddc`
+(6.20:1), the mount-guard button's face moves to `--accent-button` (5.35:1; the accent was 4.47), and
+`probe:ui` reads both button tokens from `:root` and checks their white text (`PIL-6 buttons` in its
+log, `pil6.buttons` in its JSON, part of `pil6.ok`). (3) PIL-10: the README sentence on test ids is
+scoped to the six probed components; the actions panel and the confirm modal are outside it.
+
 **What changed, by order.**
 
 - **PIL-5** (`FrameGraph.tsx` `identityUrn`, `openOn`, `openZoomMin`): the first frame an

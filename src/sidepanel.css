@@ -29,6 +29,8 @@
   --accent-muted: rgba(99, 102, 241, 0.14);
   /* t342 PIL-6: a button's white text on the accent was 4.47:1; on this it is 5.35. */
   --accent-button: #5558e6;
+  /* t343 (Copilot on #48): a button's white text on --accent-hover was 3.37:1 while hovered; on this it is 6.20. */
+  --accent-button-hover: #4a4ddc;
   /* t342 PIL-6: a link in the accent was 3.88:1 on --bg-secondary; these reach 6.06 / 7.57. */
   --link: #8b8dff;
   --link-hover: #a0a3ff;
@@ -1304,7 +1306,7 @@ textarea::placeholder {
   border: 1px solid var(--accent-button);
 }
 .gc-btn:hover {
-  background: var(--accent-hover);
+  background: var(--accent-button-hover); /* t343: 6.20:1 (the accent-hover was 3.37) */
 }
 .gc-btn-ghost {
   background: var(--bg-tertiary);
@@ -2209,14 +2211,14 @@ textarea::placeholder {
   padding: 6px 14px;
   font-size: 12px;
   font-weight: 600;
-  background: var(--accent);
+  background: var(--accent-button); /* t343 (Copilot on #48): 5.35:1; the accent was 4.47 */
   color: #fff;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--accent-button);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
 .mount-guard-btn:hover {
-  background: var(--accent-hover);
+  background: var(--accent-button-hover); /* t343: 6.20:1 */
 }
 
 /* Secondary word in the view_filter disclosure summary ("· advanced"). */

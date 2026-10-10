@@ -1911,6 +1911,10 @@ export function FrameGraph({
     const cy = cyRef.current;
     if (!cy || !legendDecided) return;
     const built = `${drawn}\n${plan.key}`;
+    // t343 (Copilot on #48): whether the user has moved the view is read BEFORE the rebuild
+    // below replaces the fit; after it the view is always at the new fit. A first frame has
+    // no fit yet and counts as untouched.
+    const untouched = fittedRef.current === null || viewUntouched(cy, fittedRef.current);
     try {
       if (builtRef.current === built) {
         cy.batch(() => {
@@ -1933,11 +1937,11 @@ export function FrameGraph({
       // structure whenever anything changed since the panel was last open, so it was rebuilt
       // and fitted above with the one shot already spent. A live frame with the restored
       // one's structure kept the picture in place above and opens on the node now — unless
-      // the user has moved the view meanwhile (viewUntouched).
+      // the user has moved the view meanwhile (`untouched`, read before the rebuild).
       if (!openedRef.current && !restored) {
         openedRef.current = true;
         const me = identityUrn(frame);
-        const opened = me && viewUntouched(cy, fittedRef.current) ? openOn(cy, me) : null;
+        const opened = me && untouched ? openOn(cy, me) : null;
         if (me && opened) {
           fittedRef.current = opened;
           openedOnRef.current = me;

@@ -324,6 +324,17 @@ const FIND_PROBE = String.raw`(() => {
  * whether it is a label (a <label>, or one of the panel's label classes) — PIL-6 asks for labels of
  * at least 11 px, so the run counts the labels under that.
  */
+/** t343 (Copilot on #48): the buttons' hover state is never rendered by this probe, so the two button
+ *  tokens are read from :root and their white text checked with the same formula as CONTRAST_PROBE. */
+const BUTTON_TOKENS_PROBE = String.raw`(() => {
+  const root = getComputedStyle(document.documentElement);
+  const rgb = (css) => { const d = document.createElement("span"); d.style.color = css; document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); const n = c.replace(/[^0-9.,]/g, "").split(",").map(Number); return n.length >= 3 ? n.slice(0, 3) : null; };
+  const lum = ([r, g, b]) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const one = (name) => { const hex = root.getPropertyValue(name).trim(); const c = rgb(hex); return { hex, ratio: c ? Math.round(100 * (1.05 / (lum(c) + 0.05))) / 100 : null }; };
+  const base = one("--accent-button"), hover = one("--accent-button-hover");
+  return { base, hover, pass: !!(base.ratio && hover.ratio && base.ratio >= 4.5 && hover.ratio >= 4.5) };
+})()`;
+
 const CONTRAST_PROBE = String.raw`(() => {
   const parse = (s) => { const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s\/]+([\d.]+)(%?))?\s*\)/.exec(s || "");
     if (!m) return null; let a = m[4] === undefined ? 1 : parseFloat(m[4]) / (m[5] ? 100 : 1); return { r: +m[1], g: +m[2], b: +m[3], a }; };
@@ -461,6 +472,7 @@ async function main() {
     await cdp.clickSel(".prov-toggle");
     await sleep(400);
     const contrast = await cdp.eval(CONTRAST_PROBE);
+    const buttons = await cdp.eval(BUTTON_TOKENS_PROBE);
     const items = contrast.items.filter((x) => !x.disabled);
     const failing = items.filter((x) => !x.pass);
     const group = (pred) => ({ items: items.filter(pred).length, failing: failing.filter(pred).length, examples: failing.filter(pred).slice(0, 6).map((x) => `${x.path} ${x.fg} on ${x.bg} ${x.ratio}`) });
@@ -470,7 +482,9 @@ async function main() {
       sizes: Object.entries(items.reduce((m, x) => { const k = String(x.size); m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => Number(a[0]) - Number(b[0])),
       failing_by_colour: Object.entries(failing.reduce((m, x) => { const k = `${x.fg} on ${x.bg} ${x.ratio}`; m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 12),
       failing_by_path: Object.entries(failing.reduce((m, x) => { const k = x.path.split(" > ").pop(); m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 20) };
-    R.pil6.ok = R.pil6.muted.failing === 0 && R.pil6.links.failing === 0 && R.pil6.inspectorPorts.failing === 0 && R.pil6.failing_pct < 5;
+    R.pil6.buttons = buttons;
+    R.pil6.ok = R.pil6.muted.failing === 0 && R.pil6.links.failing === 0 && R.pil6.inspectorPorts.failing === 0 && R.pil6.failing_pct < 5 && buttons.pass;
+    log(`PIL-6 buttons: white text on --accent-button ${buttons.base.ratio} (${buttons.base.hex}), on --accent-button-hover ${buttons.hover.ratio} (${buttons.hover.hex}); both at least 4.5:1 ${buttons.pass}`);
     log(`PIL-6 contrast: ${failing.length} of ${items.length} failing (${R.pil6.failing_pct}%); --text-muted ${R.pil6.muted.failing}/${R.pil6.muted.items}, links ${R.pil6.links.failing}/${R.pil6.links.items}, inspector ports ${R.pil6.inspectorPorts.failing}/${R.pil6.inspectorPorts.items}; labels under 11 px ${R.pil6.labels.under11}/${R.pil6.labels.items}`);
     await cdp.clickSel(".prov-toggle");
     await cdp.clickSel(".gc-search input");

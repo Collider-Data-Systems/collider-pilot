@@ -226,7 +226,7 @@ fade and the centre request of an inspector row reach them through a second sess
 key beside the scratch, `pilot.scratchView.v1` (same per-surface scope; panel to mirrors
 only). A find hit does not move a mirror's view.
 
-Every button, and the controls named here, carry a `data-testid` (the lens buttons
+Every button in the six components the probe reads (PostureStrip, SettingsPanel, GraphControls, FrameGraph, LogFeed and NodeInspector; the actions panel and the confirm modal are outside that scope), and the controls named here, carry a `data-testid` (the lens buttons
 `lens-<id>`, `find`, `apply`, `reset`, the legend rows `legend-port-<port>` /
 `legend-kind-<kind>` / `legend-family-<family>`, the colour-by switch `colour-by-port` /
 `colour-by-kind`, the bar's `fit` / `re-layout` / `zoom-in` / `zoom-out`, the header's
