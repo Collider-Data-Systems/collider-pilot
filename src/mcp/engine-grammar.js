@@ -169,7 +169,7 @@ const PAIR_INDEX = new WeakMap();
  * declared pair puts at the OTHER end from `port` (main and additional pairs, either side),
  * sorted. On a grammar where the converse is a function (mtdc-2.2.0: each of its 89 names on
  * exactly one pair) this is one name, and a self-converse port gives itself; where it is not
- * (4.0.9 declares `owns` on two pairs) it is every name, never one picked. Empty without an
+ * (4.0.9 declares one port on two pairs) it is every name, never one picked. Empty without an
  * engine grammar or for a port on no declared pair. The idea is b85f0dd's getConversePorts
  * (the laptop Antigravity seat), written fresh here.
  * @param {EngineGrammar | null | undefined} grammar

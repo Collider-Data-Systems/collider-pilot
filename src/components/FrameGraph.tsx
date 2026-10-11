@@ -321,8 +321,25 @@ const relationsOf = (frame: HgFrame | null) =>
  * When it has several targets the field/topic wins over the module (domain_tag, then
  * program — as kb-view does); a target of any other type — the classification_scheme
  * included — is never a box, and that relation stays a line.
+ * t344 PIL-13 (Copilot on #49): neither is a FAULT — a nesting relation whose ends are in two
+ * colour families under the frame's grammar (isFault). Folded into a box it would draw no grey
+ * line and no square while the legend and the census counted it; it stays a line, in either
+ * palette, so the boxes do not change with the `colour by` switch.
  */
 const NEST_PARENT_RANK: Record<string, number> = { domain_tag: 2, program: 1 };
+
+/**
+ * t344 PIL-13: whether a relation is drawn as a fault in the port-colour palette — its ends in
+ * two colour families under the frame's engine grammar (port-colour.js `twoTone`). False
+ * without the engine's port colours.
+ */
+function isFault(
+  relation: Pick<HgRelation, "label" | "properties">,
+  grammar: EngineGrammar | null | undefined,
+): boolean {
+  const paint = paintRelation(relation, grammar);
+  return paint.palette === "port" && paint.twoTone;
+}
 
 /** Which box each node is drawn inside: node urn -> parent urn (empty = nothing nests). */
 export function nestingParents(frame: HgFrame | null): Map<string, string> {
@@ -330,9 +347,11 @@ export function nestingParents(frame: HgFrame | null): Map<string, string> {
   if (!KB_NESTING_PORT) return parents;
   const typeOf = new Map(nodesOf(frame).map((n) => [n.urn, n.type_id]));
   const rankOf = new Map<string, number>();
+  const grammar = frame?.provenance?.grammar;
   for (const r of relationsOf(frame)) {
     if (r.label !== KB_NESTING_PORT || r.source_urn === r.target_urn) continue;
     if (!typeOf.has(r.source_urn)) continue;
+    if (isFault(r, grammar)) continue; // t344 PIL-13: a fault stays a line
     const rank = NEST_PARENT_RANK[typeOf.get(r.target_urn) ?? ""] ?? 0;
     if (!rank) continue;
     const prevRank = rankOf.get(r.source_urn) ?? 0;
@@ -528,8 +547,13 @@ export function toElements(
   const grammar = frame.provenance?.grammar;
   const edges: cytoscape.ElementDefinition[] = relationsOf(frame)
     .filter((r) => nodeUrns.has(r.source_urn) && nodeUrns.has(r.target_urn))
-    // t337: a nesting relation the box already shows is not drawn again as a line.
-    .filter((r) => !(r.label === KB_NESTING_PORT && parents.get(r.source_urn) === r.target_urn))
+    // t337: a nesting relation the box already shows is not drawn again as a line. t344
+    // PIL-13: a fault never is the box (nestingParents), so it is always drawn — also beside a
+    // second, boxed relation between the same two nodes.
+    .filter(
+      (r) =>
+        !(r.label === KB_NESTING_PORT && parents.get(r.source_urn) === r.target_urn && !isFault(r, grammar)),
+    )
     .map((r) => ({
       group: "edges",
       data: {
@@ -607,7 +631,7 @@ interface LegendNodeRow {
  * an alphabetical cut hid the dominant types under the wide lenses. A claim type is
  * listed per vocabulary kind, in vocabulary order.
  */
-function legendOf(
+export function legendOf(
   frame: HgFrame,
   parents: Map<string, string>,
 ): { relations: LegendRelationRow[]; nodes: LegendNodeRow[] } {
@@ -624,7 +648,13 @@ function legendOf(
     row.count += 1;
     if (paint?.kpair === "undeclared") row.undeclared += 1;
     if (paint?.kfault === "fault") row.fault += 1;
-    if (r.label === KB_NESTING_PORT && parents.get(r.source_urn) === r.target_urn) row.boxed += 1;
+    if (
+      r.label === KB_NESTING_PORT &&
+      parents.get(r.source_urn) === r.target_urn &&
+      paint?.kfault !== "fault" // t344 PIL-13: a fault is drawn as a line, never as the box
+    ) {
+      row.boxed += 1;
+    }
     ports.set(r.label, row);
   }
   const boxTypes = new Set([...parents.values()].map((urn) => typeOf.get(urn)));
@@ -1654,8 +1684,8 @@ function relationSwatch(
  * t344 PIL-14: what a port is called read from the relation's OTHER end — the knowledge
  * vocabulary's converse first (its own declaration, as before), then every port the engine's
  * declared pairs put opposite it (engine-grammar.js conversePorts), " / " between them when
- * there are several: 4.0.9 declares `owns` on two pairs and its converse reads
- * `child / owned-by`, the honest non-function, never one of the two picked. Null for a port no
+ * there are several: 4.0.9 declares one port on two pairs and its converse reads both names,
+ * `a / b`, the honest non-function, never one of the two picked. Null for a port no
  * declared pair names (or a frame without an engine grammar). Exported for `smoke:lens` K.
  */
 export function converseName(port: string, grammar: EngineGrammar | null | undefined): string | null {
@@ -1687,7 +1717,7 @@ export function conversePortOf(
 /**
  * The legend tooltip for a port: the port and its converse, the count, what the vocabulary
  * says. t344 PIL-14: the converse from the engine's grammar too, not only the knowledge
- * vocabulary's — `owns (from the other end: child / owned-by)` on 4.0.9. Exported for
+ * vocabulary's — `p (from the other end: a / b)` for 4.0.9's port on two pairs. Exported for
  * `smoke:lens` K.
  */
 export function relationTitle(

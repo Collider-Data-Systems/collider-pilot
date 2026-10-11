@@ -94,8 +94,10 @@
  *      before the grammar — and on two RECORDED grammars read from outside this public repo
  *      (no operad data is copied in; each file is identified by its sha256, and a missing or
  *      changed file prints SKIP): mtdc-2.2.0, where each of the 89 pair names maps to one
- *      converse and back (†† = id) and 5 map to themselves, and 4.0.9, where `owns` reads
- *      "child / owned-by" — the honest non-function.
+ *      converse and back (†† = id) and 5 map to themselves, and 4.0.9, where exactly one port
+ *      is on two pairs and reads both its converse names — the honest non-function. No engine
+ *      port name is written here (Copilot on #49): the recorded file is pinned by sha256, so
+ *      that port and its two converses are derived from it.
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -234,7 +236,7 @@ async function loadFrameGraph() {
  * relation kind none may: the knowledge vocabulary's colour, or the default line.
  * `smoke:live` (i) runs the same on the live fold.
  */
-function drawCheck(fg, frame) {
+function drawCheck(fg, frame, elements = fg.toElements(frame, new Map(), new Set())) {
   const rgb = (hex) => [0, 2, 4].map((i) => parseInt(String(hex).replace("#", "").slice(i, i + 2), 16)).join();
   const col = (v) => (Array.isArray(v) ? v.join() : String(v));
   const kappaRgb = new Set([...KAPPA_HUES, KAPPA_NEUTRAL].map(rgb));
@@ -243,7 +245,7 @@ function drawCheck(fg, frame) {
   const cy = cytoscape({
     headless: true,
     styleEnabled: true,
-    elements: fg.toElements(frame, new Map(), new Set()),
+    elements,
     style: fg.STYLE,
   });
   const val = (e, k) => e.pstyle(k).value;
@@ -883,6 +885,50 @@ console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two
       `${JSON.stringify(gotFault) === JSON.stringify(wantFault) ? "" : `, WANTED ${wantFault.join(", ")}`}); ` +
       `kappaCensus.twoTone ${drawnCensus.twoTone} = the fault count ${gotFault.length}; no line in two tones`,
   );
+  // t344 PIL-13 (Copilot on #49): a fault on the NESTING port is never folded into a box. Under
+  // `nested` a nesting relation whose target can be a box is drawn as the box, not as a line; a
+  // fault folded so would be counted by the legend and the census with no grey line or square
+  // drawn. The real drawingPlan, under `nested`: a box target, one nesting relation with no
+  // family at either end (boxed), one that is a fault (a family at the target end only). The
+  // fault must stay a line, drawn as a fault, and the legend row and the census must count
+  // exactly the faults drawn.
+  {
+    const NU = (n) => `urn:moos:claim:lens-smoke.nest-${n}`;
+    const box = "urn:moos:domain_tag:lens-smoke.nest-box";
+    const nestRel = (n, tgtPort) => ({
+      urn: `urn:moos:relation:lens-smoke.nest-${n}`,
+      type_id: "WF12",
+      label: KB_NESTING_PORT,
+      source_urn: NU(n),
+      target_urn: box,
+      properties: { src_port: KB_NESTING_PORT, tgt_port: tgtPort },
+    });
+    const nestRels = [nestRel("boxed", P("gone-in")), nestRel("fault", P("a-in"))];
+    const nestFrame = {
+      provenance: { grammar },
+      nodes: [
+        ...["boxed", "fault"].map((n) => ({ urn: NU(n), label: n, type_id: "claim", properties: {} })),
+        { urn: box, label: "box", type_id: "domain_tag", properties: {} },
+      ],
+      relations: nestRels,
+    };
+    const plan = fg.drawingPlan(nestFrame, "nested", false);
+    const nestDrawn = drawCheck(fg, nestFrame, plan.elements);
+    const lines = new Set(plan.elements.filter((e) => e.group === "edges").map((e) => String(e.data.id)));
+    const nestCensus = kappaCensus(nestRels, grammar);
+    const nestRow = fg.legendOf(nestFrame, plan.parents).relations.find((r) => r.port === KB_NESTING_PORT);
+    check(
+      plan.parents.get(NU("boxed")) === box && !plan.parents.has(NU("fault")) &&
+        !lines.has(nestRels[0].urn) && lines.has(nestRels[1].urn) &&
+        nestDrawn.port.wrong.length === 0 &&
+        JSON.stringify(nestDrawn.port.fault) === JSON.stringify([nestRels[1].urn]) &&
+        nestCensus.twoTone === nestDrawn.port.fault.length &&
+        nestRow?.fault === nestDrawn.port.fault.length && nestRow?.boxed === 1,
+      `a fault on the nesting port is never a box: under nested, the boxed relation is the box (${plan.parents.get(NU("boxed")) === box}), ` +
+        `the fault stays a line (${lines.has(nestRels[1].urn)}) drawn as a fault (${nestDrawn.port.fault.length} drawn so${nestDrawn.port.wrong.length ? `, WRONG: ${nestDrawn.port.wrong.join(", ")}` : ""}); ` +
+        `census two-tone ${nestCensus.twoTone}, legend row faults ${nestRow?.fault} and boxed ${nestRow?.boxed}`,
+    );
+  }
   // Node fills stay a type palette that never uses a κ hue (nor the neutral of the states).
   const { NODE_FILLS } = fg;
   const fills = [...NODE_FILLS, ...KB_CLAIM_KINDS.map((k) => k.display)].map((c) => c.toLowerCase());
@@ -1576,6 +1622,8 @@ console.log("\nK. the converse from the engine's grammar, for every pair (PIL-14
       sha256: "6192181927e0bed8d29f8ed8ac85f168e8f00381a7391eb3e66f6f13f5d5230c",
       pairs: 35,
       names: 66,
+      several: 1, // ports on more than one pair (the converse is not a function on them)
+      opposite: 2, // the converse names of that port
     },
   ];
   const candidates = (
@@ -1642,20 +1690,26 @@ console.log("\nK. the converse from the engine's grammar, for every pair (PIL-14
     const conv = new Map(names.map((n) => [n, conversePorts(g, n)]));
     const several = names.filter((n) => conv.get(n).length > 1);
     const fixed = names.filter((n) => conv.get(n).length === 1 && conv.get(n)[0] === n);
-    const own = fg.converseName("owns", g);
+    // Derived from the pinned file, never written here: the one port on two pairs and the two
+    // names opposite it.
+    const multi = several[0] ?? "";
+    const opposite = conv.get(multi) ?? [];
+    const both = opposite.join(" / ");
+    const own = fg.converseName(multi, g);
     check(
       fleet.json.version === RECORDED[1].version && g.pairs.length === RECORDED[1].pairs &&
-        names.length === RECORDED[1].names && JSON.stringify(several) === JSON.stringify(["owns"]) &&
-        own === "child / owned-by" &&
-        fg.relationTitle(row("owns"), g).startsWith("owns (from the other end: child / owned-by) · ") &&
-        JSON.stringify(conversePorts(g, "child")) === JSON.stringify(["owns"]) &&
-        JSON.stringify(conversePorts(g, "owned-by")) === JSON.stringify(["owns"]) &&
-        fg.conversePortOf(incoming("owns"), g) === "child / owned-by" &&
-        fg.conversePortOf(incoming("owns", "owned-by"), g) === "owned-by" &&
+        names.length === RECORDED[1].names && several.length === RECORDED[1].several &&
+        opposite.length === RECORDED[1].opposite &&
+        own === both &&
+        fg.relationTitle(row(multi), g).startsWith(`${multi} (from the other end: ${both}) · `) &&
+        opposite.every((o) => JSON.stringify(conversePorts(g, o)) === JSON.stringify([multi])) &&
+        fg.conversePortOf(incoming(multi), g) === both &&
+        fg.conversePortOf(incoming(multi, opposite[1]), g) === opposite[1] &&
         names.filter((n) => shown(g, n)).length === names.length,
       `${fleet.json.version} (sha256 ${RECORDED[1].sha256.slice(0, 12)}…, read from ${fleet.path}): ${g.pairs.length} pairs, ${names.length} names; ` +
-        `owns shows "${own}" — the converse is not a function on ${several.length} name (${several.join(", ")}), the legend tooltip shows the converse of all ${names.length}; ` +
-        `${fixed.length} map to themselves; an incoming owns that carries its tgt_port keeps it`,
+        `the converse is not a function on ${several.length} name (${several.join(", ")}), which shows "${own}" — both of its ` +
+        `${opposite.length} converses, each mapping back to it alone; the legend tooltip shows the converse of all ${names.length}; ` +
+        `${fixed.length} map to themselves; an incoming relation on that port that carries its tgt_port keeps it`,
     );
   }
   if (failures === before) pass("K holds");

@@ -890,12 +890,12 @@ names; its converse is a function on all of them.
 puts at the other end from `port`, either side, sorted — the idea of b85f0dd's `getConversePorts`
 (the laptop Antigravity seat), written fresh; `mapRelation` is unchanged. `FrameGraph.tsx`
 `converseName`: the knowledge vocabulary's converse first, then the engine's, several joined by
-` / ` — on 4.0.9 `owns` is on two pairs and reads `child / owned-by`, the honest non-function,
-never one of the two picked. The legend's relation tooltip reads `owns (from the other end: child
-/ owned-by) · N …` for every port, not only the knowledge ports (a self-converse port shows the
+` / ` — 4.0.9 declares one port on two pairs and it reads both converse names, `a / b`, the honest
+non-function, never one of the two picked. The legend's relation tooltip reads `p (from the other
+end: c) · N …` for every port, not only the knowledge ports (a self-converse port shows the
 port alone, as before). The inspector (`conversePortOf`, moved to `FrameGraph.tsx`): the
 vocabulary's converse, then the relation's own `tgt_port` — what that relation says at that end,
-also on an undeclared pair or for one of `owns`'s two — then the engine's pairs, then the label.
+also on an undeclared pair or for one of that port's two — then the engine's pairs, then the label.
 So on the fleet, where every relation carries its `tgt_port`, an inspector row reads as before;
 the grammar names a relation that carries none.
 
@@ -912,7 +912,8 @@ recorded ones; otherwise it prints `[SKIP]` with what it found. Recorded at t344
 | 4.0.9 | ffs0 `kb/superset/ontology.json` | 197398 | `6192181927e0bed8d29f8ed8ac85f168e8f00381a7391eb3e66f6f13f5d5230c` | ffs0 `23ad36d` |
 
 The 4.0.9 file's 35 pairs are the ones the Z440 primary serves on `/operad/rewrite-categories`
-(GET, log 713), `owns` on two of them.
+(GET, log 713), one port on two of them. No engine port name is written in this repo (Copilot
+on #49): `smoke:lens` K derives that port and its two converses from the pinned file.
 
 **Asserted** (`smoke:lens` K, measured at t344). Synthetic: either end of a pair gives the other,
 a self-converse port itself, a port on two pairs both; the vocabulary's converse wins where the
@@ -921,8 +922,9 @@ mtdc-2.2.0: 47 pairs, 89 names; each maps to one converse, 89 of 89, and back (�
 89; 5 map to themselves (the placeholder pair's `{…}` name among them); the panel's converse
 name agrees with the pairs on all 89, the vocabulary's own ports included, and the legend
 tooltip shows it on all 89. 4.0.9: 35 pairs, 66 names; the converse is not a function on one
-name, `owns`, which shows `child / owned-by`; 3 map to themselves; an incoming `owns` without a
-`tgt_port` reads `child / owned-by` in the inspector, one that carries `owned-by` keeps it.
+name, which shows both of its two converses joined by ` / `, each mapping back to it alone; 3 map
+to themselves; an incoming relation on that port without a `tgt_port` reads both names in the
+inspector, one that carries one of them keeps it.
 Broken copies fail it: `converseName` keeping the first of several names (four FAILs).
 
 ## Finding and inspecting in the knowledge graph (t337)
