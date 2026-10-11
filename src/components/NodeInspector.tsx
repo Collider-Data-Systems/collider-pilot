@@ -15,6 +15,8 @@
  * t342 PIL-6: the port NAME is written in ink and the colour sits in a dot beside it — a name
  * written in its hue failed 4.5:1 on the pane (three of the engine's families, 3.50 to 4.46).
  * PIL-9: the tooltip uses the shared state words (no colour, exempt, pair not declared).
+ * t344 PIL-13: a relation whose ends are in two colour families is drawn as a fault, grey at
+ * both ends; its row's dot is that grey and its tooltip says "two colours: a fault".
  */
 
 import { useRef, useState } from "react";
@@ -195,7 +197,8 @@ export function NodeInspector({
               const color = end ? end.hue : kbPortStyle(r.label)?.color;
               const colourNote = end
                 ? `colour family: ${end.state === "colour" ? end.family : kappaStateLabel(end.state)}` +
-                  (kappa?.pair === "undeclared" ? ` · ${kappaStateLabel("undeclared")}` : "")
+                  (kappa?.pair === "undeclared" ? ` · ${kappaStateLabel("undeclared")}` : "") +
+                  (kappa?.twoTone ? ` · ${kappaStateLabel("fault")}` : "")
                 : color
                   ? `relation kind (kb-vocab ${KB_VOCAB_VERSION})`
                   : null;

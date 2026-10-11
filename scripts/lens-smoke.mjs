@@ -46,7 +46,12 @@
  *      at the timeout (absent, unreachable, kept for the back-off only).
  *      (t342 P1 review) What is DRAWN, not only the paint plan: FrameGraph's real toElements,
  *      STYLE and applyPalette in headless Cytoscape — every relation in port colour carries
- *      its κ and is drawn in it, and none after the switch to relation kind. No κ hue nor the
+ *      its κ and is drawn in it, and none after the switch to relation kind.
+ *      (t344 PIL-13) Two families are a fault, not two tones: every relation of the fixture
+ *      whose ends are in two colour families (read from the synthetic port_colors here, not
+ *      from the painter) is drawn grey — line and both ends — with the fault square midway,
+ *      no other relation is, no line is drawn in two tones, and kappaCensus.twoTone equals
+ *      the number drawn as a fault. No κ hue nor the
  *      state grey within OKLab ΔE 3 of a node fill, and no close pair beyond those TESTING.md
  *      records. An engine without port colours keeps its pairs and types.
  *   I. (t342 P6) The drawer offers the static groups (A-C) first, then the types and source
@@ -125,6 +130,7 @@ import {
 } from "../src/mcp/engine-grammar.js";
 import {
   END_GLYPHS,
+  FAULT_MARKER,
   KAPPA_HUES,
   KAPPA_NEUTRAL,
   UNDECLARED_MARKER,
@@ -209,11 +215,13 @@ async function loadFrameGraph() {
 /**
  * t342 P1 (review): what FrameGraph is asked to DRAW — its real toElements, STYLE and
  * applyPalette in headless Cytoscape (no canvas, nothing mounts). In port colour every
- * relation must carry the `kappa` class and its κ data and be drawn in them: its hue (one, or
- * two tones split at the middle), its end glyphs, the undeclared-pair marker, and a neutral
- * end always with its state's glyph. After the switch to relation kind none may: the
- * knowledge vocabulary's colour, or the default line. `smoke:live` (i) runs the same on the
- * live fold.
+ * relation must carry the `kappa` class and its κ data and be drawn in them: its one colour
+ * (line and both ends; t344 PIL-13: never two tones), its end glyphs, the undeclared-pair
+ * marker, and — on a relation that is not a fault — a neutral end always with its state's
+ * glyph. A fault (`kfault`) is drawn grey, line and ends, with FAULT_MARKER midway; no other
+ * relation carries the marker. `port.fault` lists the ids drawn so. After the switch to
+ * relation kind none may: the knowledge vocabulary's colour, or the default line.
+ * `smoke:live` (i) runs the same on the live fold.
  */
 function drawCheck(fg, frame) {
   const rgb = (hex) => [0, 2, 4].map((i) => parseInt(String(hex).replace("#", "").slice(i, i + 2), 16)).join();
@@ -230,7 +238,7 @@ function drawCheck(fg, frame) {
   const val = (e, k) => e.pstyle(k).value;
   try {
     fg.applyPalette(cy, true);
-    const port = { edges: 0, kind: 0, wrong: [] };
+    const port = { edges: 0, kind: 0, wrong: [], fault: [] };
     cy.edges().forEach((e) => {
       port.edges += 1;
       const d = e.data();
@@ -239,22 +247,32 @@ function drawCheck(fg, frame) {
         return;
       }
       const [ks, kt] = [rgb(d.ks), rgb(d.kt)];
-      const stops = val(e, "line-gradient-stop-colors").map(col);
       const undeclared = d.kpair === "undeclared";
+      const fault = d.kfault === "fault";
+      const line = col(val(e, "line-color"));
+      const ends = [col(val(e, "source-arrow-color")), col(val(e, "target-arrow-color"))];
+      // t344 PIL-13: drawn as a fault — the line and both ends grey, the square midway.
+      const drawnFault =
+        val(e, "mid-source-arrow-shape") === FAULT_MARKER.midGlyph &&
+        val(e, "mid-source-arrow-fill") === "filled" &&
+        line === neutral && ends.every((c) => c === neutral);
       const ok =
-        (ks === kt
-          ? val(e, "line-fill") === "solid" && col(val(e, "line-color")) === ks
-          : val(e, "line-fill") === "linear-gradient" && stops[0] === ks && stops[stops.length - 1] === kt) &&
-        kappaRgb.has(ks) && kappaRgb.has(kt) &&
+        // one colour for the line and both ends — no relation is drawn in two tones
+        ks === kt && val(e, "line-fill") === "solid" && line === ks && ends.every((c) => c === ks) &&
+        kappaRgb.has(ks) &&
         val(e, "source-arrow-shape") === d.kss && val(e, "target-arrow-shape") === d.kts &&
         // both ends of the uncoloured state are hollow, every other end filled (Copilot on #46)
         val(e, "source-arrow-fill") === (d.kss === END_GLYPHS.source.uncoloured ? "hollow" : "filled") &&
         val(e, "target-arrow-fill") === (d.kts === END_GLYPHS.target.uncoloured ? "hollow" : "filled") &&
-        (ks === neutral) === (d.kss !== END_GLYPHS.source.colour) &&
-        (kt === neutral) === (d.kts !== END_GLYPHS.target.colour) &&
+        (fault
+          ? drawnFault
+          : val(e, "mid-source-arrow-shape") === "none" &&
+            (ks === neutral) === (d.kss !== END_GLYPHS.source.colour) &&
+            (kt === neutral) === (d.kts !== END_GLYPHS.target.colour)) &&
         val(e, "line-style") === (undeclared ? UNDECLARED_MARKER.lineStyle : "solid") &&
         val(e, "mid-target-arrow-shape") === (undeclared ? UNDECLARED_MARKER.midGlyph : "none");
       if (!ok) port.wrong.push(String(d.label));
+      if (drawnFault) port.fault.push(String(d.id));
     });
     fg.applyPalette(cy, false);
     const kind = { edges: 0, port: 0, wrong: [] };
@@ -596,8 +614,9 @@ for (const [name, frame, want] of bandCases) {
 // synthetic relations only (the repo is public: no operad data, no colour map, no mtdc-only
 // name), run through the REAL normaliser (engine-grammar.js) and painter (port-colour.js) —
 // the code the worker's adapter and FrameGraph run. Each of the three non-colour states gets
-// its own glyph and no hue; two families give a two-tone relation.
-console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three glyphs (synthetic)");
+// its own glyph and no hue; two families give a fault (t344 PIL-13: grey, ■ midway — it was a
+// two-tone relation before).
+console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two colours a fault (synthetic)");
 {
   const before = failures;
   const P = (n) => `lens-smoke-${n}`;
@@ -614,6 +633,7 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
           { SrcPort: P("b-out"), TgtPort: P("x-out") }, // exempt target end
           { SrcPort: P("a-out"), TgtPort: P("gone-in") }, // uncoloured target end
           { SrcPort: P("gone-out"), TgtPort: P("a-in") }, // uncoloured source end
+          { SrcPort: P("x-out"), TgtPort: P("gone-in") }, // t344: no family at either end
         ],
       },
       WF91: { ID: "WF91", SrcPort: "{lens-smoke}", TgtPort: "{lens-smoke}", AdditionalPortPairs: null },
@@ -646,6 +666,7 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
     unTgt: rel("un-tgt", P("a-out"), P("gone-in")),
     unSrc: rel("un-src", P("gone-out"), P("a-in")),
     undeclared: rel("undeclared", P("a-out"), P("c-in")),
+    noFamily: rel("no-family", P("x-out"), P("gone-in")),
   };
   const paint = Object.fromEntries(Object.entries(cases).map(([k, r]) => [k, paintRelation(r, grammar)]));
   const hues = new Set(KAPPA_HUES.map((h) => h.toLowerCase()));
@@ -653,7 +674,7 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
 
   check(
     grammar.status === "engine" &&
-      grammar.pairs.length === 7 &&
+      grammar.pairs.length === 8 &&
       !grammar.ports.some(isPlaceholderPort) &&
       !grammar.src_ports.some(isPlaceholderPort),
     `the normaliser reads ${grammar.pairs?.length} pairs (main + additional) and offers no {placeholder} as a port`,
@@ -669,11 +690,24 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
       p1.src.glyph === END_GLYPHS.source.colour && p1.tgt.glyph === END_GLYPHS.target.colour && p1.pair === "declared",
     "both ends in one family: ONE hue, the plain direction arrow, a declared pair",
   );
+  // t344 PIL-13: two families are a fault — grey at both ends, the fault marker, no family hue;
+  // each end still names its family (the legend counts it, the inspector says which).
   const p2 = paint.two;
   const d2 = kappaRelationData(p2);
   check(
-    p2.twoTone && d2.ks === fam.get("fam-one") && d2.kt === fam.get("fam-two") && d2.ks !== d2.kt,
-    "two families: TWO tones — the source half in κ(src_port), the target half in κ(tgt_port)",
+    p2.twoTone && d2.kfault === "fault" && d2.ks === KAPPA_NEUTRAL && d2.kt === KAPPA_NEUTRAL &&
+      p2.src.family === "fam-one" && p2.tgt.family === "fam-two" &&
+      p2.src.glyph === END_GLYPHS.source.colour && p2.tgt.glyph === END_GLYPHS.target.colour &&
+      kappaRelationData(p1).kfault === "none",
+    "two families: a FAULT — both ends in the neutral grey, no family hue, each end keeps its family; one family is no fault",
+  );
+  const pn = paint.noFamily;
+  const dn = kappaRelationData(pn);
+  check(
+    !pn.twoTone && dn.kfault === "none" && dn.ks === KAPPA_NEUTRAL && dn.kt === KAPPA_NEUTRAL &&
+      pn.src.state === "exempt" && pn.tgt.state === "uncoloured" &&
+      dn.kss === END_GLYPHS.source.exempt && dn.kts === END_GLYPHS.target.uncoloured,
+    "no family at either end (exempt / no colour): not two colours, no fault — grey with its two state glyphs",
   );
   const states = [
     ["exempt source end", paint.exSrc.src, "exempt", END_GLYPHS.source.exempt],
@@ -690,8 +724,9 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
   const du = kappaRelationData(paint.undeclared);
   check(
     paint.undeclared.pair === "undeclared" && du.kpair === "undeclared" &&
-      paint.undeclared.src.state === "colour" && paint.undeclared.tgt.state === "colour",
-    `undeclared pair: both ends keep their κ; the pair is marked (${UNDECLARED_MARKER.lineStyle} line, '${UNDECLARED_MARKER.midGlyph}' midway)`,
+      paint.undeclared.src.state === "colour" && paint.undeclared.tgt.state === "colour" &&
+      du.kfault === "fault",
+    `undeclared pair: both ends keep their family; the pair is marked (${UNDECLARED_MARKER.lineStyle} line, '${UNDECLARED_MARKER.midGlyph}' midway) — two families here, so also a fault`,
   );
   const glyphSets = [
     Object.values(END_GLYPHS.source),
@@ -700,17 +735,21 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
   check(
     glyphSets.every((g) => new Set(g).size === g.length) &&
       !glyphSets.flat().includes(UNDECLARED_MARKER.midGlyph) &&
+      !glyphSets.flat().includes(FAULT_MARKER.midGlyph) &&
+      FAULT_MARKER.midGlyph !== UNDECLARED_MARKER.midGlyph &&
       UNDECLARED_MARKER.lineStyle !== "solid",
-    "the three states have three distinct glyphs at each end, and the undeclared marker is none of them",
+    "the three states have three distinct glyphs at each end; the undeclared and the fault marker are none of them, nor each other",
   );
   // Hue follows the family, never the order the engine lists its ports in.
   const reversed = normalizeEngineGrammar(
     { ...raw, portColors: { port_colors: Object.fromEntries(Object.entries(raw.portColors.port_colors).reverse()) } },
     { source: "lens-smoke", ontology_version: "lens-smoke-1" },
   );
+  const d1 = kappaRelationData(p1);
   check(
-    kappaRelationData(paintRelation(cases.two, reversed)).ks === d2.ks &&
-      kappaRelationData(paintRelation(cases.two, reversed)).kt === d2.kt,
+    JSON.stringify(kappaFamilies(reversed)) === JSON.stringify(kappaFamilies(grammar)) &&
+      kappaRelationData(paintRelation(cases.one, reversed)).ks === d1.ks &&
+      kappaRelationData(paintRelation(cases.one, reversed)).kt === d1.kt,
     "a family keeps its hue whatever order /operad/port-colors lists the ports in",
   );
   // t342 P1: K1's additive keys (`color_rule`, `color_source`) are read when the engine states
@@ -735,8 +774,8 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
   check(
     grammar.color_rule === null && grammar.color_source === null &&
       k1.status === "engine" && k1.color_rule === "lens-smoke-rule" && k1.color_source === "lens-smoke-source" &&
-      kappaRelationData(paintRelation(cases.two, k1)).ks === d2.ks &&
-      kappaRelationData(paintRelation(cases.two, k1)).kt === d2.kt &&
+      kappaRelationData(paintRelation(cases.one, k1)).ks === d1.ks &&
+      kappaRelationData(paintRelation(cases.one, k1)).kt === d1.kt &&
       matrixOnly.status === "engine" && matrixOnly.port_colors === null &&
       /port_colors/.test(matrixOnly.port_colors_reason) && matrixOnly.pairs.length === grammar.pairs.length &&
       kappaRelationData(paintRelation(cases.two, matrixOnly)) === null,
@@ -777,7 +816,7 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
   );
   const census = kappaCensus(Object.values(cases), grammar);
   check(
-    census.kind === 0 && census.exempt === 2 && census.uncoloured === 2 && census.undeclared === 1 &&
+    census.kind === 0 && census.exempt === 3 && census.uncoloured === 3 && census.undeclared === 1 &&
       census.twoTone === 6,
     `census: ${census.relations} relations, 0 relation-kind, exempt ${census.exempt} · uncoloured ${census.uncoloured} ends, ${census.undeclared} undeclared pair, ${census.twoTone} two-tone`,
   );
@@ -809,6 +848,29 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
     `drawn (headless Cytoscape, the real STYLE): ${drawn.port.edges - drawn.port.kind} of ${drawn.port.edges} relations in port colour, ` +
       `${drawn.port.kind} in relation kind${drawn.port.wrong.length ? `, WRONG: ${drawn.port.wrong.join(", ")}` : ""}; ` +
       `switched: ${drawn.kind.port} still in port colour${drawn.kind.wrong.length ? `, WRONG: ${drawn.kind.wrong.join(", ")}` : ""}`,
+  );
+  // t344 PIL-13: which relations are a fault is read here from the synthetic port_colors — a
+  // family is a non-empty colour, an exempt or unknown port has none — not from the painter.
+  // Every relation whose two ends' families differ is DRAWN as a fault (grey line and ends,
+  // the square midway: drawCheck's `drawnFault`), no other one is, and the census's two-tone
+  // count is the number drawn so.
+  const familyOf = (p) => {
+    const c = raw.portColors.port_colors[p];
+    return typeof c === "string" && c !== "" ? c : null;
+  };
+  const wantFault = drawRels
+    .filter((r) => familyOf(r.properties.src_port) !== familyOf(r.properties.tgt_port))
+    .map((r) => r.urn)
+    .sort();
+  const gotFault = [...drawn.port.fault].sort();
+  const drawnCensus = kappaCensus(drawRels, grammar);
+  check(
+    wantFault.length === 6 && JSON.stringify(gotFault) === JSON.stringify(wantFault) &&
+      drawnCensus.twoTone === gotFault.length,
+    `two colours a fault, drawn: the ${wantFault.length} of ${drawRels.length} relations whose ends are in two families ` +
+      `are drawn grey with '${FAULT_MARKER.midGlyph}' midway and no family hue (${gotFault.length} drawn so` +
+      `${JSON.stringify(gotFault) === JSON.stringify(wantFault) ? "" : `, WANTED ${wantFault.join(", ")}`}); ` +
+      `kappaCensus.twoTone ${drawnCensus.twoTone} = the fault count ${gotFault.length}; no line in two tones`,
   );
   // Node fills stay a type palette that never uses a κ hue (nor the neutral of the states).
   const { NODE_FILLS } = fg;

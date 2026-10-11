@@ -150,10 +150,14 @@ no arrowhead when it is self-converse; a claim always takes the colour of its ki
 other layout the graph is flat and the nesting relation is a line like the rest.
 
 **Port colours (t342).** By default each relation END is drawn in the colour family its port
-has on the engine's `/operad/port-colors` (κ): one hue when both ends share a family, two
-tones when they do not, and three states that are no colour get a glyph instead — exempt
-(`κ = ""`), uncoloured (a port the map does not know) and undeclared pair (a pair the engine's
-`/operad/rewrite-categories` does not declare; dotted). The legend's `colour by` switch goes
+has on the engine's `/operad/port-colors` (κ): one hue when both ends share a family, and
+three states that are no colour get a glyph instead — exempt (`κ = ""`), uncoloured (a port
+the map does not know) and undeclared pair (a pair the engine's `/operad/rewrite-categories`
+does not declare; dotted, `◇` midway). Ends in two families — or a family at one end and none
+at the other — are a fault since t344 (PIL-13): no declared pair joins two families, so the
+line is drawn grey, both ends too, with a filled `■` midway, and the legend's row reads *two
+colours: a fault*; a family's hue goes only on a relation whose two ends share it (it was
+drawn in two tones before). The legend's `colour by` switch goes
 back to the relation-kind palette above. The grammar is read from the engine at run time
 (`src/mcp/engine-grammar.js`, cached per engine and ontology version) and the advanced drawer
 adds what it declares — types and ports the static lists do not name, and the fold's labels
@@ -171,7 +175,7 @@ starts closed and the canvas keeps its height. Open, it grows to its rows (the p
 scrolls) instead of scrolling inside a 110 px box, and it speaks the six words the pilot, the
 Workbench and the manual share — *colour family*, *port end*, *no colour*, *exempt*, *pair
 not declared*, *port on no pair* — with no κ, commit hash, route or `src_port` in a tooltip
-(t342 hand-off C). An unticked row stays unticked on the other
+(t342 hand-off C), and since t344 a fourth state row, *two colours: a fault*. An unticked row stays unticked on the other
 lenses — the bar counts them and `show all` ticks every row back — and ticking back a node
 kind the layout last ran without runs the layout again, so its nodes get a place.
 

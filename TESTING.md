@@ -64,8 +64,10 @@ declared — by the connected engine, by the knowledge vocabulary, or on the com
 list `LEGACY_PORTS` (`realizes`, `cites`, `curates`: in no operad and no live fold at t342) —
 and (i) the port colours of the live fold as FrameGraph DRAWS them — its real `toElements`,
 `STYLE` and `applyPalette` in headless Cytoscape: in port colour no relation in the
-relation-kind palette and each in its κ hue, two tones, glyphs and marker; switched to relation
-kind, none left in port colour (see "Port colours and the engine's grammar"). It
+relation-kind palette and each in its one κ hue, glyphs and markers — a relation whose ends
+are in two colour families drawn as a fault, and as many drawn so as the census counts
+two-tone (t344 PIL-13); switched to relation kind, none left in port colour (see "Port colours
+and the engine's grammar" and "Two colours a fault"). It
 also exercises the **A16 surface→channel→engine resolution** with the code the
 worker runs: candidate/alias mapping, the display_name engine-hint grammar, the local
 transport table (twins answer MCP on :9001–:9003, not :8080), the live directory chain
@@ -148,13 +150,16 @@ only relation runs to a withheld seat is unlinked there — on the real `unlinke
 from `FrameGraph.tsx` the way `smoke:live` loads it. H (t342 P1) is the port-colour fixture:
 a SYNTHETIC grammar (synthetic port names and colour families — no operad data enters this
 repo) through the real `engine-grammar.js` and `port-colour.js` gives one hue for a relation
-whose ends share a family, two tones for one whose ends do not, and each of the three states
-its own glyph on a neutral grey, never a hue — exempt (`⊣` / `▸⊣`), uncoloured (`○` / `○▸`),
+whose ends share a family, a fault for one whose ends do not (t344 PIL-13: grey, `■` midway, no
+family hue; two tones before), none for one with no family at either end, and each of the three
+states its own glyph on a neutral grey, never a hue — exempt (`⊣` / `▸⊣`), uncoloured (`○` / `○▸`),
 undeclared pair (dotted, `◇` midway); a family keeps its hue whatever order the engine lists
 its ports in; a frame without a grammar draws every relation by relation kind; what FrameGraph
 DRAWS — its real `toElements`, `STYLE` and `applyPalette` in headless Cytoscape — matches:
-every relation in its κ (hue or two tones, end glyphs, the undeclared marker, a grey end always
-with its state's glyph) and, switched, every one back in relation kind (a knowledge relation in
+every relation in its one κ colour, line and both ends (end glyphs, the undeclared marker; off
+a fault a grey end always with its state's glyph), the relations whose ends' families differ —
+read from the synthetic map, not from the painter — exactly the ones drawn as a fault, as many
+as `kappaCensus.twoTone`, and, switched, every one back in relation kind (a knowledge relation in
 its vocabulary colour); the node fills (types and claim kinds) share no colour with the eight
 hues, none of them nor the state grey is within OKLab ΔE 3 of a fill, and no close pair exists
 beyond those listed under "Limits" below (a new one fails); and no code under `src/` names
@@ -438,7 +443,9 @@ map and no mtdc-only name is written into the repo; the measured counts below ar
 not by the engine's family names.
 
 **The drawing** (decision 2: port colour by default). Every relation end is drawn in κ(port):
-one hue when both ends share a colour family, two tones split at the middle when they do not.
+one hue when both ends share a colour family; since t344 (PIL-13, "Two colours a fault" below) a
+relation whose ends are in two families is a fault, drawn grey with a filled square midway — it
+was two tones split at the middle until then, as the t342 measurements below describe.
 Three states are not colours and get a glyph on a neutral grey, never a hue: exempt (`κ = ""`,
 only on 98f2ccc kernels with 4.0.x — one port on hp-laptop's kernel; a tee at the source
 end, a tee behind the arrow at the target end), uncoloured (the port is not in the map; a
@@ -829,6 +836,43 @@ labels then cover 40 to 55 % of the canvas (47 labels, 53 % at zoom 0.044 on one
 t343 review) — whether to floor the find's zoom at the cut is hand-off C's open question 2,
 not an order here. The u2b-capture of goal U reads the copy of the harness the Z440 seat
 serves; it will show these numbers once that copy is this build.
+
+## Two colours a fault (t344, work order PIL-13)
+
+**Why.** Until t344 a relation whose two ends are in two colour families was drawn in two
+tones, as a feature. No declared pair joins two families on the grammars read at t344, so such a
+line is never a declared pair in its own colours: it appears only on an undeclared pair, on a
+relation without a `tgt_port`, or where an engine's map still has the exempt `""`. Counted from
+the declared pairs and the engine's port colours (GET only, t344): 0 of 35 pairs on the Z440
+primary (4.0.9), 0 of 47 on scratch (mtdc-2.1.0), 0 of 47 on mtdc-2.2.0 (the lab file, read
+locally, colours as scratch serves them — the version changed none); no pair has an uncoloured
+or exempt end on any of the three. That matches the count in mtdc-lab#28 (a), 0 and 0.
+
+**What is drawn** (`port-colour.js` `paintRelation`, `FAULT_MARKER`, `KAPPA_STATES`;
+`FrameGraph.tsx` STYLE (its port-colour rule), the legend, the canvas label; `NodeInspector.tsx`). A
+relation is a fault when `src.family !== tgt.family` — two families, or a family at one end and
+none at the other (an exempt or uncoloured end). It is drawn in the state grey — the line and
+both ends — with a filled square midway (the mid-source arrow; an undeclared pair's hollow
+diamond is the mid-target arrow, so a fault on an undeclared pair shows both side by side on its
+dotted line); each end keeps its own glyph, and its family for the counts. Family hues go only
+on one-colour relations, and no line is drawn in two tones any more (the gradient style is
+gone). The legend has a fourth state row, `two colours: a fault` (`■`, counted per relation,
+`legend-state-fault`), a relation row with faults carries `■` and says how many in its
+tooltip, the inspector's row dot is the grey and its tooltip adds `two colours: a fault`, and
+the canvas label adds `N relations with two colours drawn as a fault` when there are any.
+`kappaCensus.twoTone` is the fault count. One reading of the order: a relation with no family at
+either end (exempt at one end, no colour at the other) is NOT two colours — it is grey with its
+two state glyphs and no fault marker. Before t344 it counted as two-tone (the states differ).
+
+**Asserted.** `smoke:lens` H, on its synthetic fixture (nine relations, eight on declared pairs):
+the six whose ends' families differ — read from the fixture's own map, not from the painter — are
+exactly the six drawn as a fault (grey line and ends, the square midway, filled), none of the
+others is, no relation is drawn in two tones, and `kappaCensus.twoTone` is 6. The check was run
+against two broken copies of `FrameGraph.tsx` and fails on each: no fault square (two FAILs) and
+the gradient back on a fault (one). `smoke:live` (i) asserts the same count on the live fold:
+on the Z440 primary (4.0.9, log 713) 0 of 242 relations are two-tone and 0 are drawn as a fault
+(the fold has 17 relations on undeclared pairs, with 18 uncoloured ends: none of them has a
+family at one end only).
 
 ## Finding and inspecting in the knowledge graph (t337)
 
