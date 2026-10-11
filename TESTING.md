@@ -685,6 +685,151 @@ Not looked at: hp-laptop's kernel in the harness (`auto` draws `concentric` ther
 unchanged; `nested` picked is timed above and covered by `smoke:lens` J) and the extension's
 side panel itself.
 
+## Hand-off C: what the panel shows a person (t342, work orders PIL-5 to PIL-10 and PIL-12)
+
+The seven orders of `handoff-t342/p2C/fix-list.md` section 1 that need no palette choice
+(PIL-1 to PIL-4 and PIL-11 wait for it). Each has a done-when; the number behind each was read
+from the BUILT harness in headless Chrome by `npm run probe:ui` (`scripts/ui-probe.mjs`, a
+measure, not a gate: it serves `dist/` itself on 127.0.0.1, seeds `urn:moos:user:sam` in the
+harness's storage shim, loads `preview-live.html?engine=` and reads the rendered DOM and the
+page's own Cytoscape; GET only, and the run fails on any other request). "Before" is `aa597ba`
+(hand-off B merged), built from `git archive` with the same probe; "after" is this hand-off.
+Both at 1366 × 900, dark, lens `everything`, identified, the panel 365 px wide (the harness's
+380 px minus its scrollbar); scratch is the fold at log 1030 (mtdc-2.1.0, 445 nodes / 333
+relations drawn, `auto` → `nested`), hp-laptop the fold at log 1607 (4.0.7, 524 / 579,
+`auto` → `concentric`).
+
+| order | done when | before (aa597ba) | after |
+|---|---|---|---|
+| PIL-5 open where labels show | `cy.zoom()` above the label cut (0.5 at 100 % scaling) and the identity's own node inside the canvas, on the first screen | zoom **0.045** (the whole fold fitted; 0.033 on hp-laptop), no label drawn; the node inside, 1.3 px wide | zoom **0.75** first and settled (both engines), labels drawn; `sam` at (183, 72) of the 365 × 155 canvas |
+| PIL-6 text contrast | 0 failing `--text-muted`, link or inspector-port items; under 5 % failing overall (was 69.7 %); labels at least 11 px | **1095 of 1573** items under 4.5:1 (69.6 %): `--text-muted` 895 of 895 (`#606070` 2.81 on `#1a1a20`), links 189 of 189 (`#6366f1`, 3.88), the inspector port name 1 of 1 (`#008300`, 3.50); labels under 11 px 292 of 298. hp-laptop: 1077 of 1630 (66.1 %) | **0 of 1573** (0 %): `--text-muted` 0 of 899, links 0 of 189, inspector ports 0 of 1; labels under 11 px 0 of 298 — the label classes listed under PIL-6 below; the strip, the lens segments and the log rows keep their 8 to 10 px, so 1207 of the 1573 text items are under 11 px overall (t343 review). hp-laptop: 0 of 1628, 0 of 933 / 0 of 135 / 0 of 1, labels 0 of 331 (1232 of 1628 under 11 px overall) |
+| PIL-7 find keeps the match's relations | with `youtube` on scratch the `spans` relation at opacity 1 and the manifold inside the canvas; Apply with the drawer it serves | `spans` at **0.12**, the manifold **outside** the canvas (the hit alone centred at zoom 1), 443 of 445 faded; Apply beside `find` | `spans` at **1**, the manifold **inside** (the neighbourhood fitted, zoom 0.49), 440 faded — the hit, its boxes and the other end lit; the same find from the `fit` view lands the hit inside at the same zoom 0.49 (t343 review — before, 0.17 from `fit`); Apply in `view_filter · advanced`. hp-laptop: `composes` 0.12 → 1; from `fit` the hit inside at the same zoom as from the opening view (before: above the canvas) |
+| PIL-8 a strip in words | the strip contains "nodes" and nothing in it is cut at the panel's width | `sam · all permitted · 445/452 · access −7 · hp-z440.scratch-kb · seq 1030 · T=342 · mtdc-2.1.0` on one line; no "nodes"; the tail cut to **80 of 291 px** | `sam · all permitted · 445 of 452 nodes · 7 hidden by access` then `engine hp-z440.scratch-kb · log 1030 · day 342 · version mtdc-2.1.0`, wrapping to 4 text lines; **0 cut** (both engines) |
+| PIL-9 plain legend words | 0 legend tooltips with κ, a commit hash, an API path, `src_port` or "colour gate"; the legend's visible height equals its content height | **5 of 76** tooltips with those terms; the legend showed **110 of 440 px** (hp-laptop 5 of 86, 110 of 457) | **0 of 76**; **600 of 600 px** (hp-laptop 0 of 86, 621 of 621). The six shared words: `colour family` (group title), `port end` (family tooltips), `no colour`, `exempt`, `pair not declared` (states), `port on no pair` (the drawer group) |
+| PIL-10 ids code can find | every `<button>` in the six components carries a `data-testid`; the canvas has an `aria-label` | **0 of 27** `<button>` tags; aria-label none | **27 of 27** (in the DOM, drawers open: PostureStrip 1/1, SettingsPanel 2/2, GraphControls 12/12, FrameGraph 8/8, LogFeed 193/193 — one per log row — NodeInspector 0/0 with nothing selected); the canvas: `Graph of 445 nodes and 413 relations, nested layout, 38 sources drawn in the box that cites them, boxes of 2 kinds, 145 unlinked in a band, relation ends coloured by port` |
+| PIL-12 the #47 review | re-layout with a selection moves that component's centroid under 20 px; a planted overlap fails J headless, or J prints SKIP; J asserts the `↗N` count | the 158-node component's centroid moved **37.77 px** (158 of its 158 nodes, 445 of 445 in the frame); J's overlap count held on discs; `↗N` not asserted as drawn | centroid **0 px**, 0 nodes moved (the same picture as without a selection); J: 0 overlapping pairs on 90 × 40 label boxes and one planted overlap counted as 1, SKIP printed if the hook is absent; `↗N` drawn on exactly 1 box (box-b, ↗2). hp-laptop: SKIP (concentric has no component) |
+
+**Changed after the Copilot review on #48 (t343, the Z440 seat).** (1) PIL-5: whether the user has
+moved the view is read before a rebuild replaces the fit; after a rebuild the view is always at the
+new fit, so the old check could not see a move made on a restored frame whose live structure differed.
+A first frame has no fit yet and counts as untouched. (2) PIL-6: the hover state was not covered, and
+white text on `--accent-hover` is 3.37:1. Buttons now hover to `--accent-button-hover` `#4a4ddc`
+(6.20:1), the mount-guard button's face moves to `--accent-button` (5.35:1; the accent was 4.47), and
+`probe:ui` reads both button tokens from `:root` and checks their white text (`PIL-6 buttons` in its
+log, `pil6.buttons` in its JSON, part of `pil6.ok`). (3) PIL-10: the README sentence on test ids is
+scoped to the six probed components; the actions panel and the confirm modal are outside it.
+
+**What changed, by order.**
+
+- **PIL-5** (`FrameGraph.tsx` `identityUrn`, `openOn`, `openZoomMin`): the first frame an
+  instance draws opens on the user the frame was read for — the trusted identity of an
+  identified posture, when the frame holds that node and the legend shows it — centred, at the
+  zoom its neighbourhood fits, never below one zoom step above the label cut (0.75 at 100 %
+  scaling) and never above 1. Every later structure (a lens change, `re-layout`, `fit`) fits as
+  before; a canvas that changes size while the view is untouched opens on the node again (t343
+  review: a node it cannot open on then — hidden by a legend row — falls to the fit and stays
+  there). In the side panel the frame restored from the session scratch does not count
+  (`restored`, t343 review): it shows at the fit until the opening read lands, and the live frame
+  then opens on the node unless the view was moved meanwhile. Before, a live frame whose
+  structure differed from the restored one ended on the whole-fold fit — measured in the
+  SHIPPED side-panel bundle (`dist/sidepanel.html` with `dist/worker.js`) in headless Chrome
+  behind a `chrome.*` shim, the way `smoke:worker` loads the worker (a scratch script, not a
+  gate): with a scratch three nodes short of the fold the panel landed at zoom 0.033 on
+  hp-laptop and 0.046 on scratch, labels off; now 0.75 on both (the restored frame itself at
+  0.033 / 0.046 until the read lands, about 3 s), and a scratch with the live structure 0.75
+  as before. Anon, a lens without the user, a fixture: the fit, as before. Labels at 0.75 are
+  6.75 px: readable on a 100 % display, as `fit` from there is one click.
+- **PIL-6** (`sidepanel.css`): `--text-muted` `#606070` → `#8b8b9b` (5.17 on `--bg-secondary`,
+  5.02 on the strip, 5.71 on `--bg-primary`, 4.52 on `--bg-tertiary`); links and the log's
+  subject buttons in a new `--link` `#8b8dff` (6.06 on `--bg-secondary`; the accent `#6366f1`
+  was 3.88), the pressed segment and the LINK kind on it too; button faces on `--accent-button`
+  `#5558e6` (white text 5.35, was 4.47); placeholders in the muted ink (the browser's grey was
+  3.29); an empty family row keeps its name in ink and fades only its dot (opacity 0.45 on the
+  name was 2.4). Every label class is at least 11 px (`.gc-label`, `.gc-group-label`,
+  `.gc-adv-note`, `.gc-filter-summary` and its echo, `.gc-check`, `.legend-title`, the legend
+  rows, `.prov-label`, `.insp-section-title`, `.settings-section-title` and the urn in it). The
+  inspector writes a port name in ink with the colour the graph draws that end in as a dot
+  beside it (`NodeInspector.tsx`).
+- **PIL-7** (`FrameGraph.tsx` highlight and focus effects, `sidepanel.tsx`, `preview-live.tsx`,
+  `GraphControls.tsx`): a match's own relations and their other ends take class `near` — lit,
+  with their labels exempt from the cut — and every other relation fades; the fade is set in the
+  same commit as the centre request, so the focus effect sees the hit as `found` and fits its
+  closed neighbourhood (at most zoom 1) instead of centring the hit alone. The zoom and the pan
+  come from one plain measurement (`fitOf`, t343 review): Cytoscape resolved `center: { eles }`
+  from the hood's box at animation start, with the labels enlarged for the view the find was
+  typed from, so from `fit` the hit landed above the canvas on hp-laptop (y −14 of 155) and the
+  zoom depended on the previous view (0.17 from `fit` against 0.49 from the opening view on
+  scratch); now the hit lands inside from both views at one zoom — scratch 0.4936 / 0.4936,
+  hp-laptop 0.2749 / 0.2749 on one read and 0.9857 / 0.9857 on another (the hit there varies
+  between reads, below; `probe:ui` measures both views since this review). The mirrors get the
+  fade alone, as before. Apply moved from beside `find` into the `view_filter · advanced` drawer
+  with the `t_day ≤` bound and the type / port ticks it applies; the drawer's summary says
+  "staged edits — open to apply" while they are staged.
+- **PIL-8** (`PostureStrip.tsx`, `sidepanel.css`): the summary is two block lines that wrap
+  (`white-space: normal`, `overflow-wrap: anywhere`), the counts in words with the unit, the
+  engine / log position / day / version on the second line in the muted ink; the audit drawer
+  keeps the exact key-value block.
+- **PIL-9** (`port-colour.js` `KAPPA_STATES`, `FrameGraph.tsx` `plainGrammar`,
+  `GraphControls.tsx` `drawerVocab`, `README.md`): the state labels are the shared words, every
+  legend tooltip is plain (the audit drawer keeps κ, the route and the engine's rule), the
+  `colour by` tooltips no longer carry the kb-vocab version or `grammarSummary`, and the legend
+  has no `max-height` / `overflow-y` — `.graph-wrap.legend-open` grows to the canvas minimum
+  (155 px, the settled side-panel canvas) plus the bar and the legend, and the panel scrolls.
+- **PIL-10**: `data-testid` on every `<button>` of the six components — the lens buttons
+  `lens-<id>`, `find`, `apply`, `reset`, `t-day`, `focus-selection`, the access and graph
+  toggles, the bar (`fit`, `re-layout`, `zoom-in`, `zoom-out`, `unlinked-band`, `legend-toggle`,
+  `legend-show-all`), the colour-by switch (`colour-by-port`, `colour-by-kind`), the legend
+  rows (`legend-family-<family>`, `legend-state-<state>`, `legend-port-<port>`,
+  `legend-kind-<kind>`), the log kinds and subjects, the inspector's toggles and relation
+  targets, the audit toggle and the settings buttons — and `graph-canvas` with `role="group"`
+  and the aria-label above; the header's reload button carries `reload-frame` (outside the six
+  components; t343 review). `scripts/ui-probe.mjs` counts the `<button>` tags in the source of
+  the six files and in their DOM.
+- **PIL-12** (`FrameGraph.tsx` `withPlainLabels`, `restyleSelected`, `LABEL_MEASURE`,
+  `scripts/lens-smoke.mjs` J): the cause of the shift was the selected node's 3 px border
+  entering its measured label box, so a re-layout with a selection packed a different picture
+  (59 of 444 positions on the scratch fold in the browser; the review saw a component move by
+  about 300 px). `STYLE node:selected` reads the plain 2 px border while a layout or fit
+  measures (`LABELS_PLAIN`), and the selected nodes are restyled around the measurement — so
+  the picture no longer depends on the selection, and no seed from previous positions is
+  needed: the centroid moves 0 px, and "the same frame always draws the same picture" (above)
+  still holds. J supplies label-sized boxes through the `LABEL_MEASURE` cy.scratch hook (a
+  function from node to box; the panel never sets it), asserts 0 overlapping pairs on them in
+  the report and in its own count, plants one overlap and asserts it is counted, prints a
+  `[SKIP]` line when a FrameGraph exports no hook, asserts the `↗N` marker as drawn (one box,
+  box-b, `↗2`), and lays the frame out with a node selected: 0 of 66 positions differ and the
+  drawn border is still 3 px.
+
+**Gates on this hand-off** (hp-laptop seat, both engines; `selftest.html` NOT RUN — it needs
+the installed extension): `typecheck` clean; `build` ✓; `smoke:lens` `LENS SMOKE: PASS` (J
+with the three new checks); `smoke:llm` `PASS: 35 assertions (live skipped)`; `smoke:worker`
+`PASS: 59 assertions against the SHIPPED worker (dist/worker.js)`; `smoke:live` on hp-laptop
+(4.0.7, log 1607) and on scratch (mtdc-2.1.0, log 1030) every section PASS, exit 0.
+`bench:frame --layout --user urn:moos:user:sam`, 20 iterations: hp-laptop (`concentric`) the
+pilot's share main-thread p50 235 / **p95 735 ms**, layout main p50 203 / p95 593, read wall p50
+30 ms; scratch (`nested`, 8 components, 158 the largest, 100 iterations) p50 500 / **p95 891 ms**,
+layout 469 / 781, read wall p50 56 ms — both within `FIRST_PAINT_BUDGET_MS` 3000 (the seat
+otherwise idle; hand-off B's ranges above were taken on a busy seat). Run again after the t343
+review, 20 iterations each: hp-laptop (`concentric`) the pilot's share main-thread p50 328 /
+**p95 704 ms**, layout main 281 / 547, read wall p50 36 ms; scratch (`nested`) p50 625 /
+**p95 1047 ms**, layout 578 / 969, read wall p50 64 ms — both within the budget.
+
+**Not asserted.** The probe reads the harness, not the extension's side panel (the same
+components, the same CSS; the restored-frame opening under PIL-5 was read from the shipped
+side-panel bundle behind a shim, by a scratch script). The `find` hit on hp-laptop's fold
+varies between reads (`youtube.code4ai`, then knowledge items whose urn tails start with
+`youtube`): `searchNodes` keeps fold order among equal ranks and that engine's `graph_state` order is not stable between
+reads — older than this hand-off, and not an order here. hp-laptop's `concentric` picture
+follows that same fold order (rings by type rank, ties in input order), so two reads of one
+frame draw it differently — 510 of 524 positions in the t343 review, on this build and on
+aa597ba alike; the `nested` claim above (the same frame, the same picture) is unaffected. On
+hp-laptop a `find` with many matches (24 for `youtube`) whose hit has a neighbour across the
+rings lands under the label cut, where every match keeps an enlarged label (#46): the exempt
+labels then cover 40 to 55 % of the canvas (47 labels, 53 % at zoom 0.044 on one read in the
+t343 review) — whether to floor the find's zoom at the cut is hand-off C's open question 2,
+not an order here. The u2b-capture of goal U reads the copy of the harness the Z440 seat
+serves; it will show these numbers once that copy is this build.
+
 ## Finding and inspecting in the knowledge graph (t337)
 
 **Find** ranks urn and label as before (0-4, unchanged) and then, one rank below, the
@@ -771,7 +916,9 @@ access posture, which is anon, 1 node.
   it is asked to draw: which
   node sits in which box and which layout `auto` picks (`smoke:live`), and (t342 P2/P3) where
   `nested` places the nodes outside a box and the sources — headless, so without label sizes
-  (`smoke:lens` J)
+  (`smoke:lens` J; since hand-off C with label-sized boxes J supplies itself). Since hand-off
+  C `npm run probe:ui` reads the opening view, the find fade, the legend, the strip and a
+  re-layout from the built harness in headless Chrome ("Hand-off C") — a measure, not a gate
 - a mirror drawing what the panel asks for — the layout choice, the search fade, the
   centring on a relation row. `selftest.html` asserts that the scratch-view channel
   delivers; that a mirror then draws it was looked at ("Finding and inspecting…")

@@ -380,7 +380,10 @@ function PreviewLive() {
       // RANKED (t264): taking matches[0] in fold order made searching an applied program's
       // name land on a governance_proposal that merely mentioned it. searchNodes prefers an
       // exact/prefix urn-tail match and the hint names the selected node's TYPE.
-      const { hit } = searchNodes(nodes, q);
+      const { hit, matchUrns } = searchNodes(nodes, q);
+      // t342 PIL-7: the fade lands in the same commit as the centre request, so the graph
+      // brings the hit into view WITH its relations (FrameGraph's focus effect reads `found`).
+      setHighlightUrns((prev) => (prev.join("\n") === matchUrns.join("\n") ? prev : matchUrns));
       if (!hit) return;
       setSelectedUrn(hit.urn);
       setFocusUrn(hit.urn);
@@ -510,6 +513,7 @@ function PreviewLive() {
         <div className="header-right">
           <button
             className="icon-btn"
+            data-testid="reload-frame"
             onClick={() => void loadFrame()}
             title="Reload live frame (force-refresh)"
           >

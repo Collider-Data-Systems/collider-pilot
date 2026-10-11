@@ -74,6 +74,13 @@
  *      cose budget, largest first (pure, and drawn on four 110-node components); and the canvas
  *      size does not reshape a component (the frame laid out again at a panel's and a tab's
  *      canvas), nor does a second run on the same instance move a node.
+ *      (t342 hand-off C, PIL-12) The overlap check is no longer vacuous: headless Cytoscape
+ *      measures no text, so J supplies label-sized boxes through FrameGraph's LABEL_MEASURE
+ *      hook and asserts 0 overlapping pairs on them — and proves the check can fail by
+ *      planting one overlap (a FrameGraph without the hook prints a SKIP line, never a
+ *      silent pass). The `↗N` marker is asserted as DRAWN: exactly one box carries one, box-b,
+ *      and its label ends in ↗2. And a selection changes no measured label box: the frame
+ *      laid out with a node selected gives every position the plain run gives.
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -1192,13 +1199,18 @@ console.log("\nJ. nested: components, not a type/urn grid; sources inside the bo
   // J3/J4 — the drawing itself: the real runLayout, headless, with the real STYLE. `canvas` gives
   // the instance the size a mounted panel reports (headless Cytoscape is 1 × 1); `twice` runs the
   // layout again on the same instance and counts the nodes that moved.
-  const layout = (fr, nestingHidden, { canvas = null, twice = false } = {}) => {
+  // t342 PIL-12: `measure` supplies label-sized boxes (FrameGraph's LABEL_MEASURE hook: headless
+  // Cytoscape measures no text); `select` selects one node before the run (STYLE `node:selected`
+  // widens its border, which must not reach the measured boxes).
+  const layout = (fr, nestingHidden, { canvas = null, twice = false, measure = null, select = null } = {}) => {
     const p = fg.drawingPlan(fr, "nested", nestingHidden);
     const cy = cytoscape({ headless: true, styleEnabled: true, elements: p.elements, style: fg.STYLE });
     if (canvas) {
       cy.width = () => canvas[0];
       cy.height = () => canvas[1];
     }
+    if (measure && fg.LABEL_MEASURE) cy.scratch(fg.LABEL_MEASURE, measure);
+    if (select) cy.getElementById(select).select();
     fg.runLayout(cy, "nested");
     const at = new Map(cy.nodes().map((n) => [n.id(), { ...n.position() }]));
     const report = cy.scratch("pilotLayout");
@@ -1212,8 +1224,11 @@ console.log("\nJ. nested: components, not a type/urn grid; sources inside the bo
     }
     const parentOf = new Map(cy.nodes().map((n) => [n.id(), n.isChild() ? n.parent().id() : null]));
     const boxBB = new Map(cy.nodes(":parent").map((b) => [b.id(), b.boundingBox()]));
+    // t342 PIL-12: the `↗N` marker as DRAWN — every box whose label style carries one.
+    const markers = cy.nodes(":parent").filter((b) => /↗\d+$/.test(String(b.pstyle("label").value))).map((b) => [b.id(), String(b.pstyle("label").value)]);
+    const selectedBorder = select ? cy.getElementById(select).pstyle("border-width").pfValue : null;
     cy.destroy();
-    return { at, report, parentOf, boxBB, rerun };
+    return { at, report, parentOf, boxBB, rerun, markers, selectedBorder };
   };
   const on = layout(frame, false);
   const comps = on.report?.components ?? [];
@@ -1282,6 +1297,51 @@ console.log("\nJ. nested: components, not a type/urn grid; sources inside the bo
       on.report?.sources === plan.sources.box.size &&
       on.at.get(s4.urn) && comps.some((c) => c.includes(s4.urn)),
     `nesting on: the ${plan.sources.box.size} cited sources are drawn inside their box, s4 with its component`,
+  );
+  // t342 PIL-12 (the #47 review): the `↗N` marker as DRAWN — the label STYLE of exactly one box
+  // ends in it: box-b, which cites s1 and s5 drawn in box-a (↗2). J2 above asserts the count in
+  // the data; this asserts what the canvas is asked to write.
+  check(
+    on.markers.length === 1 && on.markers[0][0] === boxB.urn && on.markers[0][1].endsWith("↗2"),
+    `the ↗N marker is drawn on exactly 1 box: ${on.markers.map(([id, l]) => `${id.split("-").pop()} "${l}"`).join(", ") || "none"} (box-b, ↗2)`,
+  );
+  // t342 PIL-12 (the #47 review): the overlap check holds on label-sized boxes. Headless Cytoscape
+  // measures no text, so `overlaps === 0` above held for discs alone; with every node a 90 × 40 box
+  // (FrameGraph's LABEL_MEASURE hook) the cose-refined component ends with 0 overlapping pairs,
+  // counted here independently of the report — and the check can fail: one planted overlap (a
+  // node moved onto its neighbour) is counted. Without the hook this prints SKIP, never a pass.
+  if (fg.LABEL_MEASURE) {
+    const sized = () => ({ w: 90, h: 40, dx: 45, dy: 18 });
+    const labelled = layout(frame, false, { measure: sized });
+    const bigAt = new Map(bigUrns.map((u) => [u, labelled.at.get(u)]));
+    const counted = labelOverlaps(bigUrns, bigAt, sized);
+    const planted = new Map(bigAt);
+    planted.set(bigUrns[1], { ...bigAt.get(bigUrns[0]) });
+    const plantedCount = labelOverlaps(bigUrns, planted, sized);
+    check(
+      labelled.report?.refined?.[0] === big.length && labelled.report?.overlaps === 0 && counted === 0 && plantedCount >= 1,
+      `label-sized boxes (90 × 40): the ${big.length}-node component is cose-refined and ends with ${labelled.report?.overlaps} overlapping pairs in the report, ${counted} counted here; one planted overlap is counted as ${plantedCount}`,
+    );
+    // The label boxes change the picture (so they were measured): the labelled run differs
+    // from the disc-sized run in the big component.
+    const differs = bigUrns.filter((u) => Math.hypot(labelled.at.get(u).x - on.at.get(u).x, labelled.at.get(u).y - on.at.get(u).y) > 1e-6).length;
+    check(differs > 0, `the supplied label boxes reach the layout: ${differs} of ${big.length} positions differ from the disc-sized run`);
+  } else {
+    console.log("  [SKIP] label-sized overlap check: this FrameGraph exports no LABEL_MEASURE hook, so headless labels have no size and the overlap count cannot fail");
+  }
+  // t342 PIL-12 (the #47 review): a selection changes no measured box. The same frame laid out
+  // with a node of the big component selected (its border is 3 px drawn, 2 px while measuring)
+  // gives every position the plain run gives; a re-layout with a selection moves nothing.
+  const picked = bigUrns[Math.floor(bigUrns.length / 2)];
+  const withSelection = layout(frame, false, { select: picked, twice: true });
+  const movedBySelection = nodes.filter((n) => {
+    const a = on.at.get(n.urn);
+    const b = withSelection.at.get(n.urn);
+    return Math.abs(a.x - b.x) > 1e-6 || Math.abs(a.y - b.y) > 1e-6;
+  }).length;
+  check(
+    movedBySelection === 0 && withSelection.rerun === 0 && withSelection.selectedBorder === 3,
+    `a selection moves no node: laid out with ${picked.split("-").pop()} selected, ${movedBySelection} of ${nodes.length} positions differ from the plain run, a second run moves ${withSelection.rerun}; the selected node's drawn border is ${withSelection.selectedBorder} px`,
   );
   // Nesting off (the nesting relation unticked, a36b0b3): no box; every source with its component
   // — and, t342 P2 review, by geometry: the components' rectangles are disjoint here too, so no

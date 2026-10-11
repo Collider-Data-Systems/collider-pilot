@@ -389,7 +389,11 @@ function SidePanel() {
       // RANKED (t264): taking matches[0] in fold order made searching an applied program's
       // name land on a governance_proposal that merely mentioned it. searchNodes prefers an
       // exact/prefix urn-tail match and the hint names the selected node's TYPE.
-      const { hit } = searchNodes(nodes, q);
+      const { hit, matchUrns } = searchNodes(nodes, q);
+      // t342 PIL-7: the fade lands in the same commit as the centre request, so the inline
+      // graph brings the hit into view WITH its relations (FrameGraph's focus effect reads
+      // `found`); the mirrors still get the fade alone through the scratch view.
+      setHighlightUrns((prev) => (prev.join("\n") === matchUrns.join("\n") ? prev : matchUrns));
       if (!hit) return;
       handleSelect(hit.urn);
       if (showGraph) {
@@ -645,6 +649,7 @@ function SidePanel() {
           </button>
           <button
             className="icon-btn"
+            data-testid="reload-frame"
             onClick={() => void loadFrame()}
             title="Reload frame (force-refresh; also the manual resync)"
           >
@@ -740,6 +745,7 @@ function SidePanel() {
             {showGraph && (
               <FrameGraph
                 frame={frame}
+                restored={restored}
                 selectedUrn={selectedUrn}
                 onSelect={handleSelect}
                 layout={layout}

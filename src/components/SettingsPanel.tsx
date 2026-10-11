@@ -448,6 +448,7 @@ function IdentitySection({
         <button
           type="button"
           className="gc-btn"
+          data-testid="identity-save"
           onClick={() => void handleSave()}
           disabled={!canSave}
           title="Write this identity to chrome.storage.local['pilot.access'] and reload the frame"
@@ -457,6 +458,7 @@ function IdentitySection({
         <button
           type="button"
           className="gc-btn gc-btn-danger"
+          data-testid="identity-clear"
           onClick={() => void handleClear()}
           disabled={!current}
           title="Remove the stored identity — back to anon-only"
@@ -629,6 +631,7 @@ function EngineSection({ onReloadFrame }: { onReloadFrame: () => void }) {
             <button
               type="button"
               className="gc-btn"
+              data-testid="engine-use-custom"
               onClick={() => void handleApplyCustom()}
               disabled={!canApplyCustom}
               title="Write this pair to chrome.storage.local['pilot.engine'] and reload the frame"
@@ -745,6 +748,7 @@ function ProviderSection({
           />
           <button
             className="mini-btn"
+            data-testid="llm-token-save"
             onClick={handleSaveToken}
             disabled={!tokenDraft.trim()}
           >
@@ -752,6 +756,7 @@ function ProviderSection({
           </button>
           <button
             className="mini-btn"
+            data-testid="llm-token-clear"
             onClick={handleClearToken}
             disabled={!llmTokenSet}
             title="Remove the stored bearer from chrome.storage (revoke/rotate)"

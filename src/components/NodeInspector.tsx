@@ -11,13 +11,17 @@
  * t342 P1 (review): a row takes the colour the graph draws it in under the ACTIVE palette —
  * in port colour (the default) κ of the port named from this node's end, in relation kind
  * the vocabulary's colour — and its tooltip names which.
+ *
+ * t342 PIL-6: the port NAME is written in ink and the colour sits in a dot beside it — a name
+ * written in its hue failed 4.5:1 on the pane (three of the engine's families, 3.50 to 4.46).
+ * PIL-9: the tooltip uses the shared state words (no colour, exempt, pair not declared).
  */
 
 import { useRef, useState } from "react";
 import type { HgFrame, HgNode, HgProperties, HgRelation } from "../mcp/types";
 import { KB_VOCAB_VERSION, kbConversePort, kbPortStyle } from "../ui/kb-vocab.js";
 import { hasPortColours, paintRelation } from "../ui/port-colour.js";
-import type { RelationPalette } from "./FrameGraph";
+import { kappaStateLabel, type RelationPalette } from "./FrameGraph";
 
 /** The property shown as a paragraph instead of a table row (t337). */
 const TEXT_PROPERTY = "text";
@@ -85,7 +89,12 @@ export function NodeInspector({
   if (collapsible && !open) {
     return (
       <aside className="inspector inspector-collapsed" aria-label="Node inspector (collapsed)">
-        <button type="button" className="insp-toggle" onClick={() => setOpen(true)}>
+        <button
+          type="button"
+          className="insp-toggle"
+          data-testid="inspector-expand"
+          onClick={() => setOpen(true)}
+        >
           ▸ inspect
           <span className="insp-toggle-node">
             {node ? `${node.type_id} · ${node.label}` : "no selection"}
@@ -127,6 +136,7 @@ export function NodeInspector({
           <button
             type="button"
             className="insp-toggle insp-toggle-open"
+            data-testid="inspector-collapse"
             onClick={() => setOpen(false)}
             title="Collapse the inspector (the mirrors keep showing the node)"
           >
@@ -184,8 +194,8 @@ export function NodeInspector({
               const end = kappa ? (outgoing ? kappa.src : kappa.tgt) : null;
               const color = end ? end.hue : kbPortStyle(r.label)?.color;
               const colourNote = end
-                ? `port colour: ${end.state === "colour" ? end.family : end.state}` +
-                  (kappa?.pair === "undeclared" ? " · undeclared pair" : "")
+                ? `colour family: ${end.state === "colour" ? end.family : kappaStateLabel(end.state)}` +
+                  (kappa?.pair === "undeclared" ? ` · ${kappaStateLabel("undeclared")}` : "")
                 : color
                   ? `relation kind (kb-vocab ${KB_VOCAB_VERSION})`
                   : null;
@@ -198,16 +208,17 @@ export function NodeInspector({
               return (
                 <li key={r.urn}>
                   <span className="insp-rel-dir">{outgoing ? "→" : "←"}</span>
-                  <span
-                    className="insp-rel-label"
-                    style={color ? { color } : undefined}
-                    title={rowTitle || undefined}
-                  >
+                  <span className="insp-rel-label" title={rowTitle || undefined}>
+                    {/* t342 PIL-6: the colour as a dot, the name in ink. */}
+                    {color && (
+                      <i className="legend-dot insp-rel-dot" style={{ background: color }} />
+                    )}
                     {port}
                   </span>
                   <span className="insp-rel-kind">{r.type_id}</span>
                   <button
                     className="insp-rel-target"
+                    data-testid="inspector-relation-target"
                     title={otherUrn}
                     onClick={() => {
                       (onNavigate ?? onSelect)(otherUrn);
