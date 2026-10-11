@@ -210,6 +210,11 @@ their relations, the small components on one urn row, the sources moved to a col
 box is drawn, cose on the panel's own canvas (the 36-node component moved by up to 131 px),
 label boxes off their grid (a second run moved all 66 nodes), and a cose budget per component
 (in the helper, or FrameGraph ignoring the frame's).
+K (t344 PIL-14) holds the converse of every port from the engine's declared pairs — the real
+`conversePorts` of `engine-grammar.js` and FrameGraph's `converseName`, `conversePortOf` and
+`relationTitle` — on a synthetic grammar and on two recorded grammars read from outside this
+repo by sha256 (see "The converse from the engine's grammar"); on a runner without those files
+it prints two `[SKIP]` lines and the synthetic checks still run.
 
 **`selftest.html`** (open it from the extension: `chrome-extension://<id>/selftest.html`) is
 the one surface that can exercise what the harnesses fake — the worker seam with real
@@ -874,6 +879,52 @@ on the Z440 primary (4.0.9, log 713) 0 of 242 relations are two-tone and 0 are d
 (the fold has 17 relations on undeclared pairs, with 18 uncoloured ends: none of them has a
 family at one end only).
 
+## The converse from the engine's grammar (t344, work order PIL-14)
+
+**Why.** The legend's tooltip named a port's converse only for the knowledge vocabulary, and the
+inspector named an incoming relation from its target end by the vocabulary, then the relation's
+own `tgt_port`, then its label. mtdc-2.2.0 declares 47 pairs (main and additional) over 89 port
+names; its converse is a function on all of them.
+
+**What changed.** `engine-grammar.js` `conversePorts(grammar, port)`: every port a declared pair
+puts at the other end from `port`, either side, sorted — the idea of b85f0dd's `getConversePorts`
+(the laptop Antigravity seat), written fresh; `mapRelation` is unchanged. `FrameGraph.tsx`
+`converseName`: the knowledge vocabulary's converse first, then the engine's, several joined by
+` / ` — on 4.0.9 `owns` is on two pairs and reads `child / owned-by`, the honest non-function,
+never one of the two picked. The legend's relation tooltip reads `owns (from the other end: child
+/ owned-by) · N …` for every port, not only the knowledge ports (a self-converse port shows the
+port alone, as before). The inspector (`conversePortOf`, moved to `FrameGraph.tsx`): the
+vocabulary's converse, then the relation's own `tgt_port` — what that relation says at that end,
+also on an undeclared pair or for one of `owns`'s two — then the engine's pairs, then the label.
+So on the fleet, where every relation carries its `tgt_port`, an inspector row reads as before;
+the grammar names a relation that carries none.
+
+**The grammars are read, not copied.** The order asked for a recorded fixture of mtdc-2.2.0's
+grammar in the pilot. This repo is public and mtdc-lab is private (`gh repo view`, t344), and
+AGENTS.md rules out operad data and mtdc-only names here, so `smoke:lens` K reads the two
+ontology files where they live — `PILOT_OPERAD_FILES` (a list split on the platform's path
+delimiter), by default the Z440 checkouts — and takes a file only if its size and sha256 are the
+recorded ones; otherwise it prints `[SKIP]` with what it found. Recorded at t344:
+
+| grammar | file | bytes | sha256 | committed at |
+|---|---|---|---|---|
+| mtdc-2.2.0 | mtdc-lab `operad/moos-mtdc-2.2.0.json` | 211415 | `d264d885e0d286799e4cbb2b4083157b1419e3059bcda481b342b7828df19b59` | mtdc-lab `e2945c0` |
+| 4.0.9 | ffs0 `kb/superset/ontology.json` | 197398 | `6192181927e0bed8d29f8ed8ac85f168e8f00381a7391eb3e66f6f13f5d5230c` | ffs0 `23ad36d` |
+
+The 4.0.9 file's 35 pairs are the ones the Z440 primary serves on `/operad/rewrite-categories`
+(GET, log 713), `owns` on two of them.
+
+**Asserted** (`smoke:lens` K, measured at t344). Synthetic: either end of a pair gives the other,
+a self-converse port itself, a port on two pairs both; the vocabulary's converse wins where the
+engine pairs the port otherwise; the inspector keeps a carried `tgt_port` before the grammar.
+mtdc-2.2.0: 47 pairs, 89 names; each maps to one converse, 89 of 89, and back (†† = id), 89 of
+89; 5 map to themselves (the placeholder pair's `{…}` name among them); the panel's converse
+name agrees with the pairs on all 89, the vocabulary's own ports included, and the legend
+tooltip shows it on all 89. 4.0.9: 35 pairs, 66 names; the converse is not a function on one
+name, `owns`, which shows `child / owned-by`; 3 map to themselves; an incoming `owns` without a
+`tgt_port` reads `child / owned-by` in the inspector, one that carries `owned-by` keeps it.
+Broken copies fail it: `converseName` keeping the first of several names (four FAILs).
+
 ## Finding and inspecting in the knowledge graph (t337)
 
 **Find** ranks urn and label as before (0-4, unchanged) and then, one rank below, the
@@ -888,7 +939,7 @@ now reaches a claim (`CRDT` -> `2 matches · showing claim · in text`).
 **Inspector**: a node's `text` is a paragraph above the property table and no longer a
 row in it; an incoming relation is named by its converse port (`← has-part`,
 `← source-of`; from `tgt_port` for every other relation, e.g. `← composed-by` on the
-primary); a knowledge port carries its vocabulary colour; a click on a relation row selects
+primary; t344 PIL-14: from the engine's declared pairs where a relation carries none); a knowledge port carries its vocabulary colour; a click on a relation row selects
 the other node, centres the graph on it and scrolls the inspector back to its top. In the
 380 px side panel the pane was 120 px for every node — 0 of a claim's text lines on
 screen; for a node that carries a text it is now 45 % of the panel height (405 px at

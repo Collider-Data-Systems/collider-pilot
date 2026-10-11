@@ -165,6 +165,41 @@ export function isDeclaredPair(grammar, srcPort, tgtPort) {
 const PAIR_INDEX = new WeakMap();
 
 /**
+ * t344 PIL-14: the converse of a port name from the engine's declared pairs — every port that a
+ * declared pair puts at the OTHER end from `port` (main and additional pairs, either side),
+ * sorted. On a grammar where the converse is a function (mtdc-2.2.0: each of its 89 names on
+ * exactly one pair) this is one name, and a self-converse port gives itself; where it is not
+ * (4.0.9 declares `owns` on two pairs) it is every name, never one picked. Empty without an
+ * engine grammar or for a port on no declared pair. The idea is b85f0dd's getConversePorts
+ * (the laptop Antigravity seat), written fresh here.
+ * @param {EngineGrammar | null | undefined} grammar
+ * @param {unknown} port
+ * @returns {string[]}
+ */
+export function conversePorts(grammar, port) {
+  if (grammar?.status !== "engine" || typeof port !== "string") return [];
+  let index = CONVERSE_INDEX.get(grammar);
+  if (!index) {
+    /** @type {Map<string, Set<string>>} */
+    const sets = new Map();
+    const add = (/** @type {string} */ from, /** @type {string} */ to) => {
+      const set = sets.get(from) ?? new Set();
+      set.add(to);
+      sets.set(from, set);
+    };
+    for (const p of grammar.pairs) {
+      add(p.src_port, p.tgt_port);
+      add(p.tgt_port, p.src_port);
+    }
+    index = new Map([...sets].map(([name, set]) => [name, Object.freeze([...set].sort())]));
+    CONVERSE_INDEX.set(grammar, index);
+  }
+  return [...(index.get(port) ?? [])];
+}
+/** @type {WeakMap<object, Map<string, readonly string[]>>} */
+const CONVERSE_INDEX = new WeakMap();
+
+/**
  * t342 P1/P6 (review): what is missing, in a few words, for the legend, the drawer note and the
  * audit drawer. An engine that serves no `/operad/*` is not one whose routes did not answer
  * this time, and neither is an engine that serves its pairs and types but no port colours.

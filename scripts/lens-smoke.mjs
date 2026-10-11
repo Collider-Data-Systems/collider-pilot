@@ -86,6 +86,16 @@
  *      silent pass). The `↗N` marker is asserted as DRAWN: exactly one box carries one, box-b,
  *      and its label ends in ↗2. And a selection changes no measured label box: the frame
  *      laid out with a node selected gives every position the plain run gives.
+ *   K. (t344 PIL-14) The converse of every port from the ENGINE's declared pairs, through the
+ *      real engine-grammar.js conversePorts and FrameGraph's converseName / conversePortOf /
+ *      relationTitle (the legend tooltip and the inspector's name from the other end): on a
+ *      synthetic grammar — a function, a self-converse port, a port on two pairs shown as
+ *      both names, the knowledge vocabulary's converse first, a relation's own tgt_port
+ *      before the grammar — and on two RECORDED grammars read from outside this public repo
+ *      (no operad data is copied in; each file is identified by its sha256, and a missing or
+ *      changed file prints SKIP): mtdc-2.2.0, where each of the 89 pair names maps to one
+ *      converse and back (†† = id) and 5 map to themselves, and 4.0.9, where `owns` reads
+ *      "child / owned-by" — the honest non-function.
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -101,11 +111,11 @@
 
 import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { delimiter, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import cytoscape from "cytoscape";
-import { KB_CLAIM_KINDS, KB_NESTING_PORT, KB_PORTS, KB_RELATIONS, kbPortStyle } from "../src/ui/kb-vocab.js";
+import { KB_CLAIM_KINDS, KB_NESTING_PORT, KB_PORTS, KB_RELATIONS, kbConversePort, kbPortStyle } from "../src/ui/kb-vocab.js";
 // t342 P2: the component layout, as FrameGraph runs it.
 import {
   COSE_MAX_ITER,
@@ -123,6 +133,7 @@ import { selectFrame } from "../src/mcp/transform.js";
 // t342 P1/P6: the engine-grammar normaliser and the port-colour painter, as the panel runs them.
 import {
   clearEngineGrammarCache,
+  conversePorts,
   grammarGap,
   isPlaceholderPort,
   normalizeEngineGrammar,
@@ -1479,6 +1490,175 @@ console.log("\nJ. nested: components, not a type/urn grid; sources inside the bo
     `one cose budget per frame, drawn: 4 components of 110 nodes -> ${multi.report?.refined.length} refined (${multi.report?.iterations?.join(", ")} iterations, ${multiSteps} pair-steps ≤ ${COSE_PAIR_STEPS}), the fourth breadth-first`,
   );
   if (failures === before) pass("J holds");
+}
+
+// K — the converse of every port from the engine's declared pairs (t344 PIL-14). The idea is
+// b85f0dd's getConversePorts (the laptop Antigravity seat), written fresh. A synthetic grammar
+// first (runs everywhere, CI included), then two recorded grammars read from OUTSIDE this
+// public repo — AGENTS.md: no operad data is written here — each identified by its sha256.
+console.log("\nK. the converse from the engine's grammar, for every pair (PIL-14)");
+{
+  const before = failures;
+  const check = (cond, msg) => (cond ? pass(msg) : fail(msg));
+  const fg = await loadFrameGraph();
+  const P = (n) => `lens-smoke-k-${n}`;
+  const kbRel = KB_RELATIONS.find((r) => r.src_port !== r.tgt_port);
+  const synth = normalizeEngineGrammar(
+    {
+      nodeTypes: { [P("type")]: {} },
+      rewriteCategories: {
+        WF90: {
+          ID: "WF90",
+          SrcPort: P("a-out"),
+          TgtPort: P("a-in"),
+          AdditionalPortPairs: [
+            { SrcPort: P("self"), TgtPort: P("self") }, // self-converse
+            { SrcPort: P("own"), TgtPort: P("own-1") }, // one port on two pairs:
+            { SrcPort: P("own"), TgtPort: P("own-2") }, //   its converse is both names
+            { SrcPort: kbRel.src_port, TgtPort: P("other") }, // the vocabulary is read first
+          ],
+        },
+      },
+      portColors: null,
+    },
+    { source: "lens-smoke", ontology_version: "lens-smoke-k" },
+  );
+  const row = (port) => ({ port, count: 1, boxed: 0, ks: null, kt: null, undeclared: 0, fault: 0 });
+  const incoming = (label, tgtPort) => ({ label, properties: tgtPort === undefined ? {} : { tgt_port: tgtPort } });
+  check(
+    JSON.stringify(conversePorts(synth, P("a-out"))) === JSON.stringify([P("a-in")]) &&
+      JSON.stringify(conversePorts(synth, P("a-in"))) === JSON.stringify([P("a-out")]) &&
+      JSON.stringify(conversePorts(synth, P("self"))) === JSON.stringify([P("self")]) &&
+      JSON.stringify(conversePorts(synth, P("own"))) === JSON.stringify([P("own-1"), P("own-2")]) &&
+      conversePorts(synth, P("nowhere")).length === 0 &&
+      conversePorts(undefined, P("a-out")).length === 0 &&
+      conversePorts({ status: "absent", reason: "x" }, P("a-out")).length === 0,
+    "conversePorts: either end of a declared pair gives the other, a self-converse port itself, a port on two pairs both (sorted); none off the pairs or without an engine grammar",
+  );
+  check(
+    fg.converseName(P("a-out"), synth) === P("a-in") &&
+      fg.converseName(P("own"), synth) === `${P("own-1")} / ${P("own-2")}` &&
+      fg.converseName(kbRel.src_port, synth) === kbConversePort(kbRel.src_port) &&
+      fg.converseName(kbRel.src_port, undefined) === kbConversePort(kbRel.src_port) &&
+      fg.converseName(P("a-out"), undefined) === null,
+    "converseName: the knowledge vocabulary's converse first (even where the engine pairs the port otherwise), then the engine's pairs, several joined by ' / '; null without either",
+  );
+  check(
+    fg.relationTitle(row(P("a-out")), synth).startsWith(`${P("a-out")} (from the other end: ${P("a-in")}) · 1`) &&
+      fg.relationTitle(row(P("own")), synth).startsWith(`${P("own")} (from the other end: ${P("own-1")} / ${P("own-2")})`) &&
+      fg.relationTitle(row(P("self")), synth).startsWith(`${P("self")} · 1`) &&
+      fg.relationTitle(row(P("a-out")), undefined).startsWith(`${P("a-out")} · 1`),
+    "the legend tooltip names the converse from the engine's grammar; a self-converse port and a frame without a grammar show the port alone",
+  );
+  check(
+    fg.conversePortOf(incoming(kbRel.src_port, P("carried")), synth) === kbConversePort(kbRel.src_port) &&
+      fg.conversePortOf(incoming(P("own"), P("own-2")), synth) === P("own-2") &&
+      fg.conversePortOf(incoming(P("own")), synth) === `${P("own-1")} / ${P("own-2")}` &&
+      fg.conversePortOf(incoming(P("a-out"), null), synth) === P("a-in") &&
+      fg.conversePortOf(incoming(P("a-out")), undefined) === P("a-out"),
+    "the inspector's name from the target end: the vocabulary first, then the relation's own tgt_port, then the engine's pairs, then the label",
+  );
+
+  // The recorded grammars: the ontology files, read where they live (PILOT_OPERAD_FILES, a
+  // list split on the platform's path delimiter, or the Z440 checkouts), never copied in.
+  const RECORDED = [
+    {
+      version: "mtdc-2.2.0",
+      bytes: 211415,
+      sha256: "d264d885e0d286799e4cbb2b4083157b1419e3059bcda481b342b7828df19b59",
+      pairs: 47,
+      names: 89,
+      fixed: 5,
+    },
+    {
+      version: "4.0.9",
+      bytes: 197398,
+      sha256: "6192181927e0bed8d29f8ed8ac85f168e8f00381a7391eb3e66f6f13f5d5230c",
+      pairs: 35,
+      names: 66,
+    },
+  ];
+  const candidates = (
+    process.env.PILOT_OPERAD_FILES?.split(delimiter).filter(Boolean) ?? [
+      "D:/HPZ440/mtdc-lab/operad/moos-mtdc-2.2.0.json",
+      "D:/HPZ440/ffs0/kb/superset/ontology.json",
+    ]
+  ).map((path) => {
+    try {
+      const bytes = readFileSync(path);
+      return { path, bytes, sha256: createHash("sha256").update(bytes).digest("hex") };
+    } catch {
+      return { path, bytes: null, sha256: null };
+    }
+  });
+  const recorded = (rec) => {
+    const hit = candidates.find((c) => c.sha256 === rec.sha256 && c.bytes.length === rec.bytes);
+    if (!hit) {
+      const seen = candidates.map((c) => `${c.path} ${c.sha256 ? c.sha256.slice(0, 12) : "unreadable"}`).join("; ");
+      console.log(`  [SKIP] ${rec.version}: no file with sha256 ${rec.sha256.slice(0, 12)}… (${rec.bytes} bytes) — looked at ${seen}; set PILOT_OPERAD_FILES`);
+      return null;
+    }
+    const json = JSON.parse(hit.bytes.toString("utf8"));
+    const g = normalizeEngineGrammar(
+      { nodeTypes: Object.values(json.types ?? {}).flat(), rewriteCategories: json.rewrite_categories, portColors: null },
+      { source: hit.path, ontology_version: String(json.version) },
+    );
+    const names = [...new Set((g.pairs ?? []).flatMap((p) => [p.src_port, p.tgt_port]))].sort();
+    return { json, g, names, path: hit.path };
+  };
+  const shown = (g, n) => {
+    const c = fg.converseName(n, g);
+    const title = fg.relationTitle(row(n), g);
+    return c === n ? title.startsWith(`${n} · `) : title.startsWith(`${n} (from the other end: ${c}) · `);
+  };
+
+  const mtdc = recorded(RECORDED[0]);
+  if (mtdc) {
+    const { g, names } = mtdc;
+    const conv = new Map(names.map((n) => [n, conversePorts(g, n)]));
+    const single = names.filter((n) => conv.get(n).length === 1);
+    const back = single.filter((n) => JSON.stringify(conversePorts(g, conv.get(n)[0])) === JSON.stringify([n]));
+    const fixed = single.filter((n) => conv.get(n)[0] === n);
+    const named = names.filter((n) => {
+      const c = fg.converseName(n, g);
+      return c === conv.get(n).join(" / ") && fg.converseName(c, g) === n;
+    });
+    const titles = names.filter((n) => shown(g, n));
+    const pairsOk = g.pairs.every((p) => conv.get(p.src_port)[0] === p.tgt_port && conv.get(p.tgt_port)[0] === p.src_port);
+    check(
+      mtdc.json.version === RECORDED[0].version && g.pairs.length === RECORDED[0].pairs &&
+        names.length === RECORDED[0].names && single.length === names.length && back.length === names.length &&
+        fixed.length === RECORDED[0].fixed && named.length === names.length && titles.length === names.length && pairsOk,
+      `${mtdc.json.version} (sha256 ${RECORDED[0].sha256.slice(0, 12)}…, read from ${mtdc.path}): ${g.pairs.length} pairs, ${names.length} names; ` +
+        `each maps to one converse ${single.length} of ${names.length}, and back (†† = id) ${back.length} of ${names.length}; ` +
+        `${fixed.length} map to themselves; the panel's converse name agrees ${named.length} of ${names.length} (the vocabulary's ports included) ` +
+        `and the legend tooltip shows it ${titles.length} of ${names.length}`,
+    );
+  }
+
+  const fleet = recorded(RECORDED[1]);
+  if (fleet) {
+    const { g, names } = fleet;
+    const conv = new Map(names.map((n) => [n, conversePorts(g, n)]));
+    const several = names.filter((n) => conv.get(n).length > 1);
+    const fixed = names.filter((n) => conv.get(n).length === 1 && conv.get(n)[0] === n);
+    const own = fg.converseName("owns", g);
+    check(
+      fleet.json.version === RECORDED[1].version && g.pairs.length === RECORDED[1].pairs &&
+        names.length === RECORDED[1].names && JSON.stringify(several) === JSON.stringify(["owns"]) &&
+        own === "child / owned-by" &&
+        fg.relationTitle(row("owns"), g).startsWith("owns (from the other end: child / owned-by) · ") &&
+        JSON.stringify(conversePorts(g, "child")) === JSON.stringify(["owns"]) &&
+        JSON.stringify(conversePorts(g, "owned-by")) === JSON.stringify(["owns"]) &&
+        fg.conversePortOf(incoming("owns"), g) === "child / owned-by" &&
+        fg.conversePortOf(incoming("owns", "owned-by"), g) === "owned-by" &&
+        names.filter((n) => shown(g, n)).length === names.length,
+      `${fleet.json.version} (sha256 ${RECORDED[1].sha256.slice(0, 12)}…, read from ${fleet.path}): ${g.pairs.length} pairs, ${names.length} names; ` +
+        `owns shows "${own}" — the converse is not a function on ${several.length} name (${several.join(", ")}), the legend tooltip shows the converse of all ${names.length}; ` +
+        `${fixed.length} map to themselves; an incoming owns that carries its tgt_port keeps it`,
+    );
+  }
+  if (failures === before) pass("K holds");
 }
 
 console.log(

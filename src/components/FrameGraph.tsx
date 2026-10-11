@@ -60,7 +60,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import cytoscape from "cytoscape";
-import type { EngineGrammar, HgFrame, HgNode } from "../mcp/types";
+import type { EngineGrammar, HgFrame, HgNode, HgRelation } from "../mcp/types";
+import { conversePorts } from "../mcp/engine-grammar.js";
 import type { GraphLayoutName } from "../state/prefs";
 import { DEFAULT_GRAPH_LAYOUT } from "../state/prefs";
 import {
@@ -579,7 +580,7 @@ function syncData(cy: cytoscape.Core, el: cytoscape.ElementDefinition): void {
   }
 }
 
-interface LegendRelationRow {
+export interface LegendRelationRow {
   port: string;
   count: number;
   /** How many of them are shown as a box instead of a line. */
@@ -1649,10 +1650,52 @@ function relationSwatch(
   };
 }
 
-/** The legend tooltip for a port: both port names, the count, what the vocabulary says. */
-function relationTitle({ port, count, boxed, undeclared, fault }: LegendRelationRow): string {
-  const converse = kbConversePort(port);
-  const names = converse && converse !== port ? `${port} / ${converse}` : port;
+/**
+ * t344 PIL-14: what a port is called read from the relation's OTHER end — the knowledge
+ * vocabulary's converse first (its own declaration, as before), then every port the engine's
+ * declared pairs put opposite it (engine-grammar.js conversePorts), " / " between them when
+ * there are several: 4.0.9 declares `owns` on two pairs and its converse reads
+ * `child / owned-by`, the honest non-function, never one of the two picked. Null for a port no
+ * declared pair names (or a frame without an engine grammar). Exported for `smoke:lens` K.
+ */
+export function converseName(port: string, grammar: EngineGrammar | null | undefined): string | null {
+  const kb = kbConversePort(port);
+  if (kb) return kb;
+  const names = conversePorts(grammar, port);
+  return names.length > 0 ? names.join(" / ") : null;
+}
+
+/**
+ * t337: what a relation is called read from its TARGET end — the converse port. t344 PIL-14:
+ * the knowledge vocabulary's converse first; then the port the relation itself carries at that
+ * end (`tgt_port`, transform.js mapRelation — what THIS relation says, also on a pair the engine
+ * does not declare or one of a port declared on several pairs); then the engine's declared
+ * pairs (converseName); without any of them, the relation's label. Exported for the inspector
+ * and `smoke:lens` K.
+ */
+export function conversePortOf(
+  relation: Pick<HgRelation, "label" | "properties">,
+  grammar: EngineGrammar | null | undefined,
+): string {
+  const kb = kbConversePort(relation.label);
+  if (kb) return kb;
+  const carried = relation.properties?.tgt_port;
+  if (typeof carried === "string" && carried) return carried;
+  return converseName(relation.label, grammar) ?? relation.label;
+}
+
+/**
+ * The legend tooltip for a port: the port and its converse, the count, what the vocabulary
+ * says. t344 PIL-14: the converse from the engine's grammar too, not only the knowledge
+ * vocabulary's — `owns (from the other end: child / owned-by)` on 4.0.9. Exported for
+ * `smoke:lens` K.
+ */
+export function relationTitle(
+  { port, count, boxed, undeclared, fault }: LegendRelationRow,
+  grammar?: EngineGrammar | null,
+): string {
+  const converse = converseName(port, grammar);
+  const names = converse && converse !== port ? `${port} (from the other end: ${converse})` : port;
   const drawn = boxed > 0 ? ` (${boxed} drawn as boxes, ${count - boxed} as lines)` : "";
   const says = kbRelation(port)?.description;
   // t342 P1: the pair state, a pair check only (the workbench's check 8 rules on admission).
@@ -2328,7 +2371,7 @@ export function FrameGraph({
                 key={row.port}
                 className="legend-item"
                 data-testid={`legend-port-${row.port}`}
-                title={relationTitle(row)}
+                title={relationTitle(row, grammar)}
               >
                 <input
                   type="checkbox"

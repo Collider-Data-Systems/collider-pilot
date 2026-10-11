@@ -169,7 +169,9 @@ Under the graph a bar holds the legend toggle — it states the frame's node and
 totals — zoom `−` / `+`, `fit` and `re-layout`. `fit` always shows everything: the zoom
 floor of 0.2 drops to what the fit needs, on every layout. The legend lists every relation
 port and node kind in the frame with its count and a checkbox that hides it without
-re-reading the frame. It opens by itself only in a window at least 640 px wide and on a
+re-reading the frame; a relation row's tooltip names the port's converse from the engine's
+declared pairs, not only the knowledge vocabulary's (t344 PIL-14) — `owns (from the other end:
+child / owned-by)` on 4.0.9, where `owns` is on two pairs. It opens by itself only in a window at least 640 px wide and on a
 frame that draws knowledge relations (their lines carry no port text); everywhere else it
 starts closed and the canvas keeps its height. Open, it grows to its rows (the panel
 scrolls) instead of scrolling inside a 110 px box, and it speaks the six words the pilot, the
@@ -215,7 +217,9 @@ other end off the canvas). `Apply` therefore no longer stands beside `find`: it 
 `view_filter · advanced` drawer with the staged type / port ticks and the `t_day ≤` bound it
 applies.
 The inspector shows a node's `text` as a paragraph above its property table, names an
-incoming relation by its converse port (`← has-part`), writes the port name in ink with a dot
+incoming relation by its converse port (`← has-part`: the knowledge vocabulary's, else the port
+the relation carries at that end, else — since t344, PIL-14 — the ports the engine's declared
+pairs put opposite it), writes the port name in ink with a dot
 in the colour the graph draws that end in (a name written in its hue failed 4.5:1), and a
 click on a relation row selects the other node, centres the graph on
 it and shows it from the top of the inspector. In a drawing with boxes, centring — a find
