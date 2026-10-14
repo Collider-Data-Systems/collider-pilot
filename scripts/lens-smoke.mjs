@@ -111,6 +111,13 @@
  *      ports, and `interfaceOf` gives a type's positions and directions with the Workbench's
  *      reading — `*`, the type, or an empty list admits; a `{placeholder}` pair is skipped —
  *      on a synthetic grammar with a `*` list, an empty list, a null list and a merged pair.
+ *   M. (t347 PIL-24) The rendered words: every shown string under src/, the knowledge
+ *      vocabulary, the manifest and the page titles (renderedStrings, from the parsed source;
+ *      code contexts such as Cytoscape selectors and class names set apart) scanned with the
+ *      Workbench's pattern, verbatim from mtdc-lab page_check.py (WB-33). A banned word fails;
+ *      the hits that wait for Sam — "box" (AQ4) and the knowledge vocabulary's data (AQ5) — and
+ *      one code string are PINNED by exact string and file and reported; a new hit, or a pin
+ *      that no longer matches, fails. It proves it can fail on a planted file first.
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -409,6 +416,20 @@ function renderedStrings(sources) {
     for (const s of strings(JSON.parse(raw))) {
       const at = lines.findIndex((l) => l.includes(JSON.stringify(s).slice(1, -1)));
       out.push({ file: "src/ui/kb-vocab.json", line: at + 1, text: s, code: null, data: true });
+    }
+    // t347 PIL-24: the extension's own words outside the code — the manifest's name, description
+    // and toolbar title, and each page's tab title.
+    const manifestText = readFileSync(resolve(process.cwd(), "public/manifest.json"), "utf8");
+    const manifest = JSON.parse(manifestText);
+    for (const s of [manifest.name, manifest.description, manifest.action?.default_title]) {
+      if (typeof s !== "string") continue;
+      const at = manifestText.split("\n").findIndex((l) => l.includes(JSON.stringify(s).slice(1, -1)));
+      out.push({ file: "public/manifest.json", line: at + 1, text: s, code: null, data: false });
+    }
+    for (const page of readdirSync(process.cwd()).filter((f) => f.endsWith(".html"))) {
+      const html = readFileSync(resolve(process.cwd(), page), "utf8");
+      const title = /<title>([^<]*)<\/title>/i.exec(html);
+      if (title) out.push({ file: page, line: html.slice(0, title.index).split("\n").length, text: title[1], code: null, data: false });
     }
   }
   return out;
@@ -2051,6 +2072,176 @@ console.log("\nL. a type's interface from the engine's declared pairs (PIL-22, s
     "no interface for a type the engine does not declare, without an engine grammar, or on a grammar read before PIL-22 (no type lists)",
   );
   if (failures === before) pass("L holds");
+}
+
+// M — the rendered words (t347 PIL-24). The vocabulary rule (AGENTS.md) on what the panel shows:
+// every shown string under src/, the knowledge vocabulary, the manifest and the page titles
+// (renderedStrings) is scanned with the Workbench's pattern — verbatim from mtdc-lab
+// page_check.py, WB-33: the eight words, whole word, any case. A hit fails, except the hits
+// PINNED below, each by its exact string and file, which are reported (named and counted) and
+// do not fail, as WB-33 reports operad data: the words that wait for Sam ("box", AQ4; the
+// knowledge vocabulary's data, AQ5) and one code string the collector cannot tell from text. A
+// NEW hit fails, and so does a pin that no longer matches (the list stays exact). The scan
+// proves it can fail on a planted file first.
+console.log("\nM. the rendered words: no banned word; \"box\" and the vocabulary's data reported, pinned (PIL-24)");
+{
+  const before = failures;
+  const check = (cond, msg) => (cond ? pass(msg) : fail(msg));
+  // mtdc-lab tools/operad-workbench/page_check.py (WB-33), verbatim; any case.
+  const BANNED = /\b(edges?|wires?|wired|fields?|mutations?|schemas?|schemata|associations?|bindings?)\b|_refs?\b/i;
+  // AQ4: whether "box" is kept for an interface waits for Sam; until then it is reported.
+  const BOX = /\bbox(es)?\b/i;
+  const FG = "src/components/FrameGraph.tsx";
+  const SP = "src/components/SettingsPanel.tsx";
+  const AQ4 = "AQ4 (is \"box\" kept for an interface?)";
+  const PINNED = [
+    {
+      file: FG,
+      text: "node:selected, node.found, node.hovered, node.near, edge:selected, edge.near",
+      covers: ["banned"],
+      waits: "code",
+      where: "EXEMPT_LABELS, a Cytoscape selector in STYLE — never shown",
+    },
+    { file: FG, text: " drawn as boxes, ", covers: ["box"], waits: AQ4, where: "the legend's relation tooltip (relationTitle): a part-of container" },
+    { file: FG, text: " drawn in the box that cites them", covers: ["box"], waits: AQ4, where: "the canvas's aria-label: a container" },
+    { file: FG, text: ", boxes of ", covers: ["box"], waits: AQ4, where: "the canvas's aria-label: a container" },
+    {
+      file: FG,
+      text: "Fit everything shown into the view (the panel opens on your own node; double-click a box to bring just that box into view)",
+      covers: ["box"],
+      waits: AQ4,
+      where: "the fit button's tooltip: a container",
+    },
+    {
+      file: FG,
+      text: "A source is drawn inside the box that cites it; cited by several boxes, inside the ",
+      covers: ["box"],
+      waits: AQ4,
+      where: "the legend's sources note, its tooltip: a container",
+    },
+    {
+      file: FG,
+      text: "another box's title: N of the sources it cites are drawn in another box — their lines run there",
+      covers: ["box"],
+      waits: AQ4,
+      where: "the legend's sources note, its tooltip: a container",
+    },
+    { file: FG, text: " drawn in the box that cites ", covers: ["box"], waits: AQ4, where: "the legend's sources note: a container" },
+    { file: FG, text: " box", covers: ["box"], waits: AQ4, where: "the legend's sources note (↗N on N box[es]): a container" },
+    { file: FG, text: ": N cited sources drawn in another box", covers: ["box"], waits: AQ4, where: "the legend's sources note: a container" },
+    {
+      file: "src/components/GraphControls.tsx",
+      text: "other ends stay lit and are brought into view; clear the box to bring the rest back.",
+      covers: ["box"],
+      waits: AQ4,
+      where: "the find field's tooltip: the search box",
+    },
+    {
+      file: SP,
+      text: "Graph layout (cytoscape core only). Auto: nested boxes when the frame has nesting relations, concentric otherwise. Any other choice is drawn as chosen.",
+      covers: ["box"],
+      waits: AQ4,
+      where: "the layout picker's tooltip: containers",
+    },
+    { file: SP, text: "This box (localhost — default)", covers: ["box"], waits: AQ4, where: "the engine picker: the machine" },
+    {
+      file: SP,
+      text: "not stored yet — the default engine is still this box (localhost)",
+      covers: ["box"],
+      waits: AQ4,
+      where: "the engine picker's note: the machine",
+    },
+    {
+      file: "src/tools/llm-openai.js",
+      text: "on-box local provider — no cloud egress",
+      covers: ["box"],
+      waits: AQ4,
+      where: "the cloud-egress reason, shown in Actions and Settings: the machine",
+    },
+    {
+      file: "src/tools/model-providers.ts",
+      text: "Private, on-box, keyless OpenAI-compatible endpoint (:11434). DEFAULT. Always allowed — on-box, no cloud egress.",
+      covers: ["box"],
+      waits: AQ4,
+      where: "the local provider's note in Settings: the machine",
+    },
+    {
+      file: "src/ui/kb-vocab.json",
+      text: "Hierarchy: a claim or source belongs to a field, a field to a topic, a topic to a module.",
+      covers: ["banned"],
+      waits: "AQ5 (operad and vocabulary data that breaks the word rule)",
+      where: "the knowledge vocabulary's data (the nesting relation's description), shown in its legend tooltip",
+    },
+  ];
+  /** The words a string carries: "banned" (the eight), "box". */
+  const classes = (text) => [...(BANNED.test(text) ? ["banned"] : []), ...(BOX.test(text) ? ["box"] : [])];
+  /** Hits of a scan: the shown strings with a word, each pinned (reported) or fresh (a failure). */
+  const scanWords = (strings, pins) => {
+    const used = new Map(pins.map((p) => [p, 0]));
+    const reported = [];
+    const fresh = [];
+    for (const s of strings) {
+      const words = s.code ? [] : classes(s.text);
+      if (!words.length) continue;
+      const pin = pins.find((p) => p.file === s.file && p.text === s.text && words.every((w) => p.covers.includes(w)));
+      if (pin) {
+        used.set(pin, used.get(pin) + 1);
+        reported.push({ ...s, pin });
+      } else {
+        fresh.push({ ...s, words });
+      }
+    }
+    return { reported, fresh, stale: pins.filter((p) => used.get(p) !== 1) };
+  };
+  const at = (s) => `${s.file}:${s.line} ${JSON.stringify(s.text)}`;
+
+  // First, that the scan can fail: a planted file with each kind of hit, and the code a hit must
+  // not be — a Cytoscape selector, a class name, a type.
+  const planted = renderedStrings([
+    {
+      file: "src/components/Planted.tsx",
+      text: [
+        'export const A = () => <span title="an Edge to the left">a binding</span>;',
+        "export const B = (n: number) => `${n} wired here`;",
+        'export const C = { message: "a field_ref" };',
+        'export const D = () => <button aria-label="open the box">x</button>;',
+        'export const E = { selector: "edge.kappa" };',
+        'export const F = () => <i className="gc-field" />;',
+        'export type G = "fields";',
+      ].join("\n"),
+    },
+  ]);
+  const plantedScan = scanWords(planted, PINNED);
+  const plantedFresh = plantedScan.fresh.map((s) => s.text).sort();
+  check(
+    JSON.stringify(plantedFresh) ===
+      JSON.stringify([" wired here", "a binding", "a field_ref", "an Edge to the left", "open the box"].sort()) &&
+      plantedScan.reported.length === 0,
+    `the scan fails on a planted file: ${plantedFresh.length} new hits (${plantedFresh.map((t) => JSON.stringify(t)).join(", ")}) — ` +
+      "a JSX text, a title, an aria-label, a template, an object value, any case; a selector, a class name and a type are code",
+  );
+
+  const strings = renderedStrings();
+  const shown = strings.filter((s) => !s.code);
+  const { reported, fresh, stale } = scanWords(strings, PINNED);
+  check(
+    fresh.length === 0,
+    `no banned word and no unpinned "box" in the rendered text: ${shown.length} shown strings of ${strings.length} collected ` +
+      `(${new Set(shown.map((s) => s.file)).size} files), ${fresh.length} new hits` +
+      (fresh.length ? ` — ${fresh.map((s) => `${at(s)} [${s.words.join(", ")}]`).join("; ")}` : ""),
+  );
+  check(
+    stale.length === 0,
+    `every pinned hit is found once (${PINNED.length - stale.length} of ${PINNED.length})` +
+      (stale.length ? ` — gone or doubled, update the pin: ${stale.map((p) => `${p.file} ${JSON.stringify(p.text)}`).join("; ")}` : ""),
+  );
+  const byWait = new Map();
+  for (const r of reported) byWait.set(r.pin.waits, [...(byWait.get(r.pin.waits) ?? []), r]);
+  for (const [waits, list] of byWait) {
+    console.log(`  [REPORT] ${waits}: ${list.length} hit${list.length === 1 ? "" : "s"}, not failed`);
+    for (const r of list) console.log(`           ${at(r)} — ${r.pin.where}`);
+  }
+  if (failures === before) pass("M holds");
 }
 
 console.log(

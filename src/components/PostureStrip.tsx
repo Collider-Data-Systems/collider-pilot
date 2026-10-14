@@ -405,7 +405,7 @@ export function PostureStrip({
           )}
           {access.workstation_intersection === "failed-closed" && (
             <div className="prov-access-note failclosed" title={glossaryTitle("failed-closed")}>
-              workstation binding UNRESOLVED — {String(access.scope?.workstation).split(":").pop()}{" "}
+              workstation not resolved — {String(access.scope?.workstation).split(":").pop()}{" "}
               (FAILED CLOSED · governs-closure dropped)
             </div>
           )}

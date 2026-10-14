@@ -121,7 +121,7 @@ built on such an engine — its actor would not be a urn — and says so; a urn 
 custom engine brings it back.
 
 The **`knowledge`** lens shows the knowledge graph on its own: claims, the sources they
-were taken from, and the field / topic / module hierarchy they belong to. It selects type
+were taken from, and the domain / topic / module hierarchy they belong to. It selects type
 `claim` plus the eight WF12 knowledge ports of ontology 4.0.8; the relation closure brings
 in what those relations point at. Every claim node of the engine is shown, also one that
 no knowledge relation touches. Port names, converse names, colours and the nesting
@@ -135,8 +135,8 @@ vocabulary's nesting relation puts at least one node in a box it draws `nested`,
 other frame `concentric`, as before. A layout picked in Settings is always drawn as
 picked. (The choice is stored under a new key: a `concentric` stored before t337, when it
 was the default, is read as no choice; a stored `breadthfirst` or `grid` still counts.)
-Under `nested` a claim sits inside its field, a field inside its topic, a topic
-inside its module — one box per node, a field or topic before a module, and a
+Under `nested` a claim sits inside its domain, a domain inside its topic, a topic
+inside its module — one box per node, a domain or topic before a module, and a
 classification scheme is never a box. The boxes are packed deterministically from the
 measured label sizes, so no label overlaps another. Since t342 (P3) a knowledge source sits
 inside the box that cites it — the box is a presentation-only parent, ids stay urns — and a
@@ -191,7 +191,10 @@ scrolls) instead of scrolling inside a 110 px box, and it speaks the six words t
 Workbench and the manual share — *colour family*, *port end*, *no colour*, *exempt*, *pair
 not declared*, *port on no pair* — with no κ, commit hash, route or `src_port` in a tooltip
 (t342 hand-off C), and since t344 a fourth state row, *two colours: a fault*; since t347 the
-family group is titled *relation colour (family)*, the Workbench's words. An unticked row stays unticked on the other
+family group is titled *relation colour (family)*, the Workbench's words. The panel's own words
+follow the vocabulary rule: `npm run smoke:lens` M scans every shown string with the Workbench's
+pattern (WB-33) and fails on a banned word; "box" and the knowledge vocabulary's own data words
+wait for Sam (AQ4, AQ5) and are reported, each pinned, so a new one fails (t347 PIL-24). An unticked row stays unticked on the other
 lenses — the bar counts them and `show all` ticks every row back — and ticking back a node
 kind the layout last ran without runs the layout again, so its nodes get a place.
 
@@ -353,7 +356,7 @@ There is **NO apply path**. `graph_state` / `node_lookup` are the only tools inv
 by a positive read-only allowlist in `streamable-http-client.js`; the engine's
 `apply_rewrite` / `apply_program` tools are never named or called. The four rewrites
 (ADD/LINK/MUTATE/UNLINK) are unreachable from this build. No model, no credential, no
-`Origin`-bypassing config is wired.
+`Origin`-bypassing config is in place.
 
 ### How the transform works
 
@@ -583,7 +586,7 @@ checks) and the confirmation modal gate everything, exactly like a hand-composed
 
 ### Where it runs
 
-The **Actions** section is wired into the side panel only (`ActionsPanel`, each surface
+The **Actions** section is mounted in the side panel only (`ActionsPanel`, each surface
 ErrorBoundary-wrapped and defensively rendered). The PiP mirror deliberately does **not**
 mount it — it stays a read/observe surface; a note in the panel states so.
 

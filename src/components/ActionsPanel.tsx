@@ -346,7 +346,7 @@ export function ActionsPanel({
         // validateToolCall rejects any name outside them). Kept for the read-tool future.
         setLlmNotice({
           ok: true,
-          message: `read tool ${tool.name} would auto-run (no wired read executor in this build).`,
+          message: `read tool ${tool.name} would auto-run (no read executor is connected in this build).`,
         });
         return;
       }

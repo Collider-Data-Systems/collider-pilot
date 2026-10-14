@@ -219,6 +219,10 @@ K (t344 PIL-14; t347 PIL-21) holds the converse of every port from the engine's 
 three † forms and the self-converse arrowhead) — on a synthetic grammar and on two recorded grammars read from outside this
 repo by sha256 (see "The converse from the engine's grammar"); on a runner without those files
 it prints two `[SKIP]` lines and the synthetic checks still run.
+M (t347 PIL-24) holds the rendered words: every shown string under `src/`, the knowledge
+vocabulary, the manifest and the page titles, scanned with the Workbench's pattern (WB-33) — it
+fails on a banned word, reports the pinned hits that wait for Sam ("box", AQ4; the vocabulary's
+data, AQ5) and fails on a new one (see "Rendered words").
 L (t347 PIL-22) holds a node type's interface on a synthetic grammar — the real
 `normalizeEngineGrammar` and `interfaceOf` of `engine-grammar.js`: each pair keeps its served type
 lists, a second pair with the same two names merges its lists in, each type keeps its served
@@ -1044,6 +1048,46 @@ to "port colour" (one, naming the file and line). `smoke:live` (i), t347: the Z4
 family rows sum to 233 of 242 relations (the other 9 have no family at either end, 0 faults);
 scratch's to 419 of 419.
 
+## Rendered words (t347, work order PIL-24)
+
+**Why.** The vocabulary rule (AGENTS.md: never edge · wire · field · mutation · schema ·
+association · binding · `_ref`) held for code review only; no gate read the panel's words. Found
+on screen: "workstation binding UNRESOLVED" (the strip), "binding" twice and "crosses the wire"
+in the access glossary, "field / topic / module" in the knowledge lens's tooltip, "not wired
+here" in the tool catalog, and "no wired read executor" in an Actions notice.
+
+**What changed.** The words: "workstation not resolved" (`PostureStrip.tsx`); "no resolved
+engine→workstation match" and "There is a resolved engine→workstation match" and "the full fold
+still reaches this browser" (`glossary.ts`); "domain / topic / module" (`GraphControls.tsx`);
+"not connected here" (`affordance.ts`); "no read executor is connected in this build"
+(`ActionsPanel.tsx`). Code identifiers (Cytoscape's `edges()`, the `gc-field` class) are not
+text and did not change. Not changed, waiting for Sam: "box" (AQ4 — the `part-of` containers,
+"This box" for the machine, the search box, "on-box"), and the knowledge vocabulary's
+`belongs to a field…` (`src/ui/kb-vocab.json`, data, AQ5).
+
+**Asserted** (`smoke:lens` M). `renderedStrings` collects, from the parsed source (comments are
+never hits), every string literal, template part and JSX text under `src/`, every string of the
+knowledge vocabulary, the manifest's name, description and toolbar title, and each page's
+`<title>`; a string in a place never shown — a type, a module, a property key or index, a
+comparison, a JSX attribute such as `className` / `data-*` / `key` / `role`, an object property
+such as Cytoscape's `selector` and `group` — is code. The shown ones are scanned with the
+Workbench's pattern, verbatim from mtdc-lab `page_check.py` (WB-33):
+`\b(edges?|wires?|wired|fields?|mutations?|schemas?|schemata|associations?|bindings?)\b|_refs?\b`,
+any case, whole word; "box" (`\bbox(es)?\b`) beside it for AQ4. A hit fails unless it is PINNED
+by its exact string and file — 17 pins at t347: one code string (FrameGraph's `EXEMPT_LABELS`,
+a Cytoscape selector the collector cannot tell from text), 15 "box" hits (AQ4) and the
+vocabulary's one data string (AQ5). Pinned hits are reported, named and counted, and do not
+fail; a pin that no longer matches fails, so the list stays exact. The scan first proves it can
+fail, on a planted file: a JSX text, a title, an aria-label, a template and an object value are
+five new hits, any case, while a selector, a class name and a type are not. Measured at t347:
+2157 shown strings of 3554 collected, in 57 files, 0 new hits. With this commit's five word
+fixes reverted it FAILs on 7 new hits; with an "edge" planted in the re-layout button's tooltip
+and an unpinned "box" in `show all`'s, on 2.
+
+**Not reached.** Text the engine serves (type and category names, descriptions) is not in the
+source, so this scan cannot read it; the rendered page is what `probe:ui` reads. The scan reads
+what the code can show, not what a given frame shows.
+
 ## Finding and inspecting in the knowledge graph (t337)
 
 **Find** ranks urn and label as before (0-4, unchanged) and then, one rank below, the
@@ -1140,7 +1184,7 @@ access posture, which is anon, 1 node.
 
 ## Known-honest limits, deliberately not hidden
 
-- `ACCESS: PRESENTATION` is not enforcement: the full fold crosses the wire and access only
+- `ACCESS: PRESENTATION` is not enforcement: the full fold reaches this browser and access only
   changes what is rendered.
 - The log feed shows the **whole engine log**; workspace-level access presentation does not
   narrow it. Server-side slice filtering is the ruled follow-up.

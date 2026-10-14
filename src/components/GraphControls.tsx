@@ -145,7 +145,7 @@ export const LENSES: Lens[] = [
     // Declared ahead of the data on any engine below 4.0.8, like the kinship ports above.
     types: ["claim"],
     ports: [...KB_PORTS],
-    title: `The knowledge graph on its own: claims, the sources they were taken from, and the field / topic / module hierarchy they belong to (${KB_NODE_TYPES.join(" · ")} + ${KB_PORTS.join(" / ")}). Only claim is selected by type — every claim node of the engine is shown, also one that no knowledge relation touches. What the knowledge relations point AT comes along, so sources, tags and modules that are not part of the knowledge graph stay out. These ports are ontology ${KB_ONTOLOGY_VERSION}: on an engine with no knowledge relations this lens shows only its claim nodes, if it has any.`,
+    title: `The knowledge graph on its own: claims, the sources they were taken from, and the domain / topic / module hierarchy they belong to (${KB_NODE_TYPES.join(" · ")} + ${KB_PORTS.join(" / ")}). Only claim is selected by type — every claim node of the engine is shown, also one that no knowledge relation touches. What the knowledge relations point AT comes along, so sources, tags and modules that are not part of the knowledge graph stay out. These ports are ontology ${KB_ONTOLOGY_VERSION}: on an engine with no knowledge relations this lens shows only its claim nodes, if it has any.`,
   },
   {
     id: "substrate",
