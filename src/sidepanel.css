@@ -648,14 +648,6 @@ body {
   flex: none;
   white-space: nowrap;
 }
-.insp-rel-kind {
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--text-muted);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 0 4px;
-}
 .insp-rel-target {
   background: transparent;
   border: none;
@@ -677,6 +669,63 @@ body {
   display: inline-block;
   vertical-align: middle;
   margin-right: 5px;
+}
+/* t347 PIL-17: the node as an interface — what it accepts (the relations arriving on its in-ports)
+   on the left, what it offers (the out-ports it holds) on the right, as on the Workbench's type
+   card. The two sides share one frame, split by a rule: an arriving row ends at the rule (its
+   in-port), a held row starts from it (its out-port), so each reads as a chain through the node.
+   Text at least 11 px. */
+.insp-ifc-counts,
+.insp-ifc-held {
+  font-size: 11px;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.insp-ifc {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.insp-ifc-side {
+  min-width: 0;
+  padding: 4px 6px;
+}
+.insp-ifc-side[data-side="directions"] {
+  border-right: 1px solid var(--border);
+  text-align: right;
+}
+.insp-ifc-side[data-side="directions"] .insp-relations li {
+  justify-content: flex-end;
+}
+.insp-ifc-head {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.insp-ifc-port {
+  margin-bottom: 6px;
+}
+.insp-ifc-port-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+.insp-ifc-n {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.insp-ifc-none {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.insp-ifc .insp-relations li {
+  min-width: 0;
 }
 
 /* Scrollbar */

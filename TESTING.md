@@ -231,6 +231,12 @@ M (t347 PIL-24) holds the rendered words: every shown string under `src/`, the k
 vocabulary, the manifest and the page titles, scanned with the Workbench's pattern (WB-33) — it
 fails on a banned word, reports the pinned hits that wait for Sam ("box", AQ4; the vocabulary's
 data, AQ5) and fails on a new one (see "Rendered words").
+N (t347 PIL-17) holds the node as an interface in the inspector — the real `NodeInspector` rendered
+to static markup and FrameGraph's real `drawingPlan` — on a synthetic frame, and on a saved copy
+of an engine's `GET /fold` read from outside this repo (`PILOT_STATE_COPY`; without the file it
+prints `[SKIP]` and the synthetic checks still run): the count words, what arrives on the left one
+row each, the out-ports held on the right, every row one relation, no drawn line between two nodes
+that share no relation (see "The node as an interface").
 
 **`selftest.html`** (open it from the extension: `chrome-extension://<id>/selftest.html`) is
 the one surface that can exercise what the harnesses fake — the worker seam with real
@@ -962,7 +968,8 @@ the out-names of the pairs whose source list admits the type, the direction coor
 `directions`) the in-names of the pairs whose target list admits it, each in the order the pairs
 first give them; a list admits a type when it holds `*`, the type, or nothing; a `{placeholder}`
 pair is skipped; `self` is the served one. Null without an engine grammar, for an undeclared
-type, and on a grammar read before PIL-22. Nothing is drawn from it yet. The stamped grammar
+type, and on a grammar read before PIL-22. Since PIL-17 the inspector draws it ("The node as an
+interface"). The stamped grammar
 grows from 7.1 to 13.6 KB on the Z440 primary (4.0.9) and from 8.9 to 19.1 KB on scratch
 (mtdc-2.1.0), measured by GET at t347.
 
@@ -1144,6 +1151,76 @@ and an unpinned "box" in `show all`'s, on 2.
 source, so this scan cannot read it; the rendered page is what `probe:ui` reads. The scan reads
 what the code can show, not what a given frame shows.
 
+## The node as an interface (t347, work order PIL-17)
+
+**Why.** The inspector listed a node's relations — one flat list, `→` out and `←` in, each with
+its rewrite category — not its interface. Sam's P1 and P1b (R-prod) make a node type an
+interface: its out-ports are its position coordinates, which together make one position, and its
+in-ports its direction coordinates (P1; P1b, R-prod). PIL-22 keeps the data; this draws it.
+
+**What changed** (`NodeInspector.tsx`, `sidepanel.css`). The relations section is now
+`interface`:
+- A count line: the type and its interface from the engine's grammar (`interfaceOf`) in the
+  Workbench's words (WB-24 `interfaceCounts`, the same function): `n direction coordinates · m
+  position coordinates`, and for a side with no port `one position (no coordinate)` or `one
+  direction (no coordinate)`, never "0 positions". Without a grammar that declares the type:
+  `interface not known`, and the rows still show.
+- `holds n out-ports` (`holds no out-port`): the out-ports the node holds a relation on in this
+  slice (`data-held`), with `(k its type does not have)` when some are not in its type's
+  interface. The type's count is not repeated beside it: "holds 4 of 6" would read as 6
+  positions.
+- Two sides in one frame, under the Workbench's heads. `accepts`, on the left: every relation
+  arriving at the node, one row each — Q2 is open, so fan-in is not grouped — read as a chain
+  from the node it comes from to the in-port it enters (named as before: the vocabulary, the
+  relation's own `tgt_port`, the engine's pairs; the † words in its tooltip). `offers`, on the
+  right: each out-port the node holds, in its type's order and then by name, with its count and
+  its relations, each `→` the node it goes to; under them `none held on …`, the type's position
+  coordinates it holds nothing on.
+- Each row is one relation (`data-relation`, `data-other`); no two are composed into one. The
+  rewrite category moved from a chip into the row's tooltip. The graph is unchanged: one line per
+  relation.
+- Words: the section is `interface`, not "box" (AQ4 is open; `smoke:lens` M fails on a new
+  "box"). The heads are `accepts` and `offers` alone, without the Workbench's "directions ·" and
+  "positions ·": out-ports are position coordinates, not positions (the lead's review of #50).
+- `nodeInterface`, `interfaceCountWords` and `heldWords` are pure and exported.
+
+**Asserted** (`smoke:lens` N). On a synthetic grammar and frame (no engine name): type A offers
+three out-ports and accepts one, type B accepts three and offers none; a node of A holds two of
+A's out-ports and one A does not have, receives two relations on one in-port, and sits on a chain
+whose two ends share no relation. The rendered markup reads `… · 1 direction coordinate · 3
+position coordinates` and `… · 3 direction coordinates · one position (no coordinate)`, the heads
+`accepts` then `offers`, no "0 positions"; `holds 3 out-ports (1 its type does not have)` with
+the held out-ports in the type's order and 2, 1, 1 rows under them and `none held on` the third;
+the two arriving relations in two rows; every row of the six inspectors one relation between its
+node and the node it names, each once; 6 lines drawn, each between its own relation's two nodes;
+and without the grammar `interface not known` with the same rows. On the saved copy: every node
+shows the out-ports it holds, equal to a count made in the smoke from the raw copy (the distinct
+`src_port` of its relations); at log 713 the session nodes give the t344 numbers; every
+inspector row is one relation; every drawn line one relation. Broken copies fail it: the
+component before this change (eight FAILs), the held count taken per relation (four), fan-in
+grouped by in-port (four), a held row shown to the node after the next (two), a composite line
+added to the drawing (two in N; J fails on it too), "0 position coordinates" for an empty side
+(one), and a new "box" in the section's title (one, in M).
+
+**Measured** (t347). The copy: `GET /fold` of the Z440 primary (4.0.9, log 713), 460 910 bytes,
+kept in the temp folder and never in this repo; node for node and relation for relation equal
+to a second `GET /fold` at t347 (order aside). Counted from it outside the pilot: 11 session
+nodes, 7 holding 4 out-ports, 3 holding 1, 1 holding 0 — the numbers measured live at t344. N on
+it: 325 of 325 nodes show the count from the copy, 484 inspector rows each one relation, 242
+lines drawn (concentric) each one relation. Grouping fan-in would give 421 rows: on 11 nodes two
+or more relations arrive on one in-port. With the engines' grammars (a one-off script by GET,
+not a gate): session reads 8 direction coordinates · 6 position coordinates on the primary and 7
+· 6 on scratch (mtdc-2.1.0), and every out-port a session node of the copy holds is one of its 6.
+Looked at in the built `dist/preview-live.html` (the 380 px frame, identified, the primary): a
+session node holding 4 out-ports reads `session · 8 direction coordinates · 6 position
+coordinates`, `holds 4 out-ports`, one arriving row and 16 held rows under 4 out-ports, `none
+held on` its other 2; each side 172 px wide, no row wider than its side; the session node that
+holds none reads `holds no out-port`.
+
+**Not reached.** The copy carries no grammar, so N checks the count words on the synthetic
+grammar; the panel reads them from the engine. A knowledge source drawn inside the box that cites
+it (P3) is placement, not a line, and is unchanged; N holds the lines.
+
 ## Finding and inspecting in the knowledge graph (t337)
 
 **Find** ranks urn and label as before (0-4, unchanged) and then, one rank below, the
@@ -1158,7 +1235,8 @@ now reaches a claim (`CRDT` -> `2 matches · showing claim · in text`).
 **Inspector**: a node's `text` is a paragraph above the property table and no longer a
 row in it; an incoming relation is named by its converse port (`← has-part`,
 `← source-of`; from `tgt_port` for every other relation, e.g. `← composed-by` on the
-primary; t344 PIL-14: from the engine's declared pairs where a relation carries none); a knowledge port carries its vocabulary colour; a click on a relation row selects
+primary; t344 PIL-14: from the engine's declared pairs where a relation carries none; since t347
+PIL-17 the rows sit on the two sides of the node's interface, see "The node as an interface"); a knowledge port carries its vocabulary colour; a click on a relation row selects
 the other node, centres the graph on it and scrolls the inspector back to its top. In the
 380 px side panel the pane was 120 px for every node — 0 of a claim's text lines on
 screen; for a node that carries a text it is now 45 % of the panel height (405 px at

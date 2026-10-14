@@ -171,9 +171,9 @@ adds what it declares — types and ports the static lists do not name, and the 
 on no declared pair — so all 56 types of mtdc-2.1.0 can be selected. Since t347 (PIL-22) the
 grammar also keeps each pair's type lists and each type's served ports, and
 `interfaceOf(grammar, type)` gives a type's interface — its position coordinates and direction
-coordinates (P1; P1b, R-prod), read from the pairs the way the Workbench reads them; nothing
-draws it yet (TESTING.md, "A type's
-interface from the engine's grammar"). Nothing of the operad is
+coordinates (P1; P1b, R-prod), read from the pairs the way the Workbench reads them; since PIL-17
+the inspector draws it (TESTING.md, "A type's interface from the engine's grammar"). Nothing of
+the operad is
 written into this repo; an engine without `/operad/*` is drawn by relation kind and the
 legend and the drawer say so (TESTING.md, "Port colours and the engine's grammar").
 
@@ -240,12 +240,21 @@ other end off the canvas). `Apply` therefore no longer stands beside `find`: it 
 `view_filter · advanced` drawer with the staged type / port ticks and the `t_day ≤` bound it
 applies.
 The inspector shows a node's `text` as a paragraph above its property table, names an
-incoming relation by its converse port (`← has-part`: the knowledge vocabulary's, else the port
+incoming relation by its converse port (`has-part`: the knowledge vocabulary's, else the port
 the relation carries at that end, else — since t344, PIL-14 — the ports the engine's declared
 pairs put opposite it; its tooltip says it with †, t347 PIL-21), writes the port name in ink with a dot
 in the colour the graph draws that end in (a name written in its hue failed 4.5:1), and a
 click on a relation row selects the other node, centres the graph on
-it and shows it from the top of the inspector. In a drawing with boxes, centring — a find
+it and shows it from the top of the inspector. Since t347 (PIL-17) the relations are shown as the
+node's interface, under `interface`: its type's count in the Workbench's words (`session · 8
+direction coordinates · 6 position coordinates`; a side with no port is `one position (no
+coordinate)`, never 0 — P1; P1b, R-prod), how many out-ports the node holds (`holds 4
+out-ports`), and two sides in one frame — `accepts` on the left, every relation arriving at it in
+a row of its own (fan-in is not grouped while Q2 is open), read from the node it comes from to the
+in-port it enters; `offers` on the right, each out-port it holds with its relations, each to the
+node it goes to, then the type's position coordinates it holds nothing on. Each row is one
+relation; none is composed with another (TESTING.md, "The node as an interface"). In a drawing
+with boxes, centring — a find
 hit, a relation row — also zooms in to where the node can be read (zoom 1; a box: as far
 as the whole box fits); a drawing without boxes centres at the current zoom, as before. In
 the side panel the inspector pane grows to 45 % of the panel height for a node that carries
