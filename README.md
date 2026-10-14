@@ -121,7 +121,7 @@ built on such an engine — its actor would not be a urn — and says so; a urn 
 custom engine brings it back.
 
 The **`knowledge`** lens shows the knowledge graph on its own: claims, the sources they
-were taken from, and the field / topic / module hierarchy they belong to. It selects type
+were taken from, and the domain / topic / module hierarchy they belong to. It selects type
 `claim` plus the eight WF12 knowledge ports of ontology 4.0.8; the relation closure brings
 in what those relations point at. Every claim node of the engine is shown, also one that
 no knowledge relation touches. Port names, converse names, colours and the nesting
@@ -135,8 +135,8 @@ vocabulary's nesting relation puts at least one node in a box it draws `nested`,
 other frame `concentric`, as before. A layout picked in Settings is always drawn as
 picked. (The choice is stored under a new key: a `concentric` stored before t337, when it
 was the default, is read as no choice; a stored `breadthfirst` or `grid` still counts.)
-Under `nested` a claim sits inside its field, a field inside its topic, a topic
-inside its module — one box per node, a field or topic before a module, and a
+Under `nested` a claim sits inside its domain, a domain inside its topic, a topic
+inside its module — one box per node, a domain or topic before a module, and a
 classification scheme is never a box. The boxes are packed deterministically from the
 measured label sizes, so no label overlaps another. Since t342 (P3) a knowledge source sits
 inside the box that cites it — the box is a presentation-only parent, ids stay urns — and a
@@ -157,11 +157,23 @@ does not declare; dotted, `◇` midway). Ends in two families — or a family at
 at the other — are a fault since t344 (PIL-13): no declared pair joins two families, so the
 line is drawn grey, both ends too, with a filled `■` midway, and the legend's row reads *two
 colours: a fault*; a family's hue goes only on a relation whose two ends share it (it was
-drawn in two tones before). The legend's `colour by` switch goes
+drawn in two tones before). Since t347 (PIL-20) the legend names the colour as the relation's,
+Sam's P2: the switch reads `colour by: relation colour | relation kind`, the family group
+*relation colour (family)* with the tooltip "each relation carries one colour; its two ends show
+it", each family row counts the one-colour relations drawn in its hue (a fault counts only in
+the fault row; since t348 a nesting relation drawn as its container is no line and counts in no
+family row), the canvas's label says "relations coloured by family" and the inspector "relation
+colour: F" (a fault: "two colours: a fault"); the *exempt* and *no colour* rows still count port
+ends. The legend's `colour by` switch goes
 back to the relation-kind palette above. The grammar is read from the engine at run time
 (`src/mcp/engine-grammar.js`, cached per engine and ontology version) and the advanced drawer
 adds what it declares — types and ports the static lists do not name, and the fold's labels
-on no declared pair — so all 56 types of mtdc-2.1.0 can be selected. Nothing of the operad is
+on no declared pair — so all 56 types of mtdc-2.1.0 can be selected. Since t347 (PIL-22) the
+grammar also keeps each pair's type lists and each type's served ports, and
+`interfaceOf(grammar, type)` gives a type's interface — its position coordinates and direction
+coordinates (P1; P1b, R-prod), read from the pairs the way the Workbench reads them; nothing
+draws it yet (TESTING.md, "A type's
+interface from the engine's grammar"). Nothing of the operad is
 written into this repo; an engine without `/operad/*` is drawn by relation kind and the
 legend and the drawer say so (TESTING.md, "Port colours and the engine's grammar").
 
@@ -170,14 +182,25 @@ totals — zoom `−` / `+`, `fit` and `re-layout`. `fit` always shows everythin
 floor of 0.2 drops to what the fit needs, on every layout. The legend lists every relation
 port and node kind in the frame with its count and a checkbox that hides it without
 re-reading the frame; a relation row's tooltip names the port's converse from the engine's
-declared pairs, not only the knowledge vocabulary's (t344 PIL-14) — the one port 4.0.9
-declares on two pairs reads both converse names, `p (from the other end: a / b)`. It opens by itself only in a window at least 640 px wide and on a
+declared pairs, not only the knowledge vocabulary's (t344 PIL-14), written with † since t347
+(PIL-21), as on the Workbench: `p · † c`, `p · † = itself` for a port that is its own converse,
+and `p · † is not a function here (a, b)` for a port the engine declares on two pairs — whether
+† is a function at each name is checked once per engine when its grammar is read — or, since
+t348, whose relations in the frame carry two target ports; the inspector keeps a relation's own
+target port as its name and adds "† is not a function here (a, b)" after it there. In the port
+palette a relation that is its own converse has no target arrowhead (it reads the same from both
+ends); an end state keeps its glyph. A relation whose target end carries no port keeps its
+arrowhead: its pair is not declared (t348). It opens by itself only in a window at least 640 px wide and on a
 frame that draws knowledge relations (their lines carry no port text); everywhere else it
 starts closed and the canvas keeps its height. Open, it grows to its rows (the panel
 scrolls) instead of scrolling inside a 110 px box, and it speaks the six words the pilot, the
-Workbench and the manual share — *colour family*, *port end*, *no colour*, *exempt*, *pair
+Workbench and the manual share — *relation colour*, *port end*, *no colour*, *exempt*, *pair
 not declared*, *port on no pair* — with no κ, commit hash, route or `src_port` in a tooltip
-(t342 hand-off C), and since t344 a fourth state row, *two colours: a fault*. An unticked row stays unticked on the other
+(t342 hand-off C), and since t344 a fourth state row, *two colours: a fault*; since t347 the
+family group is titled *relation colour (family)*, the Workbench's words. The panel's own words
+follow the vocabulary rule: `npm run smoke:lens` M scans every shown string with the Workbench's
+pattern (WB-33) and fails on a banned word; "box" and the knowledge vocabulary's own data words
+wait for Sam (AQ4, AQ5) and are reported, each pinned, so a new one fails (t347 PIL-24). An unticked row stays unticked on the other
 lenses — the bar counts them and `show all` ticks every row back — and ticking back a node
 kind the layout last ran without runs the layout again, so its nodes get a place.
 
@@ -219,7 +242,7 @@ applies.
 The inspector shows a node's `text` as a paragraph above its property table, names an
 incoming relation by its converse port (`← has-part`: the knowledge vocabulary's, else the port
 the relation carries at that end, else — since t344, PIL-14 — the ports the engine's declared
-pairs put opposite it), writes the port name in ink with a dot
+pairs put opposite it; its tooltip says it with †, t347 PIL-21), writes the port name in ink with a dot
 in the colour the graph draws that end in (a name written in its hue failed 4.5:1), and a
 click on a relation row selects the other node, centres the graph on
 it and shows it from the top of the inspector. In a drawing with boxes, centring — a find
@@ -264,7 +287,7 @@ src/state/scratch.ts               chrome.storage.session helpers (selection + f
 src/state/use-mirror-view.ts       what a mirror follows besides frame + selection: the stored layout choice and the scratch view (t337)
 src/ui/kb-vocab.json               knowledge vocabulary (ontology 4.0.8) — Lean-emitted, copied verbatim, never edited here (t337)
 src/ui/kb-vocab.js                 SHARED typed accessor over it: knowledge ports, per-port style, converse names, nesting port, claim kinds (t337)
-src/mcp/engine-grammar.js          SHARED read of the engine's grammar: GET /operad/node-types, /rewrite-categories, /port-colors, cached per engine + ontology version (t342)
+src/mcp/engine-grammar.js          SHARED read of the engine's grammar: GET /operad/node-types, /rewrite-categories, /port-colors, cached per engine + ontology version (t342); the converse of a port (t344); a type's interface, interfaceOf (t347)
 src/ui/port-colour.js              SHARED pure painter: each relation end by κ(port), the three non-colour states, the eight hues (t342)
 src/components/                    PostureStrip (strip + audit drawer) · SettingsPanel · GraphControls · FrameGraph (Cytoscape) · NodeInspector · ActionsPanel + ConfirmActionModal
 src/tools/types.ts                 controlled-tools contract: ToolKind/ToolChannel, ToolSpec, AffordancePack, ToolCall, PendingAction (Phase 4)
@@ -339,7 +362,7 @@ There is **NO apply path**. `graph_state` / `node_lookup` are the only tools inv
 by a positive read-only allowlist in `streamable-http-client.js`; the engine's
 `apply_rewrite` / `apply_program` tools are never named or called. The four rewrites
 (ADD/LINK/MUTATE/UNLINK) are unreachable from this build. No model, no credential, no
-`Origin`-bypassing config is wired.
+`Origin`-bypassing config is in place.
 
 ### How the transform works
 
@@ -569,7 +592,7 @@ checks) and the confirmation modal gate everything, exactly like a hand-composed
 
 ### Where it runs
 
-The **Actions** section is wired into the side panel only (`ActionsPanel`, each surface
+The **Actions** section is mounted in the side panel only (`ActionsPanel`, each surface
 ErrorBoundary-wrapped and defensively rendered). The PiP mirror deliberately does **not**
 mount it — it stays a read/observe surface; a note in the panel states so.
 

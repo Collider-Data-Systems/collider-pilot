@@ -1,9 +1,10 @@
 /**
- * Collider Pilot - relation ends coloured by the engine's port colours (t342 P1, SHARED)
- * ===================================================================================
- * t342 work order P1 (hand-off A; decision 2: port colour is the default palette, relation
- * kind the alternative). Each relation END is coloured by κ(port) — the colour family the
- * engine's `/operad/port-colors` gives its port, read at run time (src/mcp/engine-grammar.js)
+ * Collider Pilot - the relation's colour, from the engine's colour families (t342 P1, SHARED)
+ * ===========================================================================================
+ * t342 work order P1 (hand-off A; decision 2: this palette is the default, relation kind the
+ * alternative). t347 PIL-20 (Sam's P2): the colour is the relation's, one per relation, and its
+ * two ends show it. It is read from κ(port) — the colour family the engine's
+ * `/operad/port-colors` gives the port at each end, read at run time (src/mcp/engine-grammar.js)
  * and never written here:
  *
  *   - both ends in one family  -> one hue for the whole line;
@@ -69,6 +70,32 @@ export const END_GLYPHS = Object.freeze({
   source: Object.freeze({ colour: "none", exempt: "tee", uncoloured: "circle" }),
   target: Object.freeze({ colour: "triangle", exempt: "triangle-tee", uncoloured: "circle-triangle" }),
 });
+
+/**
+ * t347 PIL-21: a relation whose label is its own converse reads the same from both ends, so its
+ * target end shows no direction: the plain arrowhead goes, and a state keeps its glyph without
+ * the triangle. The relation-kind palette already draws a self-converse knowledge port so; in the
+ * port palette it now holds for every port.
+ */
+export const SELF_CONVERSE_TARGET = Object.freeze({
+  triangle: "none",
+  "triangle-tee": "tee",
+  "circle-triangle": "circle",
+});
+
+/**
+ * t347 PIL-21: the target glyph drawn for a relation — its end state's glyph (`kts`), without the
+ * direction triangle when the relation is self-converse.
+ * @param {unknown} kts
+ * @param {boolean} selfConverse
+ * @returns {string}
+ */
+export function targetGlyph(kts, selfConverse) {
+  const glyph = String(kts);
+  return selfConverse && Object.prototype.hasOwnProperty.call(SELF_CONVERSE_TARGET, glyph)
+    ? SELF_CONVERSE_TARGET[/** @type {keyof typeof SELF_CONVERSE_TARGET} */ (glyph)]
+    : glyph;
+}
 
 /** The marker of an undeclared pair: a dotted line with a hollow diamond midway. */
 export const UNDECLARED_MARKER = Object.freeze({ lineStyle: "dotted", midGlyph: "diamond" });
@@ -242,10 +269,12 @@ export function kappaRelationData(paint) {
 }
 
 /**
- * Counts for the legend and the smokes: ends per colour family, ends per state, relations on
+ * Counts for the legend and the smokes: relations per colour family, ends per state, relations on
  * an undeclared pair, two-tone relations (each drawn as a fault since t344: the legend's
- * "two colours: a fault" count), and relations left in the relation-kind palette. A fault's
- * ends are still counted under their families — the family is the port's, not the line's.
+ * "two colours: a fault" count), and relations left in the relation-kind palette.
+ * t347 PIL-20: the colour is the relation's (Sam's P2), so a family counts the one-colour
+ * relations drawn in its hue — both ends in that family — not port ends; a fault counts only as
+ * a fault, never under a family. The two end states (exempt, no colour) stay per port end.
  * @param {Pick<HgRelation, "label" | "properties">[]} relations
  * @param {EngineGrammar | null | undefined} grammar
  */
@@ -260,10 +289,11 @@ export function kappaCensus(relations, grammar) {
       out.kind += 1;
       continue;
     }
+    // t347 PIL-20: one count per one-colour relation, under its family.
+    if (!paint.twoTone && paint.src.family) families[paint.src.family] = (families[paint.src.family] ?? 0) + 1;
     for (const e of [paint.src, paint.tgt]) {
-      if (e.state === "colour" && e.family) families[e.family] = (families[e.family] ?? 0) + 1;
-      else if (e.state === "exempt") out.exempt += 1;
-      else out.uncoloured += 1;
+      if (e.state === "exempt") out.exempt += 1;
+      else if (e.state === "uncoloured") out.uncoloured += 1;
     }
     if (paint.pair === "undeclared") out.undeclared += 1;
     if (paint.twoTone) out.twoTone += 1;

@@ -19,17 +19,17 @@ export const GLOSSARY: Record<string, string> = {
 
   // ---- workstation ∩ honesty ----
   "widened, not narrowed":
-    "The workstation intersection was SKIPPED (no proven engine→workstation binding at this tier), so the permitted set was left as-is — i.e. wider than a workstation-narrowed set would be. Never read this as enforcement.",
+    "The workstation intersection was SKIPPED (no resolved engine→workstation match at this tier), so the permitted set was left as-is — i.e. wider than a workstation-narrowed set would be. Never read this as enforcement.",
   "skipped-widened":
     "The workstation intersection was not applied; the permitted set is left widened, not narrowed by workstation.",
   "failed-closed":
     "A server-authoritative frame claimed a workstation that could not be resolved, so the governs-closure was dropped to public-only (fail-safe) instead of silently widening.",
   applied:
-    "A concrete engine→workstation binding was resolved and the permitted set was narrowed to workspaces on that workstation.",
+    "There is a resolved engine→workstation match, and the permitted set was narrowed to workspaces on that workstation.",
 
   // ---- access tier names ----
   "client-presentation":
-    "This tier is NOT a security boundary: the full fold still crosses the wire; access only changes what is RENDERED in this panel.",
+    "This tier is NOT a security boundary: the full fold still reaches this browser; access only changes what is RENDERED in this panel.",
   "server-authoritative":
     "The kernel itself computed the permitted subgraph and returned only that — access is enforced server-side, not just presented.",
 

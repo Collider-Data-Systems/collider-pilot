@@ -170,6 +170,11 @@ the fold does not carry — one it carries on a declared pair is an engine port,
 undeclared one); an untick expands from all of it and ticking back returns to the sentinel;
 without a grammar the static lists stand alone and the note says so; the legacy list is one
 group of its own.
+Since t347 (PIL-20) H also holds the legend's family rows to relations, not port ends — they sum to
+the relations drawn in a family hue and count no fault, under `nested` too, where a nesting
+relation shown by its container is no line and counts in no family row (t348) — and no
+rendered string saying "port colour"; the group title, the canvas label and the inspector name
+the colour as the relation's (see "The colour is the relation's").
 H also holds the read itself on an injected fetch (offline): `color_rule` / `color_source` are
 read when the engine states them (K1) and "not stated" when it does not (today's
 `{matrix, port_colors}`); a body carrying only `matrix` colours nothing; a relation carrying an
@@ -210,11 +215,22 @@ their relations, the small components on one urn row, the sources moved to a col
 box is drawn, cose on the panel's own canvas (the 36-node component moved by up to 131 px),
 label boxes off their grid (a second run moved all 66 nodes), and a cose budget per component
 (in the helper, or FrameGraph ignoring the frame's).
-K (t344 PIL-14) holds the converse of every port from the engine's declared pairs — the real
-`conversePorts` of `engine-grammar.js` and FrameGraph's `converseName`, `conversePortOf` and
-`relationTitle` — on a synthetic grammar and on two recorded grammars read from outside this
+K (t344 PIL-14; t347 PIL-21) holds the converse of every port from the engine's declared pairs — the real
+`conversePorts` and `converseFault` of `engine-grammar.js` and FrameGraph's `converseName`,
+`conversePortOf` and `relationTitle` (written with † since t347; H holds the (b2) check, its
+live half, the three † forms and the self-converse arrowhead) — on a synthetic grammar and on two recorded grammars read from outside this
 repo by sha256 (see "The converse from the engine's grammar"); on a runner without those files
 it prints two `[SKIP]` lines and the synthetic checks still run.
+L (t347 PIL-22) holds a node type's interface on a synthetic grammar — the real
+`normalizeEngineGrammar` and `interfaceOf` of `engine-grammar.js`: each pair keeps its served type
+lists, a second pair with the same two names merges its lists in, each type keeps its served
+ports, and `interfaceOf` gives the expected position and direction coordinates with a `*` list, an
+empty list and a null list; a list holding only `""` admits no type (t348) (see "A type's
+interface from the engine's grammar").
+M (t347 PIL-24) holds the rendered words: every shown string under `src/`, the knowledge
+vocabulary, the manifest and the page titles, scanned with the Workbench's pattern (WB-33) — it
+fails on a banned word, reports the pinned hits that wait for Sam ("box", AQ4; the vocabulary's
+data, AQ5) and fails on a new one (see "Rendered words").
 
 **`selftest.html`** (open it from the extension: `chrome-extension://<id>/selftest.html`) is
 the one surface that can exercise what the harnesses fake — the worker seam with real
@@ -437,10 +453,11 @@ note and the audit drawer say "did not answer", not "serves no /operad/*"), and 
 kept for `GRAMMAR_RETRY_MS` (60 s) — a hung route delays one frame per minute, not every
 fold-stream re-read.
 Read: the declared pairs (main and additional), the declared types, `port_colors`, and
-`color_rule` / `color_source` when the engine states them (K1 builds). Never read: `matrix`,
-a relation's `src_color` / `tgt_color` (empty on every relation today: read, they would make
-every end "exempt"), and the kernel's type law — the pilot checks pairs only; the workbench's
-check 8 rules on admission. An engine without the routes stamps `absent` with its reason; the
+`color_rule` / `color_source` when the engine states them (K1 builds); since t347 (PIL-22) each
+pair's type lists and each type's served ports too, for `interfaceOf` (below). Never read:
+`matrix`, a relation's `src_color` / `tgt_color` (empty on every relation today: read, they
+would make every end "exempt"), and the kernel's type law — the pilot checks pairs only, no
+relation is judged by the type lists; the workbench's check 8 rules on admission. An engine without the routes stamps `absent` with its reason; the
 frame still lands, the drawer offers its static lists and the graph draws relation kinds, and
 both say so. An engine that serves node types and rewrite categories but no port colours keeps
 both in the drawer and only the graph falls back to relation kind. No operad data, no colour
@@ -464,7 +481,7 @@ those floors — the reference palette's own series cap — so a family is never
 alone: the port name rides on every port-colour line (held to the label cut) and the legend
 names each family with its count. Node fills stay the type palette and share no colour with
 them (`smoke:lens` H, which also holds the close pairs under "Limits" below). The legend's
-**colour by: port colour | relation kind** switch brings back the relation-kind palette — the
+**colour by: port colour | relation kind** switch (since t347 **relation colour | relation kind**, PIL-20) brings back the relation-kind palette — the
 knowledge vocabulary's colours and dashes, the default line for every other port — labelled
 as such. Like the legend ticks it is not saved. The inspector's relation rows follow the
 same switch: in port colour a row takes κ of the port named from the selected node's end (a
@@ -893,7 +910,7 @@ puts at the other end from `port`, either side, sorted — the idea of b85f0dd's
 ` / ` — 4.0.9 declares one port on two pairs and it reads both converse names, `a / b`, the honest
 non-function, never one of the two picked. The legend's relation tooltip reads `p (from the other
 end: c) · N …` for every port, not only the knowledge ports (a self-converse port shows the
-port alone, as before). The inspector (`conversePortOf`, moved to `FrameGraph.tsx`): the
+port alone, as before) — since t347 written with † instead (PIL-21, below). The inspector (`conversePortOf`, moved to `FrameGraph.tsx`): the
 vocabulary's converse, then the relation's own `tgt_port` — what that relation says at that end,
 also on an undeclared pair or for one of that port's two — then the engine's pairs, then the label.
 So on the fleet, where every relation carries its `tgt_port`, an inspector row reads as before;
@@ -926,6 +943,206 @@ name, which shows both of its two converses joined by ` / `, each mapping back t
 to themselves; an incoming relation on that port without a `tgt_port` reads both names in the
 inspector, one that carries one of them keeps it.
 Broken copies fail it: `converseName` keeping the first of several names (four FAILs).
+
+## A type's interface from the engine's grammar (t347, work order PIL-22)
+
+**Why.** A node type is an interface: its out-ports are position coordinates, its in-ports
+direction coordinates (P1; P1b, R-prod). `normalizeEngineGrammar` kept `{src_port, tgt_port,
+rewrite_category}` per pair and type names only, so the pilot could not say what a type's
+interface is. The node drawn as a box (PIL-17) needs these data first.
+
+**What changed** (`engine-grammar.js`, `types.ts`). Each pair keeps the type lists the engine
+serves on it (`SrcTypes` / `TgtTypes`; additional pairs carry their own), as served. A second
+pair with the same two port names is folded into the first, as before, but its lists are merged
+in, not dropped — the union, and `*` added where an empty list (every type) meets a named one, so
+the kept pair admits a type exactly when either did. Each type keeps its served `{out, in,
+self}` (`type_ports`). `interfaceOf(grammar, type)` is pure and reads the Workbench's way
+(mtdc-lab `operad-lib.js` `interfaceOf`, WB-12): the position coordinates (key `positions`) are
+the out-names of the pairs whose source list admits the type, the direction coordinates (key
+`directions`) the in-names of the pairs whose target list admits it, each in the order the pairs
+first give them; a list admits a type when it holds `*`, the type, or nothing; a `{placeholder}`
+pair is skipped; `self` is the served one. Null without an engine grammar, for an undeclared
+type, and on a grammar read before PIL-22. Nothing is drawn from it yet. The stamped grammar
+grows from 7.1 to 13.6 KB on the Z440 primary (4.0.9) and from 8.9 to 19.1 KB on scratch
+(mtdc-2.1.0), measured by GET at t347.
+
+t348 (review of #50): an empty name in a list is kept as served, so `[""]` admits no type, as
+the Workbench reads it (it was dropped, and the list read as empty: every type). The lists are
+merged PER SIDE: pairs (A→B) and (C→D) with the same two port names keep ([A, C], [B, D]),
+which also admits A→D, so `src_types × tgt_types` is a pair's types only where nothing was
+merged in (`types.ts` `GrammarPair` says so; no recorded grammar repeats a pair). The new keys
+are optional in `types.ts`: a grammar stamped before PIL-22 lacks them.
+
+**Asserted** (`smoke:lens` L, synthetic): the merged lists, the served ports (a null `Self` is
+empty) and three interfaces with a `*` list, an empty list, a null list, a merged pair and a
+placeholder pair; since t348 a list `[""]`, kept as served, admits no type (it FAILed before the
+fix: the type got the pair's out-name). Broken copies fail it: the second pair's lists dropped
+(four FAILs), an empty list read as admitting nothing (three).
+
+**Cross-checked once, not a gate.** A script outside the repo fed the Workbench's recorded
+mtdc-2.1.0 engine grammar (mtdc-lab `tools/operad-workbench/testdata/live-mtdc-2.1.0`) to the
+pilot's `normalizeEngineGrammar` + `interfaceOf` and to the Workbench's `fromLive` +
+`interfaceOf`: equal for 56 of 56 types, order included; on the two live engines by GET, 56 of
+56 on each. Neither has a repeated pair, so the merge is held by L alone. One difference is
+possible there and not seen on any grammar read: where a merged pair's first copy does not admit
+a type and its second does, the pilot lists that name at the first copy's place and the
+Workbench at the second's — the same set, another order.
+
+## The converse written with † (t347, work order PIL-21, with the rest of PIL-16)
+
+**Why.** Sam's P4 makes the converse an operator on one relation with two ends. The pilot had no
+† on screen: the legend said `p (from the other end: c)`, the inspector `c — the converse of p`,
+and where the engine's pairs give a port two converses it listed both without saying † fails
+there. A relation that is its own converse kept a target arrowhead in the port palette, a
+direction its converse does not have.
+
+**What changed.**
+- `engine-grammar.js`: the (b2) check, at grammar load — for every name on a declared pair (the
+  out-names, and the in-names with them, as the Workbench reads them), do the pairs give it
+  exactly one converse? The names where they do not are stamped with the grammar,
+  `converse_not_function` (`{name, converses}`, sorted; empty when † is a function on the
+  engine), and `converseFault(grammar, port)` reads it (a grammar stamped before t347: the pairs).
+  This is the declared half of what PIL-14 left of PIL-16; the live half (t348) is below.
+- `FrameGraph.tsx` `converseWords`: the Workbench's words (WB-14) — `p · † c`, `p · † = itself`
+  for a self-converse port, and where (b2) fails `p · † is not a function here (c1, c2)`; the
+  knowledge vocabulary's converse first, then the engine's pairs. The legend's relation tooltip
+  starts with it. `relationConverseWords` keeps PIL-14's order for naming a target end — the
+  vocabulary, the relation's own `tgt_port`, the engine's pairs — and is the inspector's tooltip
+  on an incoming row (`NodeInspector.tsx`; it read `c — the converse of p`).
+- No target arrowhead on a self-converse relation in the port palette (`isSelfConverse`, the same
+  order; data `kself`; `port-colour.js` `targetGlyph`): the plain arrowhead goes, and a state
+  keeps its glyph without the triangle (exempt `tee`, no colour a hollow `circle`). The
+  relation-kind palette is unchanged: there only a self-converse knowledge port drops it, as
+  before. So under P4 the two palettes disagree on a self-converse relation outside the
+  knowledge vocabulary (the review of #50); left for a follow-up order, not changed here.
+- t348 (review of #50), PIL-16's live half: `legendOf` collects, per label, the target ports
+  (`tgt_port`) the frame's relations carry (`converses`). Where they carry more than one, the
+  legend tooltip says `p · † is not a function here (c1, c2)` as the declared check does — the
+  carried names, with the declared ones where (b2) fails too; one carried name leaves the
+  declared words. The inspector names each relation by its own `tgt_port`, as before.
+- t348: where (b2) fails at a label, the inspector keeps PIL-14's carried name and says so after
+  it: `p · † c1 (this relation); † is not a function here (c1, c2)`.
+- t348: a relation whose target end carries no port is read one way — its pair is not declared
+  (and, with a family at its source end, a fault by PIL-13's rule), and it keeps its arrowhead:
+  `isSelfConverse` reads no converse for it from the vocabulary or the engine's pairs. It used to
+  fall back to the grammar and drop the arrowhead too.
+
+**Asserted.** `smoke:lens` H, on a synthetic grammar of the order's shape (one port on two pairs,
+a self-converse port, a plain pair; no engine name): the (b2) record names exactly the port on
+two pairs; `relationTitle` gives `a · † b`, `same · † = itself` and `own · † is not a function here
+(own-1, own-2)`; on a frame whose `a` relations carry two target ports, `a · † is not a function
+here (b, live-x)`, and on one whose `own` relations carry `own-1` and `live-own-3`, all three
+names (t348); the inspector's words in PIL-14's order, with the qualifier after a carried name
+where (b2) fails (t348); drawn headless, a relation on the self-converse pair has target arrow
+shape `none`, one whose target end carries no port `circle-triangle` (t348; it was `circle`), the
+others `triangle`, and every one `triangle` after the switch to relation kind. The three t348
+checks FAILed before the fix. `smoke:live` (i) prints `† live` (t348): 1 label on the Z440
+primary (log 713) whose relations carry two target ports — the one (b2) records there too — and
+0 on scratch (log 1030). K on the recorded grammars: mtdc-2.2.0's (b2) record is empty and all 89
+tooltips carry †; 4.0.9's records exactly its one port on two pairs, whose tooltip says † is not
+a function there. Broken copies fail it: no `kself` (one FAIL), the old tooltip wording (four),
+no (b2) record (five). `smoke:live` (i) holds each relation's drawn target glyph and prints the
+self-converse count: 0 of 242 on the Z440 primary (4.0.9, log 713; † not a function at 1 name),
+9 of 419 on scratch (mtdc-2.1.0, log 1030; 2 labels; † a function everywhere).
+
+## The colour is the relation's (t347, work order PIL-20)
+
+**Why.** Sam's P2 rules the colour the relation's label, one per relation. The legend still
+named and counted it per port end: the switch read "port colour", the group "colour family"
+over "each end of a relation takes its port's colour", the canvas label "relation ends
+coloured by port", and each family row counted port ends — a fault's grey ends included, under
+the families of their ports.
+
+**What changed** (`FrameGraph.tsx`, `port-colour.js` `kappaCensus`, `PostureStrip.tsx`,
+`engine-grammar.js` `grammarGap`). The switch reads `relation colour`, its tooltip "Relation
+colour: each relation carries one colour; its two ends show it"; the group is titled
+`relation colour (family)` with the tooltip "each relation carries one colour; its two ends show
+it" (the Workbench's words); the canvas label says "relations coloured by family". A family row
+counts the one-colour relations of that family — both ends in it — and says so; a fault counts
+only in the fault row. The `exempt` and `no colour` rows stay per port end. An engine without a
+colour table reads "serves no colour families", and the audit drawer's `κ source` tooltip says
+the colours are the relations'. `kappaCensus.families` now counts relations, so `smoke:live`
+prints `κ relations` where it printed `κ ends`; the t342 tables above count ends and are kept as
+measured then. Code identifiers (`colour-by-port`, the `port` palette value) did not change.
+
+t348 (review of #50, Copilot 4276877552; the lead's must-fix). Under `nested` a nesting relation
+its container shows is not drawn as a line (`toElements`), yet the family rows counted it — on
+knowledge frames, where `auto` draws `nested`, a family row counted relations drawn as
+containers. `kappaLegend` now takes the drawing plan's containers (`parents`) and leaves out
+of the family rows (and `census.families`) exactly the relations `toElements` drops, by the
+same test (`isContainerNesting`); the exempt, no-colour, pair and fault counts are unchanged,
+per port end and per relation over every relation in the frame. The panel's memo lists the
+containers and the layout, so a change of layout or an unticked nesting relation recounts. A
+family row's tooltip says "N relations drawn in this colour in this frame". The inspector
+names the colour as the relation's (M5): "relation colour: F", a fault "two colours: a fault",
+a relation with no family at either end "relation colour: none (this end: exempt)" or "(this
+end: no colour)" — it read "colour family: F" per end (`FrameGraph.tsx` `relationColourWords`).
+
+**Asserted** (`smoke:lens` H). On the fixture plus two one-colour relations (one on an
+undeclared pair): the family rows (FrameGraph's `kappaLegend`, exported for it) are fam-one 2,
+fam-three 0, fam-two 1, equal to the count read from the fixture's own map, and sum to the 3
+relations DRAWN in a family hue (headless, the real STYLE); removing the 6 faults changes no
+family row; exempt 3 and no colour 5 are counted per end. No rendered string — every shown
+string literal, template part and JSX text under `src/`, and the knowledge vocabulary, collected
+by `renderedStrings` — says "port colour" or "port's colour". Broken copies fail it: the old
+per-end family count (two FAILs: fam-one 9 and fam-two 5, 14 against 3 drawn), the button back
+to "port colour" (one, naming the file and line). `smoke:live` (i), t347: the Z440 primary's
+family rows sum to 233 of 242 relations (the other 9 have no family at either end, 0 faults);
+scratch's to 419 of 419.
+Since t348, H's nested case: the PIL-13 nested fixture under the same grammar with the nesting
+port given a family — one nesting relation in that family at both ends (drawn as the
+container), one fault, one plain line — through the real `drawingPlan` and `kappaLegend(frame,
+grammar, parents)`: the family rows sum to the 1 relation drawn in a family hue under `nested`
+and to the 2 drawn under `concentric`; on the PIL-13 fixture itself the no-colour row counts 3
+ends in both layouts (the container relation's two included). Before the fix it FAILed:
+`nested` rows summed to 2 against 1 drawn. And the string check: the group title `relation colour (family)`, the canvas label
+"relations coloured by family" and the inspector's `relation colour: ` are shown strings in
+`FrameGraph.tsx`, no shown string says "colour family:" or "coloured by port", and
+`relationColourWords` gives the words above on the fixture. With the inspector's old words put
+back it FAILs, naming `NodeInspector.tsx`. `smoke:live` (i) prints `κ nested`, measured at
+t348: on scratch (mtdc-2.1.0, log 1030) the family rows sum to 339 under `nested`, with 80
+nodes in a container, against 419 with none — before the fix the rows counted those 80
+nesting relations too; on the Z440 primary (4.0.9, log 713) 233 either way (no container).
+
+## Rendered words (t347, work order PIL-24)
+
+**Why.** The vocabulary rule (AGENTS.md: never edge · wire · field · mutation · schema ·
+association · binding · `_ref`) held for code review only; no gate read the panel's words. Found
+on screen: "workstation binding UNRESOLVED" (the strip), "binding" twice and "crosses the wire"
+in the access glossary, "field / topic / module" in the knowledge lens's tooltip, "not wired
+here" in the tool catalog, and "no wired read executor" in an Actions notice.
+
+**What changed.** The words: "workstation not resolved" (`PostureStrip.tsx`); "no resolved
+engine→workstation match" and "There is a resolved engine→workstation match" and "the full fold
+still reaches this browser" (`glossary.ts`); "domain / topic / module" (`GraphControls.tsx`);
+"not connected here" (`affordance.ts`); "no read executor is connected in this build"
+(`ActionsPanel.tsx`). Code identifiers (Cytoscape's `edges()`, the `gc-field` class) are not
+text and did not change. Not changed, waiting for Sam: "box" (AQ4 — the `part-of` containers,
+"This box" for the machine, the search box, "on-box"), and the knowledge vocabulary's
+`belongs to a field…` (`src/ui/kb-vocab.json`, data, AQ5).
+
+**Asserted** (`smoke:lens` M). `renderedStrings` collects, from the parsed source (comments are
+never hits), every string literal, template part and JSX text under `src/`, every string of the
+knowledge vocabulary, the manifest's name, description and toolbar title, and each page's
+`<title>`; a string in a place never shown — a type, a module, a property key or index, a
+comparison, a JSX attribute such as `className` / `data-*` / `key` / `role`, an object property
+such as Cytoscape's `selector` and `group` — is code. The shown ones are scanned with the
+Workbench's pattern, verbatim from mtdc-lab `page_check.py` (WB-33):
+`\b(edges?|wires?|wired|fields?|mutations?|schemas?|schemata|associations?|bindings?)\b|_refs?\b`,
+any case, whole word; "box" (`\bbox(es)?\b`) beside it for AQ4. A hit fails unless it is PINNED
+by its exact string and file — 17 pins at t347: one code string (FrameGraph's `EXEMPT_LABELS`,
+a Cytoscape selector the collector cannot tell from text), 15 "box" hits (AQ4) and the
+vocabulary's one data string (AQ5). Pinned hits are reported, named and counted, and do not
+fail; a pin that no longer matches fails, so the list stays exact. The scan first proves it can
+fail, on a planted file: a JSX text, a title, an aria-label, a template and an object value are
+five new hits, any case, while a selector, a class name and a type are not. Measured at t347:
+2157 shown strings of 3554 collected, in 57 files, 0 new hits. With this commit's five word
+fixes reverted it FAILs on 7 new hits; with an "edge" planted in the re-layout button's tooltip
+and an unpinned "box" in `show all`'s, on 2.
+
+**Not reached.** Text the engine serves (type and category names, descriptions) is not in the
+source, so this scan cannot read it; the rendered page is what `probe:ui` reads. The scan reads
+what the code can show, not what a given frame shows.
 
 ## Finding and inspecting in the knowledge graph (t337)
 
@@ -1023,7 +1240,7 @@ access posture, which is anon, 1 node.
 
 ## Known-honest limits, deliberately not hidden
 
-- `ACCESS: PRESENTATION` is not enforcement: the full fold crosses the wire and access only
+- `ACCESS: PRESENTATION` is not enforcement: the full fold reaches this browser and access only
   changes what is rendered.
 - The log feed shows the **whole engine log**; workspace-level access presentation does not
   narrow it. Server-side slice filtering is the ruled follow-up.

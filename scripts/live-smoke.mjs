@@ -85,6 +85,7 @@ import {
   hasPortColours,
   kappaCensus,
   kappaFamilies,
+  targetGlyph,
 } from "../src/ui/port-colour.js";
 
 /** Tiny assert — prints and exits non-zero on failure so this is a real gate. */
@@ -1522,7 +1523,8 @@ function liveAxisChecks(fold, health, grammar, gc, fg) {
   const famText = kappaFamilies(grammar)
     .map((f) => `${f.family} ${census.families[f.family] ?? 0}`)
     .join(" · ");
-  line("κ ends", famText || "(no colour families)");
+  // t347 PIL-20: a family counts the one-colour relations drawn in its hue, not port ends.
+  line("κ relations", famText || "(no colour families)");
   line(
     "κ states",
     `exempt ${census.exempt} ends · uncoloured ${census.uncoloured} ends · undeclared pair ` +
@@ -1544,6 +1546,35 @@ function liveAxisChecks(fold, health, grammar, gc, fg) {
     assert(
       drawn.port.fault.length === census.twoTone,
       `two colours a fault: ${drawn.port.fault.length} of ${drawn.port.edges} live relations drawn grey with the fault marker = two-tone ${census.twoTone}`,
+    );
+    // t347 PIL-21: the self-converse relations, drawn with no target arrowhead (a measure; the
+    // drawn check above holds each one's glyph).
+    line(
+      "self-converse",
+      `${[...drawn.port.self.values()].reduce((a, b) => a + b, 0)} of ${drawn.port.edges} relations drawn without a target ` +
+        `arrowhead, on ${drawn.port.self.size} labels (${[...drawn.port.self].map(([l, n]) => `${l} ${n}`).join(", ") || "none"}); ` +
+        `† not a function at ${(grammar.converse_not_function ?? []).length} names`,
+    );
+    // t348 (review of #50, PIL-16's live half): the labels whose relations in this frame carry more
+    // than one target port — the legend's tooltip says "† is not a function here" there (a measure).
+    const liveFrame = { ...all, provenance: { ...all.provenance, grammar } };
+    const liveRows = fg
+      .legendOf(liveFrame, new Map())
+      .relations.filter((row) => (row.converses ?? []).length > 1);
+    line(
+      "† live",
+      `${liveRows.length} labels whose relations carry two or more target ports` +
+        (liveRows.length ? `: ${liveRows.map((row) => `${row.port} (${row.converses.join(", ")})`).join("; ")}` : "") +
+        (liveRows.length ? ` — tooltip: "${fg.relationTitle(liveRows[0], grammar).split(" · ").slice(0, 2).join(" · ")}"` : ""),
+    );
+    // t348 (review of #50, Copilot 4276877552): under `nested` the family rows leave out the nesting
+    // relations their containers show — the plan's containers passed as the panel passes them (a measure).
+    const nestPlan = fg.drawingPlan(liveFrame, "nested", false);
+    const rowSum = (legend) => legend.families.reduce((a, f) => a + f.relations, 0);
+    line(
+      "κ nested",
+      `family rows sum to ${rowSum(fg.kappaLegend(liveFrame, grammar, nestPlan.parents))} under nested ` +
+        `(${nestPlan.parents.size} nodes in a container), ${rowSum(fg.kappaLegend(liveFrame, grammar))} with none`,
     );
     const families = kappaFamilies(grammar);
     assert(
@@ -1590,7 +1621,7 @@ function drawCheck(fg, frame) {
   const val = (e, k) => e.pstyle(k).value;
   try {
     fg.applyPalette(cy, true);
-    const port = { edges: 0, kind: 0, wrong: [], fault: [] };
+    const port = { edges: 0, kind: 0, wrong: [], fault: [], self: new Map() };
     cy.edges().forEach((e) => {
       port.edges += 1;
       const d = e.data();
@@ -1612,7 +1643,8 @@ function drawCheck(fg, frame) {
         // one colour for the line and both ends — no relation is drawn in two tones
         ks === kt && val(e, "line-fill") === "solid" && line === ks && ends.every((c) => c === ks) &&
         kappaRgb.has(ks) &&
-        val(e, "source-arrow-shape") === d.kss && val(e, "target-arrow-shape") === d.kts &&
+        // t347 PIL-21: a self-converse relation (kself) shows its target state without the arrowhead
+        val(e, "source-arrow-shape") === d.kss && val(e, "target-arrow-shape") === targetGlyph(d.kts, d.kself === "self") &&
         // both ends of the uncoloured state are hollow, every other end filled (Copilot on #46)
         val(e, "source-arrow-fill") === (d.kss === END_GLYPHS.source.uncoloured ? "hollow" : "filled") &&
         val(e, "target-arrow-fill") === (d.kts === END_GLYPHS.target.uncoloured ? "hollow" : "filled") &&
@@ -1625,6 +1657,7 @@ function drawCheck(fg, frame) {
         val(e, "mid-target-arrow-shape") === (undeclared ? UNDECLARED_MARKER.midGlyph : "none");
       if (!ok) port.wrong.push(String(d.label));
       if (drawnFault) port.fault.push(String(d.id));
+      if (d.kself === "self") port.self.set(String(d.label), (port.self.get(String(d.label)) ?? 0) + 1);
     });
     fg.applyPalette(cy, false);
     const kind = { edges: 0, port: 0, wrong: [] };
