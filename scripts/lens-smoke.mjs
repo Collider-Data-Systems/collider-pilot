@@ -125,6 +125,17 @@
  *      the hits that wait for Sam — "box" (AQ4) and the knowledge vocabulary's data (AQ5) — and
  *      one code string are PINNED by exact string and file and reported; a new hit, or a pin
  *      that no longer matches, fails. It proves it can fail on a planted file first.
+ *   N. (t347 PIL-17) The node as an interface in the inspector: the real NodeInspector rendered
+ *      to static markup on a synthetic frame — the type's direction and position coordinates in
+ *      the Workbench's words ("one position", never "0 positions"), "accepts" left and "offers"
+ *      right, the out-ports it holds with their relations, every arriving relation a row of its
+ *      own (fan-in not grouped while Q2 is open), every row one relation between the node and the
+ *      node it names, and no drawn line between two nodes that share no relation; then on a saved
+ *      copy of an engine's GET /fold read from outside this repo (PILOT_STATE_COPY; SKIP when
+ *      absent): every node shows the out-ports it holds, equal to a count made from the copy.
+ *      t348 (review of #51): an out-port is the source port a relation carries (relations with
+ *      none in a group of their own, not counted), grouping is linear (counted array steps), and
+ *      the drawn lines are counted less the nesting relations a container shows (a nested case).
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -158,7 +169,7 @@ import {
   linkedComponents,
   separateLabels,
 } from "../src/ui/component-layout.js";
-import { selectFrame } from "../src/mcp/transform.js";
+import { mapRelation, selectFrame } from "../src/mcp/transform.js";
 // t342 P1/P6: the engine-grammar normaliser and the port-colour painter, as the panel runs them.
 import {
   clearEngineGrammarCache,
@@ -2382,6 +2393,444 @@ console.log("\nM. the rendered words: no banned word; \"box\" and the vocabulary
     for (const r of list) console.log(`           ${at(r)} — ${r.pin.where}`);
   }
   if (failures === before) pass("M holds");
+}
+
+// N — the node as an interface in the inspector (t347 PIL-17; Sam's P1, P1b). The real
+// NodeInspector rendered to static markup (react-dom/server; nothing mounts) and FrameGraph's real
+// drawingPlan. First on a SYNTHETIC frame (runs everywhere, CI included; no engine name): the
+// type's count line in the Workbench's words (WB-24: direction and position coordinates, "one
+// position" for a type with no out-port, never "0 positions"), "accepts" on the left and
+// "offers" on the right, how many out-ports the node holds, each held out-port with its
+// relations, every arriving relation in a row of its own (Q2 is open: fan-in is not grouped),
+// and every row one relation between this node and the node the row names. Then on
+// a saved copy of an engine's `GET /fold`, read by path from OUTSIDE this public repo
+// (PILOT_STATE_COPY, default <tmp>/t347-primary-state.json; SKIP when absent, as K does): every
+// node shows how many out-ports it holds, equal to a count made here from the raw copy, and the
+// session nodes are counted out. On both, the drawn frame: no line joins two nodes that share no
+// relation. t348 (review of #51): an out-port is the source port a relation carries, never its
+// label when it carries none; grouping is linear; a nesting relation its container shows is not
+// expected as a line.
+console.log("\nN. the node as an interface: what arrives on the left, one row each; the out-ports it holds on the right (PIL-17)");
+{
+  const before = failures;
+  const check = (cond, msg) => (cond ? pass(msg) : fail(msg));
+  const { tmpdir } = await import("node:os");
+  const { createElement } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  // The real NodeInspector and the FrameGraph it imports, type-stripped beside the source the way
+  // loadFrameGraph does it (one directory deeper, so a parent-relative specifier gains a `../`).
+  const strip = (file) =>
+    ts.transpileModule(readFileSync(resolve(process.cwd(), file), "utf8"), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX },
+    }).outputText;
+  const dir = mkdtempSync(join(resolve(process.cwd(), "src/components"), ".lens-smoke-"));
+  let fgN;
+  let ni;
+  try {
+    writeFileSync(join(dir, "prefs.mjs"), strip("src/state/prefs.ts"));
+    writeFileSync(
+      join(dir, "FrameGraph.mjs"),
+      strip("src/components/FrameGraph.tsx").replaceAll('from "../state/prefs"', 'from "./prefs.mjs"').replaceAll('from "../', 'from "../../'),
+    );
+    writeFileSync(
+      join(dir, "NodeInspector.mjs"),
+      strip("src/components/NodeInspector.tsx").replaceAll('from "./FrameGraph"', 'from "./FrameGraph.mjs"').replaceAll('from "../', 'from "../../'),
+    );
+    fgN = await import(pathToFileURL(join(dir, "FrameGraph.mjs")).href);
+    ni = await import(pathToFileURL(join(dir, "NodeInspector.mjs")).href);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const unescape = (s) =>
+    s.replaceAll("&quot;", '"').replaceAll("&#x27;", "'").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+  /** What the inspector shows for one node, read from its markup. */
+  const shownFor = (frame, node) => {
+    const html = renderToStaticMarkup(createElement(ni.NodeInspector, { frame, node, onSelect: () => {} }));
+    const from = html.indexOf('data-side="directions"');
+    const cut = html.indexOf('data-side="positions"');
+    const left = from >= 0 && cut > from ? html.slice(from, cut) : "";
+    const right = from >= 0 && cut > from ? html.slice(cut) : "";
+    const rows = (part) =>
+      [...part.matchAll(/<li[^>]*? data-relation="([^"]*)" data-other="([^"]*)"/g)].map((x) => ({
+        relation: unescape(x[1]),
+        other: unescape(x[2]),
+      }));
+    const held = /data-testid="inspector-held" data-held="(\d+)"[^>]*>([^<]*)</.exec(html);
+    const typeLine = /data-testid="inspector-interface-type"[^>]*>([^<]*)</.exec(html);
+    // t348 (review of #51): the group of relations that carry no source port, and its rows.
+    const unnamedAt = right.indexOf("data-unnamed-port=");
+    return {
+      html: unescape(html),
+      held: held ? Number(held[1]) : null,
+      heldText: held ? unescape(held[2]) : null,
+      unnamed: unnamedAt >= 0 ? Number(/data-unnamed-port="(\d+)"/.exec(right.slice(unnamedAt))[1]) : 0,
+      unnamedRows: unnamedAt >= 0 ? rows(right.slice(unnamedAt)).map((x) => x.relation) : [],
+      typeLine: typeLine ? unescape(typeLine[1]) : null,
+      heads: [...html.matchAll(/class="insp-ifc-head"[^>]*>([^<]*)</g)].map((x) => unescape(x[1])),
+      ports: [...right.matchAll(/data-held-port="([^"]*)"/g)].map((x) => unescape(x[1])),
+      arriving: rows(left),
+      leaving: rows(right),
+      left: unescape(left),
+      right: unescape(right),
+    };
+  };
+  /** Every row is one relation of the frame, between this node and the node the row names; every relation once. */
+  const rowsJoinRelated = (frame, node, shown) => {
+    const rel = new Map(frame.relations.map((r) => [r.urn, r]));
+    const wrong = [
+      ...shown.arriving.filter(({ relation, other }) => rel.get(relation)?.target_urn !== node.urn || rel.get(relation)?.source_urn !== other),
+      ...shown.leaving.filter(({ relation, other }) => rel.get(relation)?.source_urn !== node.urn || rel.get(relation)?.target_urn !== other),
+    ];
+    const want =
+      frame.relations.filter((r) => r.target_urn === node.urn).length + frame.relations.filter((r) => r.source_urn === node.urn).length;
+    const each = (side) => new Set(side.map((x) => x.relation)).size === side.length;
+    return { wrong, rows: shown.arriving.length + shown.leaving.length, want, ok: !wrong.length && each(shown.arriving) && each(shown.leaving) };
+  };
+  /**
+   * Every drawn line is one relation of the frame, between that relation's own two nodes — no
+   * composite. t348 (review of #51, Copilot 4277217181): the automatic layout can be `nested`,
+   * where a nesting relation its container shows is drawn as the container, not as a line
+   * (toElements). Those relations — the same test, FrameGraph isContainerNesting — are taken out of
+   * the lines expected, and each must be shown by its container instead: its source drawn inside
+   * its target. Every other relation is drawn as exactly one line.
+   */
+  const linesAreRelations = (frame) => {
+    const layout = fgN.resolveGraphLayout("auto", frame);
+    const grammar = frame.provenance?.grammar;
+    const rel = new Map(frame.relations.map((r) => [r.urn, r]));
+    const plan = fgN.drawingPlan(frame, layout, false);
+    const lines = plan.elements.filter((e) => e.group === "edges");
+    const parentOf = new Map(plan.elements.filter((e) => e.group === "nodes").map((e) => [String(e.data.id), e.data.parent]));
+    const stray = lines.filter((e) => {
+      const r = rel.get(String(e.data.id));
+      return !r || r.source_urn !== e.data.source || r.target_urn !== e.data.target;
+    });
+    const drawn = new Map();
+    for (const e of lines) drawn.set(String(e.data.id), (drawn.get(String(e.data.id)) ?? 0) + 1);
+    const contained = frame.relations.filter((r) => fgN.isContainerNesting(r, plan.parents, grammar));
+    const containedUrns = new Set(contained.map((r) => r.urn));
+    const notOnce = frame.relations.filter((r) => !containedUrns.has(r.urn) && drawn.get(r.urn) !== 1);
+    const notShown = contained.filter((r) => drawn.has(r.urn) || parentOf.get(r.source_urn) !== r.target_urn);
+    return {
+      layout,
+      lines: lines.length,
+      want: frame.relations.length - contained.length,
+      contained: contained.length,
+      stray: stray.map((e) => `${e.data.source} → ${e.data.target}`),
+      notOnce: notOnce.map((r) => r.urn),
+      notShown: notShown.map((r) => r.urn),
+      ok: stray.length === 0 && notOnce.length === 0 && notShown.length === 0 && lines.length === frame.relations.length - contained.length,
+    };
+  };
+  const linesWords = (x) =>
+    `drawn (${x.layout}), ${x.lines} line${x.lines === 1 ? "" : "s"} for ${x.want + x.contained} relations less ${x.contained} its containers show, ` +
+    `each between its own relation's two nodes (${x.stray.length} other${x.stray.length ? `: ${x.stray.join("; ")}` : ""}` +
+    `${x.notOnce.length ? `; not drawn once: ${x.notOnce.join(", ")}` : ""}${x.notShown.length ? `; not shown by a container: ${x.notShown.join(", ")}` : ""})`;
+  const ZERO = /\b0 (positions?|directions?|position coordinates?|direction coordinates?)\b/;
+
+  // Synthetic: type A offers three out-ports and accepts one; type B accepts three and offers none.
+  const P = (n) => `lens-smoke-n-${n}`;
+  const [A, B] = [P("type-a"), P("type-b")];
+  const g = normalizeEngineGrammar(
+    {
+      nodeTypes: { [A]: {}, [B]: {} },
+      rewriteCategories: {
+        WF90: {
+          ID: "WF90",
+          SrcPort: P("pa"),
+          TgtPort: P("da"),
+          SrcTypes: [A],
+          TgtTypes: [A, B],
+          AdditionalPortPairs: [
+            { SrcPort: P("pb"), TgtPort: P("db"), SrcTypes: [A], TgtTypes: [B] },
+            { SrcPort: P("pc"), TgtPort: P("dc"), SrcTypes: [A], TgtTypes: [B] },
+          ],
+        },
+      },
+      portColors: null,
+    },
+    { source: "lens-smoke", ontology_version: "lens-smoke-n" },
+  );
+  const U = (n) => `urn:moos:node:lens-smoke.n-${n}`;
+  const relUrn = (id) => `urn:moos:relation:lens-smoke.n-${id}`;
+  const node = (n, type) => ({ urn: U(n), label: n, type_id: type, properties: {} });
+  const nrel = (id, s, sp, t, tp) => ({
+    urn: relUrn(id),
+    type_id: "WF90",
+    label: sp,
+    source_urn: U(s),
+    target_urn: U(t),
+    properties: { src_port: sp, tgt_port: tp },
+  });
+  // a2 → a1 → b1 is a chain: a2 and b1 share no relation, so a line or a row joining them is a composite.
+  const synth = {
+    provenance: { grammar: g },
+    nodes: [node("a1", A), node("a2", A), node("a3", A), node("b1", B), node("b2", B), node("c1", B)],
+    relations: [
+      nrel("1", "a1", P("pa"), "b1", P("da")),
+      nrel("2", "a1", P("pa"), "b2", P("da")),
+      nrel("3", "a1", P("pb"), "b1", P("db")),
+      nrel("4", "a1", P("px"), "b2", P("dx")), // an out-port the grammar does not give A
+      nrel("5", "a2", P("pa"), "a1", P("da")), // two arriving on one in-port: two rows (Q2)
+      nrel("6", "a3", P("pa"), "a1", P("da")),
+    ],
+  };
+  /** The held out-ports as runs of rows: [port, how many rows under it], in the order shown. */
+  const portRuns = (frame, shown) => {
+    const label = new Map(frame.relations.map((r) => [r.urn, r.label]));
+    const runs = [];
+    for (const { relation } of shown.leaving) {
+      const p = label.get(relation);
+      if (runs.length && runs[runs.length - 1][0] === p) runs[runs.length - 1][1] += 1;
+      else runs.push([p, 1]);
+    }
+    return runs;
+  };
+  const [a1n, b1n, c1n] = [synth.nodes[0], synth.nodes[3], synth.nodes[5]];
+  const a1 = shownFor(synth, a1n);
+  const b1 = shownFor(synth, b1n);
+  const c1 = shownFor(synth, c1n);
+  check(
+    a1.typeLine === `${A} · 1 direction coordinate · 3 position coordinates` &&
+      b1.typeLine === `${B} · 3 direction coordinates · one position (no coordinate)` &&
+      JSON.stringify(a1.heads) === JSON.stringify(["accepts", "offers"]) &&
+      b1.right.includes("one position (no coordinate)") && c1.right.includes("one position (no coordinate)") &&
+      ![a1, b1, c1].some((s) => ZERO.test(s.html)),
+    `synthetic: the type's line in the Workbench's words — "${a1.typeLine}", "${b1.typeLine}"; the sides ` +
+      `${JSON.stringify(a1.heads)}, the arrivals left of the held out-ports; a type with no out-port shows one position, never "0 positions"`,
+  );
+  check(
+    a1.held === 3 && a1.heldText === "holds 3 out-ports (1 its type does not have)" &&
+      JSON.stringify(a1.ports) === JSON.stringify([P("pa"), P("pb"), P("px")]) &&
+      JSON.stringify(portRuns(synth, a1)) === JSON.stringify([[P("pa"), 2], [P("pb"), 1], [P("px"), 1]]) &&
+      a1.right.includes(`none held on ${P("pc")}`) &&
+      b1.held === 0 && b1.heldText === "holds no out-port",
+    `synthetic: a node of A shows "${a1.heldText}" (data-held ${a1.held}) — its held out-ports ${JSON.stringify(a1.ports)}, ` +
+      `the type's order then the one its type does not have, each with its relations ${JSON.stringify(portRuns(synth, a1))}, ` +
+      `and the one it holds nothing on; a node of B "${b1.heldText}"`,
+  );
+  check(
+    JSON.stringify(a1.arriving.map((x) => x.relation)) === JSON.stringify([relUrn("5"), relUrn("6")]) &&
+      JSON.stringify(b1.arriving.map((x) => x.relation)) === JSON.stringify([relUrn("1"), relUrn("3")]) &&
+      a1.left.split(`>${P("da")}<`).length - 1 === 2,
+    `synthetic: every arriving relation has its own row — two on one in-port of a1 (${a1.arriving.length} rows), ` +
+      `two from one node into b1 (${b1.arriving.length} rows); fan-in is not grouped`,
+  );
+  const synthRows = synth.nodes.map((n) => rowsJoinRelated(synth, n, shownFor(synth, n)));
+  const synthLines = linesAreRelations(synth);
+  check(
+    synthRows.every((x) => x.ok && x.rows === x.want) && synthLines.ok && synthLines.contained === 0,
+    `synthetic: each of the ${synthRows.reduce((s, x) => s + x.rows, 0)} rows of the ${synth.nodes.length} inspectors is one relation ` +
+      `between its node and the node it names (${synthRows.reduce((s, x) => s + x.wrong.length, 0)} other, every relation once); ` +
+      linesWords(synthLines),
+  );
+  // t348 (review of #51, Copilot 4277217181): a frame the automatic layout draws `nested`. Two claims
+  // sit in a domain_tag through the vocabulary's nesting relation (drawn as the container, no line),
+  // and one plain relation joins the claims (a line). Before the fix N counted 1 line against 3
+  // relations and failed on a correct drawing.
+  {
+    const NN = (n) => `urn:moos:claim:lens-smoke.n-nest-${n}`;
+    const nbox = "urn:moos:domain_tag:lens-smoke.n-nest-box";
+    const nestRel = (id, s, sp, t, tp) => ({
+      urn: relUrn(`nest-${id}`),
+      type_id: "WF90",
+      label: sp,
+      source_urn: s,
+      target_urn: t,
+      properties: { src_port: sp, tgt_port: tp },
+    });
+    const nested = {
+      provenance: { grammar: g },
+      nodes: [
+        { urn: NN("c1"), label: "c1", type_id: "claim", properties: {} },
+        { urn: NN("c2"), label: "c2", type_id: "claim", properties: {} },
+        { urn: nbox, label: "nest", type_id: "domain_tag", properties: {} },
+      ],
+      relations: [
+        nestRel("1", NN("c1"), KB_NESTING_PORT, nbox, P("in")),
+        nestRel("2", NN("c2"), KB_NESTING_PORT, nbox, P("in")),
+        nestRel("3", NN("c1"), P("pa"), NN("c2"), P("da")),
+      ],
+    };
+    const nestedLines = linesAreRelations(nested);
+    const nestedRows = nested.nodes.map((n) => rowsJoinRelated(nested, n, shownFor(nested, n)));
+    check(
+      nestedLines.layout === "nested" && nestedLines.contained === 2 && nestedLines.lines === 1 && nestedLines.ok &&
+        nestedRows.every((x) => x.ok && x.rows === x.want) && nestedRows.reduce((s, x) => s + x.rows, 0) === 6,
+      `synthetic, nested: ${linesWords(nestedLines)}; the inspectors still list every relation, ` +
+        `${nestedRows.reduce((s, x) => s + x.rows, 0)} rows, each one relation (${nestedRows.reduce((s, x) => s + x.wrong.length, 0)} other)`,
+    );
+  }
+  // t348 (review of #51, Copilot 4277217231): an out-port is the source port a relation carries, not
+  // its label. A node of A holds one relation on a carried out-port, one legacy relation built
+  // without carried ports (read by its label), and two relations mapped from the engine with NO
+  // src_port and two different target ports (their label is the target port, transform.js
+  // mapRelation). Those two must not become two held out-ports: they show in their own group.
+  {
+    const raw = (id, s, sp, t, tp) => ({
+      urn: relUrn(id),
+      rewrite_category: "WF90",
+      src_urn: U(s),
+      ...(sp ? { src_port: sp } : {}),
+      tgt_urn: U(t),
+      tgt_port: tp,
+    });
+    const legacy = { urn: relUrn("10"), type_id: "WF90", label: P("pb"), source_urn: U("a4"), target_urn: U("b1"), properties: {} };
+    const noSrc = {
+      provenance: { grammar: g },
+      nodes: [...synth.nodes, node("a4", A)],
+      relations: [
+        ...synth.relations,
+        mapRelation(raw("7", "a4", null, "b1", P("dy"))),
+        mapRelation(raw("8", "a4", null, "b2", P("dz"))),
+        mapRelation(raw("9", "a4", P("pa"), "c1", P("da"))),
+        legacy,
+      ],
+    };
+    const a4n = noSrc.nodes[noSrc.nodes.length - 1];
+    const a4 = shownFor(noSrc, a4n);
+    const a4rows = rowsJoinRelated(noSrc, a4n, a4);
+    check(
+      noSrc.relations[6].label === P("dy") && noSrc.relations[7].label === P("dz") &&
+        a4.held === 2 && JSON.stringify(a4.ports) === JSON.stringify([P("pa"), P("pb")]) &&
+        a4.heldText === "holds 2 out-ports · 2 relations on an out-port not known" &&
+        a4.unnamed === 2 && JSON.stringify(a4.unnamedRows) === JSON.stringify([relUrn("7"), relUrn("8")]) &&
+        a4.right.includes("out-port not known") && a4.right.includes(`none held on ${P("pc")}`) &&
+        a4rows.ok && a4rows.rows === 4,
+      `synthetic, no carried source port: two relations without src_port and with target ports ${P("dy")} and ${P("dz")} ` +
+        `(their labels) are ${a4.unnamed} rows under "out-port not known" ${JSON.stringify(a4.unnamedRows)}, not held out-ports; ` +
+        `"${a4.heldText}" (data-held ${a4.held}) — ${JSON.stringify(a4.ports)}, the legacy relation read by its label; ` +
+        `${a4rows.rows} rows, each one relation`,
+    );
+  }
+  // t348 (review of #51, Copilot 4277217207): grouping is linear and pure. A node of A with 2000
+  // relations on one out-port; the array steps nodeInterface takes are counted (every array
+  // iteration — for-of, a spread — goes through Array.prototype[Symbol.iterator]). Copying the
+  // port's array on each append takes about k²/2 steps (2 million), appending about k.
+  {
+    const K = 2000;
+    const f = node("f1", A);
+    const fan = {
+      provenance: { grammar: g },
+      nodes: [f],
+      relations: Array.from({ length: K }, (_, i) => nrel(`fan-${i}`, "f1", P("pa"), `t${i}`, P("da"))),
+    };
+    const order = fan.relations.map((r) => r.urn);
+    const proto = Array.prototype;
+    const iterate = proto[Symbol.iterator];
+    let steps = 0;
+    let fanIfc;
+    proto[Symbol.iterator] = function () {
+      const it = iterate.call(this);
+      return {
+        next: () => {
+          steps += 1;
+          return it.next();
+        },
+        [Symbol.iterator]() {
+          return this;
+        },
+      };
+    };
+    try {
+      fanIfc = ni.nodeInterface(fan, f);
+    } finally {
+      proto[Symbol.iterator] = iterate;
+    }
+    const got = fanIfc.held[0]?.relations ?? [];
+    check(
+      steps <= 2 * K && fanIfc.held.length === 1 && got.length === K &&
+        JSON.stringify(got.map((r) => r.urn)) === JSON.stringify(order) &&
+        got !== fan.relations && JSON.stringify(fan.relations.map((r) => r.urn)) === JSON.stringify(order),
+      `synthetic, ${K} relations on one out-port: grouped in ${steps} array steps (at most ${2 * K}: linear), ` +
+        `in the frame's order, into an array of its own; the frame unchanged`,
+    );
+  }
+  const bare = { nodes: synth.nodes, relations: synth.relations };
+  const a1bare = shownFor(bare, a1n);
+  check(
+    a1bare.typeLine === `${A} · interface not known` && a1bare.held === 3 && a1bare.heldText === "holds 3 out-ports" &&
+      JSON.stringify(a1bare.ports) === JSON.stringify([P("pa"), P("pb"), P("px")]) && a1bare.arriving.length === 2,
+    `synthetic, no grammar: "${a1bare.typeLine}", "${a1bare.heldText}" — the held out-ports by name, the rows as before`,
+  );
+
+  // The saved copy of an engine's `GET /fold` (the shape the live harness reads), never in the repo.
+  const copyPath = process.env.PILOT_STATE_COPY || join(tmpdir(), "t347-primary-state.json");
+  let fold = null;
+  try {
+    fold = JSON.parse(readFileSync(copyPath, "utf8"));
+    if (!fold || typeof fold !== "object" || !fold.nodes || !fold.relations) fold = null;
+  } catch {
+    fold = null;
+  }
+  if (!fold) {
+    console.log(`  [SKIP] no saved fold at ${copyPath} — set PILOT_STATE_COPY to a saved GET /fold`);
+  } else {
+    const rawRelations = Object.values(fold.relations);
+    // The everything sentinel and no access posture: the real transform narrows nothing.
+    const frame = selectFrame(fold, {
+      healthz: { t_day: fold.t, log_len: fold.log_len },
+      request: { view_filter: { types: ["*"] } },
+    });
+    // Counted here from the raw copy: the distinct out-ports a node's relations leave from — the
+    // source port each relation carries (t348, review of #51: a relation with no src_port, or an
+    // empty one, names no out-port and is counted apart, as the inspector shows it).
+    const counted = new Map();
+    const noPort = new Map();
+    for (const r of rawRelations) {
+      if (typeof r.src_port === "string" && r.src_port) {
+        if (!counted.has(r.src_urn)) counted.set(r.src_urn, new Set());
+        counted.get(r.src_urn).add(r.src_port);
+      } else noPort.set(r.src_urn, (noPort.get(r.src_urn) ?? 0) + 1);
+    }
+    const noPortTotal = [...noPort.values()].reduce((s, k) => s + k, 0);
+    const rows = frame.nodes.map((n) => {
+      const shown = shownFor(frame, n);
+      return {
+        n,
+        shown: shown.held,
+        counted: counted.get(n.urn)?.size ?? 0,
+        unnamed: shown.unnamed,
+        noPort: noPort.get(n.urn) ?? 0,
+        join: rowsJoinRelated(frame, n, shown),
+      };
+    });
+    const sessions = rows.filter((x) => x.n.type_id === "session");
+    const hist = {};
+    for (const x of sessions) hist[x.counted] = (hist[x.counted] ?? 0) + 1;
+    const histWords = Object.entries(hist)
+      .sort((x, y) => Number(y[0]) - Number(x[0]))
+      .map(([k, v]) => `${v} holding ${k}`)
+      .join(", ");
+    const off = rows.filter((x) => x.shown !== x.counted || x.unnamed !== x.noPort);
+    check(
+      frame.nodes.length === Object.values(fold.nodes).length && frame.relations.length === rawRelations.length &&
+        sessions.length > 0 && off.length === 0,
+      `saved copy ${copyPath} (log ${fold.log_len}, ${frame.nodes.length} nodes, ${frame.relations.length} relations): ` +
+        `every node shows the out-ports it holds = the count from the copy, by the source port each relation carries, ` +
+        `and its relations with none apart (${rows.length - off.length} of ${rows.length}; ${noPortTotal} relations carry none); ` +
+        `${sessions.length} session nodes: ${histWords}` +
+        (off.length
+          ? ` — differ: ${off.slice(0, 5).map((x) => `${x.n.urn} shows ${x.shown} (+${x.unnamed}), holds ${x.counted} (+${x.noPort})`).join("; ")}`
+          : ""),
+    );
+    // The t344 measure on the Z440 primary at log 713 (the order's numbers); another log prints only.
+    if (fold.log_len === 713) {
+      check(
+        sessions.length === 11 && hist[4] === 7 && hist[1] === 3 && hist[0] === 1 && Object.keys(hist).length === 3 &&
+          sessions.every((x) => x.shown === x.counted),
+        "at log 713 the inspector shows what was measured live at t344: 11 session nodes, 7 holding 4, 3 holding 1, 1 holding 0",
+      );
+    }
+    const badRows = rows.filter((x) => !x.join.ok || x.join.rows !== x.join.want);
+    const copyLines = linesAreRelations(frame);
+    check(
+      badRows.length === 0 && copyLines.ok,
+      `saved copy: each of the ${rows.reduce((s, x) => s + x.join.rows, 0)} inspector rows (${rows.length} nodes) is one relation ` +
+        `between its node and the node it names (${badRows.length} nodes otherwise); ${linesWords(copyLines)}`,
+    );
+  }
+  if (failures === before) pass("N holds");
 }
 
 console.log(
