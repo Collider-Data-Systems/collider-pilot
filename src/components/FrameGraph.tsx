@@ -29,8 +29,9 @@
  *
  * PORT COLOUR (t342 P1, decision 2): by default every relation END is coloured by κ(port),
  * the colour family the engine's `/operad/port-colors` gives it — one hue when both ends
- * share a family, two tones when they do not; exempt, uncoloured and undeclared-pair ends
- * carry glyphs, never a hue (src/ui/port-colour.js). κ comes from the frame's grammar, read
+ * share a family; ends in two families are a fault (t344 PIL-13), drawn grey with a square
+ * midway; exempt, uncoloured and undeclared-pair ends carry glyphs, never a hue
+ * (src/ui/port-colour.js). κ comes from the frame's grammar, read
  * from the engine at run time; nothing of it is written here. The legend's "colour by" switch
  * goes back to the RELATION KIND palette — the knowledge vocabulary's colours and the default
  * line — which is also what a frame without an engine grammar draws, and the legend says so.
@@ -59,7 +60,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import cytoscape from "cytoscape";
-import type { EngineGrammar, HgFrame, HgNode } from "../mcp/types";
+import type { EngineGrammar, HgFrame, HgNode, HgRelation } from "../mcp/types";
+import { conversePorts } from "../mcp/engine-grammar.js";
 import type { GraphLayoutName } from "../state/prefs";
 import { DEFAULT_GRAPH_LAYOUT } from "../state/prefs";
 import {
@@ -73,6 +75,7 @@ import {
   kbRelation,
 } from "../ui/kb-vocab.js";
 import {
+  FAULT_MARKER,
   KAPPA_NEUTRAL,
   KAPPA_STATES,
   UNDECLARED_MARKER,
@@ -318,8 +321,25 @@ const relationsOf = (frame: HgFrame | null) =>
  * When it has several targets the field/topic wins over the module (domain_tag, then
  * program — as kb-view does); a target of any other type — the classification_scheme
  * included — is never a box, and that relation stays a line.
+ * t344 PIL-13 (Copilot on #49): neither is a FAULT — a nesting relation whose ends are in two
+ * colour families under the frame's grammar (isFault). Folded into a box it would draw no grey
+ * line and no square while the legend and the census counted it; it stays a line, in either
+ * palette, so the boxes do not change with the `colour by` switch.
  */
 const NEST_PARENT_RANK: Record<string, number> = { domain_tag: 2, program: 1 };
+
+/**
+ * t344 PIL-13: whether a relation is drawn as a fault in the port-colour palette — its ends in
+ * two colour families under the frame's engine grammar (port-colour.js `twoTone`). False
+ * without the engine's port colours.
+ */
+function isFault(
+  relation: Pick<HgRelation, "label" | "properties">,
+  grammar: EngineGrammar | null | undefined,
+): boolean {
+  const paint = paintRelation(relation, grammar);
+  return paint.palette === "port" && paint.twoTone;
+}
 
 /** Which box each node is drawn inside: node urn -> parent urn (empty = nothing nests). */
 export function nestingParents(frame: HgFrame | null): Map<string, string> {
@@ -327,9 +347,11 @@ export function nestingParents(frame: HgFrame | null): Map<string, string> {
   if (!KB_NESTING_PORT) return parents;
   const typeOf = new Map(nodesOf(frame).map((n) => [n.urn, n.type_id]));
   const rankOf = new Map<string, number>();
+  const grammar = frame?.provenance?.grammar;
   for (const r of relationsOf(frame)) {
     if (r.label !== KB_NESTING_PORT || r.source_urn === r.target_urn) continue;
     if (!typeOf.has(r.source_urn)) continue;
+    if (isFault(r, grammar)) continue; // t344 PIL-13: a fault stays a line
     const rank = NEST_PARENT_RANK[typeOf.get(r.target_urn) ?? ""] ?? 0;
     if (!rank) continue;
     const prevRank = rankOf.get(r.source_urn) ?? 0;
@@ -525,8 +547,13 @@ export function toElements(
   const grammar = frame.provenance?.grammar;
   const edges: cytoscape.ElementDefinition[] = relationsOf(frame)
     .filter((r) => nodeUrns.has(r.source_urn) && nodeUrns.has(r.target_urn))
-    // t337: a nesting relation the box already shows is not drawn again as a line.
-    .filter((r) => !(r.label === KB_NESTING_PORT && parents.get(r.source_urn) === r.target_urn))
+    // t337: a nesting relation the box already shows is not drawn again as a line. t344
+    // PIL-13: a fault never is the box (nestingParents), so it is always drawn — also beside a
+    // second, boxed relation between the same two nodes.
+    .filter(
+      (r) =>
+        !(r.label === KB_NESTING_PORT && parents.get(r.source_urn) === r.target_urn && !isFault(r, grammar)),
+    )
     .map((r) => ({
       group: "edges",
       data: {
@@ -559,7 +586,7 @@ function structureKey(elements: cytoscape.ElementDefinition[]): string {
 }
 
 /** t342 P1: the relation data the port-colour style reads (port-colour.js kappaRelationData). */
-const KAPPA_KEYS = ["ks", "kt", "kss", "kts", "kpair"];
+const KAPPA_KEYS = ["ks", "kt", "kss", "kts", "kpair", "kfault"];
 
 /** Update the data styling reads, in place — no element is added, removed or moved. */
 function syncData(cy: cytoscape.Core, el: cytoscape.ElementDefinition): void {
@@ -577,7 +604,7 @@ function syncData(cy: cytoscape.Core, el: cytoscape.ElementDefinition): void {
   }
 }
 
-interface LegendRelationRow {
+export interface LegendRelationRow {
   port: string;
   count: number;
   /** How many of them are shown as a box instead of a line. */
@@ -587,6 +614,8 @@ interface LegendRelationRow {
   kt: string | null;
   /** t342 P1: how many of them sit on a pair the engine does not declare. */
   undeclared: number;
+  /** t344 PIL-13: how many of them have their ends in two colour families — drawn as a fault. */
+  fault: number;
 }
 interface LegendNodeRow {
   key: string;
@@ -602,7 +631,7 @@ interface LegendNodeRow {
  * an alphabetical cut hid the dominant types under the wide lenses. A claim type is
  * listed per vocabulary kind, in vocabulary order.
  */
-function legendOf(
+export function legendOf(
   frame: HgFrame,
   parents: Map<string, string>,
 ): { relations: LegendRelationRow[]; nodes: LegendNodeRow[] } {
@@ -615,10 +644,17 @@ function legendOf(
     const paint = kappaRelationData(paintRelation(r, grammar));
     const row =
       ports.get(r.label) ??
-      { port: r.label, count: 0, boxed: 0, ks: paint?.ks ?? null, kt: paint?.kt ?? null, undeclared: 0 };
+      { port: r.label, count: 0, boxed: 0, ks: paint?.ks ?? null, kt: paint?.kt ?? null, undeclared: 0, fault: 0 };
     row.count += 1;
     if (paint?.kpair === "undeclared") row.undeclared += 1;
-    if (r.label === KB_NESTING_PORT && parents.get(r.source_urn) === r.target_urn) row.boxed += 1;
+    if (paint?.kfault === "fault") row.fault += 1;
+    if (
+      r.label === KB_NESTING_PORT &&
+      parents.get(r.source_urn) === r.target_urn &&
+      paint?.kfault !== "fault" // t344 PIL-13: a fault is drawn as a line, never as the box
+    ) {
+      row.boxed += 1;
+    }
     ports.set(r.label, row);
   }
   const boxTypes = new Set([...parents.values()].map((urn) => typeOf.get(urn)));
@@ -1532,23 +1568,21 @@ export const STYLE: cytoscape.StylesheetStyle[] = [
       },
     };
   }),
-  // t342 P1 PORT COLOUR (the default palette, decision 2): each end in κ(port) — one hue, or
-  // two tones split at the middle — and the three non-colour states as glyphs on a neutral
-  // grey, never a hue (port-colour.js: source ⊣ / ○, target ▸⊣ / ○▸, undeclared pair dotted
-  // with a hollow ◇ midway). The class `kappa` is on every relation while the palette is port
-  // colour; without it the relation-kind rules above draw. The port name is on the line here
-  // (the colour no longer names a knowledge port), held to the label cut like every label.
+  // t342 P1 PORT COLOUR (the default palette, decision 2): each end in κ(port), one hue for
+  // the line, and the non-colour states as glyphs on a neutral grey, never a hue
+  // (port-colour.js: source ⊣ / ○, target ▸⊣ / ○▸, undeclared pair dotted with a hollow ◇
+  // midway). t344 PIL-13: ends in two colour families are a fault, no longer two tones — the
+  // line and both ends grey (ks = kt = the grey) with a filled ■ midway, the mid-SOURCE arrow,
+  // so it stands beside an undeclared pair's ◇ (the mid-target arrow) when both apply. The
+  // class `kappa` is on every relation while the palette is port colour; without it the
+  // relation-kind rules above draw. The port name is on the line here (the colour no longer
+  // names a knowledge port), held to the label cut like every label.
   {
     selector: "edge.kappa",
     style: {
       width: 1.6,
       label: "data(label)",
       "line-color": "data(ks)",
-      "line-fill": (e: cytoscape.EdgeSingular) =>
-        e.data("ks") === e.data("kt") ? "solid" : "linear-gradient",
-      "line-gradient-stop-colors": (e: cytoscape.EdgeSingular) =>
-        `${e.data("ks")} ${e.data("ks")} ${e.data("kt")} ${e.data("kt")}`,
-      "line-gradient-stop-positions": "0 50 50 100",
       "line-style": (e: cytoscape.EdgeSingular) =>
         e.data("kpair") === "undeclared" ? UNDECLARED_MARKER.lineStyle : "solid",
       "source-arrow-shape": "data(kss)",
@@ -1564,6 +1598,10 @@ export const STYLE: cytoscape.StylesheetStyle[] = [
         e.data("kpair") === "undeclared" ? UNDECLARED_MARKER.midGlyph : "none",
       "mid-target-arrow-color": KAPPA_NEUTRAL,
       "mid-target-arrow-fill": "hollow",
+      "mid-source-arrow-shape": (e: cytoscape.EdgeSingular) =>
+        e.data("kfault") === "fault" ? FAULT_MARKER.midGlyph : "none",
+      "mid-source-arrow-color": KAPPA_NEUTRAL,
+      "mid-source-arrow-fill": "filled",
     } as unknown as cytoscape.Css.Edge,
   },
   {
@@ -1571,7 +1609,6 @@ export const STYLE: cytoscape.StylesheetStyle[] = [
     style: {
       "line-color": "#6366f1",
       "target-arrow-color": "#6366f1",
-      "line-fill": "solid", // t342 P1: a two-tone relation is selected in one colour too
     },
   },
   {
@@ -1627,13 +1664,10 @@ function relationSwatch(
   row: LegendRelationRow,
   portColour: boolean,
 ): { background: string; height: number } {
-  // t342 P1: in port colour, the row's first relation — one hue, or its two tones.
-  if (portColour && row.ks && row.kt) {
-    return {
-      background:
-        row.ks === row.kt ? row.ks : `linear-gradient(90deg, ${row.ks} 0 50%, ${row.kt} 50% 100%)`,
-      height: 2,
-    };
+  // t342 P1: in port colour, the row's first relation in its one colour (t344 PIL-13: a fault
+  // is grey, never two tones).
+  if (portColour && row.ks) {
+    return { background: row.ks, height: 2 };
   }
   const port = row.port;
   const s = kbPortStyle(port);
@@ -1646,16 +1680,60 @@ function relationSwatch(
   };
 }
 
-/** The legend tooltip for a port: both port names, the count, what the vocabulary says. */
-function relationTitle({ port, count, boxed, undeclared }: LegendRelationRow): string {
-  const converse = kbConversePort(port);
-  const names = converse && converse !== port ? `${port} / ${converse}` : port;
+/**
+ * t344 PIL-14: what a port is called read from the relation's OTHER end — the knowledge
+ * vocabulary's converse first (its own declaration, as before), then every port the engine's
+ * declared pairs put opposite it (engine-grammar.js conversePorts), " / " between them when
+ * there are several: 4.0.9 declares one port on two pairs and its converse reads both names,
+ * `a / b`, the honest non-function, never one of the two picked. Null for a port no
+ * declared pair names (or a frame without an engine grammar). Exported for `smoke:lens` K.
+ */
+export function converseName(port: string, grammar: EngineGrammar | null | undefined): string | null {
+  const kb = kbConversePort(port);
+  if (kb) return kb;
+  const names = conversePorts(grammar, port);
+  return names.length > 0 ? names.join(" / ") : null;
+}
+
+/**
+ * t337: what a relation is called read from its TARGET end — the converse port. t344 PIL-14:
+ * the knowledge vocabulary's converse first; then the port the relation itself carries at that
+ * end (`tgt_port`, transform.js mapRelation — what THIS relation says, also on a pair the engine
+ * does not declare or one of a port declared on several pairs); then the engine's declared
+ * pairs (converseName); without any of them, the relation's label. Exported for the inspector
+ * and `smoke:lens` K.
+ */
+export function conversePortOf(
+  relation: Pick<HgRelation, "label" | "properties">,
+  grammar: EngineGrammar | null | undefined,
+): string {
+  const kb = kbConversePort(relation.label);
+  if (kb) return kb;
+  const carried = relation.properties?.tgt_port;
+  if (typeof carried === "string" && carried) return carried;
+  return converseName(relation.label, grammar) ?? relation.label;
+}
+
+/**
+ * The legend tooltip for a port: the port and its converse, the count, what the vocabulary
+ * says. t344 PIL-14: the converse from the engine's grammar too, not only the knowledge
+ * vocabulary's — `p (from the other end: a / b)` for 4.0.9's port on two pairs. Exported for
+ * `smoke:lens` K.
+ */
+export function relationTitle(
+  { port, count, boxed, undeclared, fault }: LegendRelationRow,
+  grammar?: EngineGrammar | null,
+): string {
+  const converse = converseName(port, grammar);
+  const names = converse && converse !== port ? `${port} (from the other end: ${converse})` : port;
   const drawn = boxed > 0 ? ` (${boxed} drawn as boxes, ${count - boxed} as lines)` : "";
   const says = kbRelation(port)?.description;
   // t342 P1: the pair state, a pair check only (the workbench's check 8 rules on admission).
   // t342 PIL-9: in the shared words — "pair not declared".
   const pairs = undeclared > 0 ? ` · ${undeclared} with a pair not declared` : "";
-  return `${names} · ${count}${drawn}${pairs}${says ? ` — ${says}` : ""}`;
+  // t344 PIL-13: in the legend's words — "two colours: a fault".
+  const faults = fault > 0 ? ` · ${fault} with two colours: a fault` : "";
+  return `${names} · ${count}${drawn}${pairs}${faults}${says ? ` — ${says}` : ""}`;
 }
 
 /** The shared name of a non-colour state (KAPPA_STATES), for the inspector and the legend. */
@@ -2123,6 +2201,9 @@ export function FrameGraph({
     (boxCount > 0 ? `, boxes of ${countOf(boxCount, "kind")}` : "") +
     (plan.unlinked > 0 ? `, ${plan.unlinked} unlinked in a band` : "") +
     (portColour ? ", relation ends coloured by port" : ", relations coloured by kind") +
+    (portColour && kappa.census.twoTone > 0
+      ? `, ${countOf(kappa.census.twoTone, "relation")} with two colours drawn as a fault`
+      : "") +
     (hiddenCount > 0 ? `, ${hiddenCount} legend rows hidden` : "");
 
   return (
@@ -2286,18 +2367,22 @@ export function FrameGraph({
                 </span>
               ))}
               {KAPPA_STATES.map((st) => {
+                // t344 PIL-13: the fault is counted per relation, like the undeclared pair.
+                const perRelation = st.state === "undeclared" || st.state === "fault";
                 const n =
                   st.state === "exempt"
                     ? kappa.census.exempt
                     : st.state === "uncoloured"
                       ? kappa.census.uncoloured
-                      : kappa.census.undeclared;
+                      : st.state === "fault"
+                        ? kappa.census.twoTone
+                        : kappa.census.undeclared;
                 return (
                   <span
                     key={st.state}
                     className="legend-item legend-kappa-state"
                     data-testid={`legend-state-${st.state}`}
-                    title={`${st.label} · ${n} ${st.state === "undeclared" ? "relation" : "port end"}${n === 1 ? "" : "s"} — ${st.title}`}
+                    title={`${st.label} · ${n} ${perRelation ? "relation" : "port end"}${n === 1 ? "" : "s"} — ${st.title}`}
                   >
                     <span className="legend-glyph" aria-hidden="true">
                       {st.glyph}
@@ -2316,7 +2401,7 @@ export function FrameGraph({
                 key={row.port}
                 className="legend-item"
                 data-testid={`legend-port-${row.port}`}
-                title={relationTitle(row)}
+                title={relationTitle(row, grammar)}
               >
                 <input
                   type="checkbox"
@@ -2328,6 +2413,11 @@ export function FrameGraph({
                 {portColour && row.undeclared > 0 && (
                   <span className="legend-glyph" aria-label={kappaStateLabel("undeclared")}>
                     ◇
+                  </span>
+                )}
+                {portColour && row.fault > 0 && (
+                  <span className="legend-glyph" aria-label={kappaStateLabel("fault")}>
+                    ■
                   </span>
                 )}
                 <span className="legend-count">{row.count}</span>

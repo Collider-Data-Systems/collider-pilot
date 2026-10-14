@@ -15,28 +15,21 @@
  * t342 PIL-6: the port NAME is written in ink and the colour sits in a dot beside it — a name
  * written in its hue failed 4.5:1 on the pane (three of the engine's families, 3.50 to 4.46).
  * PIL-9: the tooltip uses the shared state words (no colour, exempt, pair not declared).
+ * t344 PIL-13: a relation whose ends are in two colour families is drawn as a fault, grey at
+ * both ends; its row's dot is that grey and its tooltip says "two colours: a fault".
+ * t344 PIL-14: an incoming relation's name from this end falls back to the engine's declared
+ * pairs (FrameGraph conversePortOf) before the label: the knowledge vocabulary's converse
+ * first, then the relation's own `tgt_port`, then the engine's grammar.
  */
 
 import { useRef, useState } from "react";
-import type { HgFrame, HgNode, HgProperties, HgRelation } from "../mcp/types";
-import { KB_VOCAB_VERSION, kbConversePort, kbPortStyle } from "../ui/kb-vocab.js";
+import type { HgFrame, HgNode, HgProperties } from "../mcp/types";
+import { KB_VOCAB_VERSION, kbPortStyle } from "../ui/kb-vocab.js";
 import { hasPortColours, paintRelation } from "../ui/port-colour.js";
-import { kappaStateLabel, type RelationPalette } from "./FrameGraph";
+import { conversePortOf, kappaStateLabel, type RelationPalette } from "./FrameGraph";
 
 /** The property shown as a paragraph instead of a table row (t337). */
 const TEXT_PROPERTY = "text";
-
-/**
- * t337: what a relation is called read from its TARGET end — the converse port. The
- * knowledge vocabulary declares it; every other relation carries it as `tgt_port`
- * (transform.js mapRelation). Without either, the relation keeps its label.
- */
-function conversePortOf(relation: HgRelation): string {
-  const declared = kbConversePort(relation.label);
-  if (declared) return declared;
-  const carried = relation.properties?.tgt_port;
-  return typeof carried === "string" && carried ? carried : relation.label;
-}
 
 function PropertyRows({ properties, omit }: { properties: HgProperties; omit?: string }) {
   const keys = Object.keys(properties).filter((k) => k !== omit);
@@ -188,14 +181,15 @@ export function NodeInspector({
               // port). t342 P1 (review): it takes the colour the graph draws that end in —
               // κ of that port in port colour (a state end is the neutral grey), the
               // vocabulary's colour of a knowledge port in relation kind.
-              const port = outgoing ? r.label : conversePortOf(r);
+              const port = outgoing ? r.label : conversePortOf(r, grammar);
               const paint = portColour ? paintRelation(r, grammar) : null;
               const kappa = paint && paint.palette === "port" ? paint : null;
               const end = kappa ? (outgoing ? kappa.src : kappa.tgt) : null;
               const color = end ? end.hue : kbPortStyle(r.label)?.color;
               const colourNote = end
                 ? `colour family: ${end.state === "colour" ? end.family : kappaStateLabel(end.state)}` +
-                  (kappa?.pair === "undeclared" ? ` · ${kappaStateLabel("undeclared")}` : "")
+                  (kappa?.pair === "undeclared" ? ` · ${kappaStateLabel("undeclared")}` : "") +
+                  (kappa?.twoTone ? ` · ${kappaStateLabel("fault")}` : "")
                 : color
                   ? `relation kind (kb-vocab ${KB_VOCAB_VERSION})`
                   : null;

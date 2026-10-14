@@ -7,8 +7,13 @@
  * and never written here:
  *
  *   - both ends in one family  -> one hue for the whole line;
- *   - two families              -> two tones: the source half in κ(src_port), the target half
- *                                  in κ(tgt_port);
+ *   - two families              -> a FAULT (t344 PIL-13): no declared pair of the engines read at
+ *                                  t344 joins two families (mtdc-lab#28 (a): 0 on 4.0.9 and on
+ *                                  mtdc-2.2.0), so a relation whose ends are in two families — or
+ *                                  with a family at one end and none at the other — is drawn as
+ *                                  one: a neutral line with a filled square midway, no family hue
+ *                                  at either end. Family hues go only on one-colour relations.
+ *                                  (Before t344 it was drawn in two tones, as a feature.)
  *   - three states are NOT colours and never get a hue — a neutral grey plus a glyph of their
  *     own at that end, or on the line:
  *       exempt      κ = ""            (98f2ccc kernels on 4.0.x)      source ⊣ tee · target ▸⊣
@@ -69,10 +74,19 @@ export const END_GLYPHS = Object.freeze({
 export const UNDECLARED_MARKER = Object.freeze({ lineStyle: "dotted", midGlyph: "diamond" });
 
 /**
- * The three non-colour states, as the legend names them. t342 PIL-9: the labels are the words
+ * t344 PIL-13: the marker of a fault — a relation whose two ends are in two colour families (or
+ * one in a family, one in none). The whole line and both ends in the neutral grey, a filled
+ * square midway. It is drawn as the MID-SOURCE arrow, the undeclared diamond as the mid-target
+ * one, so a fault on an undeclared pair shows both side by side (◇■) on a dotted line.
+ */
+export const FAULT_MARKER = Object.freeze({ midGlyph: "square" });
+
+/**
+ * The non-colour states, as the legend names them. t342 PIL-9: the labels are the words
  * the pilot, the Workbench and the manual share — "no colour", "exempt", "pair not declared" —
  * and the tooltips are plain: no κ, no commit hash, no API path, no src_port. The `state` keys
- * are the code's own and did not change.
+ * are the code's own and did not change. t344 PIL-13 adds the fault, a state of the relation
+ * like the undeclared pair: "two colours: a fault".
  */
 export const KAPPA_STATES = Object.freeze([
   Object.freeze({
@@ -93,6 +107,13 @@ export const KAPPA_STATES = Object.freeze([
     glyph: "◇",
     title:
       "the two ports of this relation are on no pair the engine declares — a pair check only; the Workbench rules on admission",
+  }),
+  Object.freeze({
+    state: "fault",
+    label: "two colours: a fault",
+    glyph: "■",
+    title:
+      "the two ends of this relation are in two colour families, or one end has a family and the other none — drawn grey with a square midway, in neither family's colour; a family's colour goes only on a relation whose two ends share it",
   }),
 ]);
 
@@ -145,6 +166,12 @@ function hueMap(grammar) {
  *   pair: "declared" | "undeclared",
  *   twoTone: boolean,
  * } | { palette: "kind" }} RelationPaint
+ *
+ * `twoTone` (t344 PIL-13): the ends are in two colour families — `src.family !== tgt.family`,
+ * a family at one end and none at the other included. Such a relation is a FAULT: both ends'
+ * `hue` is the neutral grey (each keeps its own `state`, `family` and end glyph), so every
+ * reader of `hue` — the graph, the legend's swatch, the inspector's dot — draws it without a
+ * family hue. Two ends without a family (exempt and uncoloured, say) are not two colours.
  */
 
 /**
@@ -179,20 +206,28 @@ export function paintRelation(relation, grammar) {
   };
   const src = end(srcPort, "source");
   const tgt = end(tgtPort, "target");
+  // t344 PIL-13: two families are a fault, drawn without a family hue at either end.
+  const twoTone = src.family !== tgt.family;
+  if (twoTone) {
+    src.hue = KAPPA_NEUTRAL;
+    tgt.hue = KAPPA_NEUTRAL;
+  }
   return {
     palette: "port",
     src,
     tgt,
     pair: isDeclaredPair(grammar, srcPort, tgtPort) ? "declared" : "undeclared",
-    twoTone: src.state !== tgt.state || src.family !== tgt.family,
+    twoTone,
   };
 }
 
 /**
  * The data FrameGraph gives each drawn relation for the port-colour style (the Cytoscape `edge.kappa` selector), or
- * null in the relation-kind palette. Hues and glyphs only — no family name, no port.
+ * null in the relation-kind palette. Hues and glyphs only — no family name, no port. `ks` and
+ * `kt` are always one colour since t344 (a fault is grey at both ends); `kfault` is "fault" for
+ * a relation in two families (FAULT_MARKER midway), "none" otherwise.
  * @param {RelationPaint} paint
- * @returns {{ ks: string, kt: string, kss: string, kts: string, kpair: string } | null}
+ * @returns {{ ks: string, kt: string, kss: string, kts: string, kpair: string, kfault: string } | null}
  */
 export function kappaRelationData(paint) {
   if (paint.palette !== "port") return null;
@@ -202,12 +237,15 @@ export function kappaRelationData(paint) {
     kss: paint.src.glyph,
     kts: paint.tgt.glyph,
     kpair: paint.pair,
+    kfault: paint.twoTone ? "fault" : "none",
   };
 }
 
 /**
  * Counts for the legend and the smokes: ends per colour family, ends per state, relations on
- * an undeclared pair, two-tone relations, and relations left in the relation-kind palette.
+ * an undeclared pair, two-tone relations (each drawn as a fault since t344: the legend's
+ * "two colours: a fault" count), and relations left in the relation-kind palette. A fault's
+ * ends are still counted under their families — the family is the port's, not the line's.
  * @param {Pick<HgRelation, "label" | "properties">[]} relations
  * @param {EngineGrammar | null | undefined} grammar
  */

@@ -150,10 +150,14 @@ no arrowhead when it is self-converse; a claim always takes the colour of its ki
 other layout the graph is flat and the nesting relation is a line like the rest.
 
 **Port colours (t342).** By default each relation END is drawn in the colour family its port
-has on the engine's `/operad/port-colors` (κ): one hue when both ends share a family, two
-tones when they do not, and three states that are no colour get a glyph instead — exempt
-(`κ = ""`), uncoloured (a port the map does not know) and undeclared pair (a pair the engine's
-`/operad/rewrite-categories` does not declare; dotted). The legend's `colour by` switch goes
+has on the engine's `/operad/port-colors` (κ): one hue when both ends share a family, and
+three states that are no colour get a glyph instead — exempt (`κ = ""`), uncoloured (a port
+the map does not know) and undeclared pair (a pair the engine's `/operad/rewrite-categories`
+does not declare; dotted, `◇` midway). Ends in two families — or a family at one end and none
+at the other — are a fault since t344 (PIL-13): no declared pair joins two families, so the
+line is drawn grey, both ends too, with a filled `■` midway, and the legend's row reads *two
+colours: a fault*; a family's hue goes only on a relation whose two ends share it (it was
+drawn in two tones before). The legend's `colour by` switch goes
 back to the relation-kind palette above. The grammar is read from the engine at run time
 (`src/mcp/engine-grammar.js`, cached per engine and ontology version) and the advanced drawer
 adds what it declares — types and ports the static lists do not name, and the fold's labels
@@ -165,13 +169,15 @@ Under the graph a bar holds the legend toggle — it states the frame's node and
 totals — zoom `−` / `+`, `fit` and `re-layout`. `fit` always shows everything: the zoom
 floor of 0.2 drops to what the fit needs, on every layout. The legend lists every relation
 port and node kind in the frame with its count and a checkbox that hides it without
-re-reading the frame. It opens by itself only in a window at least 640 px wide and on a
+re-reading the frame; a relation row's tooltip names the port's converse from the engine's
+declared pairs, not only the knowledge vocabulary's (t344 PIL-14) — the one port 4.0.9
+declares on two pairs reads both converse names, `p (from the other end: a / b)`. It opens by itself only in a window at least 640 px wide and on a
 frame that draws knowledge relations (their lines carry no port text); everywhere else it
 starts closed and the canvas keeps its height. Open, it grows to its rows (the panel
 scrolls) instead of scrolling inside a 110 px box, and it speaks the six words the pilot, the
 Workbench and the manual share — *colour family*, *port end*, *no colour*, *exempt*, *pair
 not declared*, *port on no pair* — with no κ, commit hash, route or `src_port` in a tooltip
-(t342 hand-off C). An unticked row stays unticked on the other
+(t342 hand-off C), and since t344 a fourth state row, *two colours: a fault*. An unticked row stays unticked on the other
 lenses — the bar counts them and `show all` ticks every row back — and ticking back a node
 kind the layout last ran without runs the layout again, so its nodes get a place.
 
@@ -211,7 +217,9 @@ other end off the canvas). `Apply` therefore no longer stands beside `find`: it 
 `view_filter · advanced` drawer with the staged type / port ticks and the `t_day ≤` bound it
 applies.
 The inspector shows a node's `text` as a paragraph above its property table, names an
-incoming relation by its converse port (`← has-part`), writes the port name in ink with a dot
+incoming relation by its converse port (`← has-part`: the knowledge vocabulary's, else the port
+the relation carries at that end, else — since t344, PIL-14 — the ports the engine's declared
+pairs put opposite it), writes the port name in ink with a dot
 in the colour the graph draws that end in (a name written in its hue failed 4.5:1), and a
 click on a relation row selects the other node, centres the graph on
 it and shows it from the top of the inspector. In a drawing with boxes, centring — a find

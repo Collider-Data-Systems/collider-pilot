@@ -46,7 +46,12 @@
  *      at the timeout (absent, unreachable, kept for the back-off only).
  *      (t342 P1 review) What is DRAWN, not only the paint plan: FrameGraph's real toElements,
  *      STYLE and applyPalette in headless Cytoscape — every relation in port colour carries
- *      its κ and is drawn in it, and none after the switch to relation kind. No κ hue nor the
+ *      its κ and is drawn in it, and none after the switch to relation kind.
+ *      (t344 PIL-13) Two families are a fault, not two tones: every relation of the fixture
+ *      whose ends are in two colour families (read from the synthetic port_colors here, not
+ *      from the painter) is drawn grey — line and both ends — with the fault square midway,
+ *      no other relation is, no line is drawn in two tones, and kappaCensus.twoTone equals
+ *      the number drawn as a fault. No κ hue nor the
  *      state grey within OKLab ΔE 3 of a node fill, and no close pair beyond those TESTING.md
  *      records. An engine without port colours keeps its pairs and types.
  *   I. (t342 P6) The drawer offers the static groups (A-C) first, then the types and source
@@ -81,6 +86,18 @@
  *      silent pass). The `↗N` marker is asserted as DRAWN: exactly one box carries one, box-b,
  *      and its label ends in ↗2. And a selection changes no measured label box: the frame
  *      laid out with a node selected gives every position the plain run gives.
+ *   K. (t344 PIL-14) The converse of every port from the ENGINE's declared pairs, through the
+ *      real engine-grammar.js conversePorts and FrameGraph's converseName / conversePortOf /
+ *      relationTitle (the legend tooltip and the inspector's name from the other end): on a
+ *      synthetic grammar — a function, a self-converse port, a port on two pairs shown as
+ *      both names, the knowledge vocabulary's converse first, a relation's own tgt_port
+ *      before the grammar — and on two RECORDED grammars read from outside this public repo
+ *      (no operad data is copied in; each file is identified by its sha256, and a missing or
+ *      changed file prints SKIP): mtdc-2.2.0, where each of the 89 pair names maps to one
+ *      converse and back (†† = id) and 5 map to themselves, and 4.0.9, where exactly one port
+ *      is on two pairs and reads both its converse names — the honest non-function. No engine
+ *      port name is written here (Copilot on #49): the recorded file is pinned by sha256, so
+ *      that port and its two converses are derived from it.
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -96,11 +113,11 @@
 
 import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { delimiter, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import cytoscape from "cytoscape";
-import { KB_CLAIM_KINDS, KB_NESTING_PORT, KB_PORTS, KB_RELATIONS, kbPortStyle } from "../src/ui/kb-vocab.js";
+import { KB_CLAIM_KINDS, KB_NESTING_PORT, KB_PORTS, KB_RELATIONS, kbConversePort, kbPortStyle } from "../src/ui/kb-vocab.js";
 // t342 P2: the component layout, as FrameGraph runs it.
 import {
   COSE_MAX_ITER,
@@ -118,6 +135,7 @@ import { selectFrame } from "../src/mcp/transform.js";
 // t342 P1/P6: the engine-grammar normaliser and the port-colour painter, as the panel runs them.
 import {
   clearEngineGrammarCache,
+  conversePorts,
   grammarGap,
   isPlaceholderPort,
   normalizeEngineGrammar,
@@ -125,6 +143,7 @@ import {
 } from "../src/mcp/engine-grammar.js";
 import {
   END_GLYPHS,
+  FAULT_MARKER,
   KAPPA_HUES,
   KAPPA_NEUTRAL,
   UNDECLARED_MARKER,
@@ -209,13 +228,15 @@ async function loadFrameGraph() {
 /**
  * t342 P1 (review): what FrameGraph is asked to DRAW — its real toElements, STYLE and
  * applyPalette in headless Cytoscape (no canvas, nothing mounts). In port colour every
- * relation must carry the `kappa` class and its κ data and be drawn in them: its hue (one, or
- * two tones split at the middle), its end glyphs, the undeclared-pair marker, and a neutral
- * end always with its state's glyph. After the switch to relation kind none may: the
- * knowledge vocabulary's colour, or the default line. `smoke:live` (i) runs the same on the
- * live fold.
+ * relation must carry the `kappa` class and its κ data and be drawn in them: its one colour
+ * (line and both ends; t344 PIL-13: never two tones), its end glyphs, the undeclared-pair
+ * marker, and — on a relation that is not a fault — a neutral end always with its state's
+ * glyph. A fault (`kfault`) is drawn grey, line and ends, with FAULT_MARKER midway; no other
+ * relation carries the marker. `port.fault` lists the ids drawn so. After the switch to
+ * relation kind none may: the knowledge vocabulary's colour, or the default line.
+ * `smoke:live` (i) runs the same on the live fold.
  */
-function drawCheck(fg, frame) {
+function drawCheck(fg, frame, elements = fg.toElements(frame, new Map(), new Set())) {
   const rgb = (hex) => [0, 2, 4].map((i) => parseInt(String(hex).replace("#", "").slice(i, i + 2), 16)).join();
   const col = (v) => (Array.isArray(v) ? v.join() : String(v));
   const kappaRgb = new Set([...KAPPA_HUES, KAPPA_NEUTRAL].map(rgb));
@@ -224,13 +245,13 @@ function drawCheck(fg, frame) {
   const cy = cytoscape({
     headless: true,
     styleEnabled: true,
-    elements: fg.toElements(frame, new Map(), new Set()),
+    elements,
     style: fg.STYLE,
   });
   const val = (e, k) => e.pstyle(k).value;
   try {
     fg.applyPalette(cy, true);
-    const port = { edges: 0, kind: 0, wrong: [] };
+    const port = { edges: 0, kind: 0, wrong: [], fault: [] };
     cy.edges().forEach((e) => {
       port.edges += 1;
       const d = e.data();
@@ -239,22 +260,32 @@ function drawCheck(fg, frame) {
         return;
       }
       const [ks, kt] = [rgb(d.ks), rgb(d.kt)];
-      const stops = val(e, "line-gradient-stop-colors").map(col);
       const undeclared = d.kpair === "undeclared";
+      const fault = d.kfault === "fault";
+      const line = col(val(e, "line-color"));
+      const ends = [col(val(e, "source-arrow-color")), col(val(e, "target-arrow-color"))];
+      // t344 PIL-13: drawn as a fault — the line and both ends grey, the square midway.
+      const drawnFault =
+        val(e, "mid-source-arrow-shape") === FAULT_MARKER.midGlyph &&
+        val(e, "mid-source-arrow-fill") === "filled" &&
+        line === neutral && ends.every((c) => c === neutral);
       const ok =
-        (ks === kt
-          ? val(e, "line-fill") === "solid" && col(val(e, "line-color")) === ks
-          : val(e, "line-fill") === "linear-gradient" && stops[0] === ks && stops[stops.length - 1] === kt) &&
-        kappaRgb.has(ks) && kappaRgb.has(kt) &&
+        // one colour for the line and both ends — no relation is drawn in two tones
+        ks === kt && val(e, "line-fill") === "solid" && line === ks && ends.every((c) => c === ks) &&
+        kappaRgb.has(ks) &&
         val(e, "source-arrow-shape") === d.kss && val(e, "target-arrow-shape") === d.kts &&
         // both ends of the uncoloured state are hollow, every other end filled (Copilot on #46)
         val(e, "source-arrow-fill") === (d.kss === END_GLYPHS.source.uncoloured ? "hollow" : "filled") &&
         val(e, "target-arrow-fill") === (d.kts === END_GLYPHS.target.uncoloured ? "hollow" : "filled") &&
-        (ks === neutral) === (d.kss !== END_GLYPHS.source.colour) &&
-        (kt === neutral) === (d.kts !== END_GLYPHS.target.colour) &&
+        (fault
+          ? drawnFault
+          : val(e, "mid-source-arrow-shape") === "none" &&
+            (ks === neutral) === (d.kss !== END_GLYPHS.source.colour) &&
+            (kt === neutral) === (d.kts !== END_GLYPHS.target.colour)) &&
         val(e, "line-style") === (undeclared ? UNDECLARED_MARKER.lineStyle : "solid") &&
         val(e, "mid-target-arrow-shape") === (undeclared ? UNDECLARED_MARKER.midGlyph : "none");
       if (!ok) port.wrong.push(String(d.label));
+      if (drawnFault) port.fault.push(String(d.id));
     });
     fg.applyPalette(cy, false);
     const kind = { edges: 0, port: 0, wrong: [] };
@@ -596,8 +627,9 @@ for (const [name, frame, want] of bandCases) {
 // synthetic relations only (the repo is public: no operad data, no colour map, no mtdc-only
 // name), run through the REAL normaliser (engine-grammar.js) and painter (port-colour.js) —
 // the code the worker's adapter and FrameGraph run. Each of the three non-colour states gets
-// its own glyph and no hue; two families give a two-tone relation.
-console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three glyphs (synthetic)");
+// its own glyph and no hue; two families give a fault (t344 PIL-13: grey, ■ midway — it was a
+// two-tone relation before).
+console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two colours a fault (synthetic)");
 {
   const before = failures;
   const P = (n) => `lens-smoke-${n}`;
@@ -614,6 +646,7 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
           { SrcPort: P("b-out"), TgtPort: P("x-out") }, // exempt target end
           { SrcPort: P("a-out"), TgtPort: P("gone-in") }, // uncoloured target end
           { SrcPort: P("gone-out"), TgtPort: P("a-in") }, // uncoloured source end
+          { SrcPort: P("x-out"), TgtPort: P("gone-in") }, // t344: no family at either end
         ],
       },
       WF91: { ID: "WF91", SrcPort: "{lens-smoke}", TgtPort: "{lens-smoke}", AdditionalPortPairs: null },
@@ -646,6 +679,7 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
     unTgt: rel("un-tgt", P("a-out"), P("gone-in")),
     unSrc: rel("un-src", P("gone-out"), P("a-in")),
     undeclared: rel("undeclared", P("a-out"), P("c-in")),
+    noFamily: rel("no-family", P("x-out"), P("gone-in")),
   };
   const paint = Object.fromEntries(Object.entries(cases).map(([k, r]) => [k, paintRelation(r, grammar)]));
   const hues = new Set(KAPPA_HUES.map((h) => h.toLowerCase()));
@@ -653,7 +687,7 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
 
   check(
     grammar.status === "engine" &&
-      grammar.pairs.length === 7 &&
+      grammar.pairs.length === 8 &&
       !grammar.ports.some(isPlaceholderPort) &&
       !grammar.src_ports.some(isPlaceholderPort),
     `the normaliser reads ${grammar.pairs?.length} pairs (main + additional) and offers no {placeholder} as a port`,
@@ -669,11 +703,24 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
       p1.src.glyph === END_GLYPHS.source.colour && p1.tgt.glyph === END_GLYPHS.target.colour && p1.pair === "declared",
     "both ends in one family: ONE hue, the plain direction arrow, a declared pair",
   );
+  // t344 PIL-13: two families are a fault — grey at both ends, the fault marker, no family hue;
+  // each end still names its family (the legend counts it, the inspector says which).
   const p2 = paint.two;
   const d2 = kappaRelationData(p2);
   check(
-    p2.twoTone && d2.ks === fam.get("fam-one") && d2.kt === fam.get("fam-two") && d2.ks !== d2.kt,
-    "two families: TWO tones — the source half in κ(src_port), the target half in κ(tgt_port)",
+    p2.twoTone && d2.kfault === "fault" && d2.ks === KAPPA_NEUTRAL && d2.kt === KAPPA_NEUTRAL &&
+      p2.src.family === "fam-one" && p2.tgt.family === "fam-two" &&
+      p2.src.glyph === END_GLYPHS.source.colour && p2.tgt.glyph === END_GLYPHS.target.colour &&
+      kappaRelationData(p1).kfault === "none",
+    "two families: a FAULT — both ends in the neutral grey, no family hue, each end keeps its family; one family is no fault",
+  );
+  const pn = paint.noFamily;
+  const dn = kappaRelationData(pn);
+  check(
+    !pn.twoTone && dn.kfault === "none" && dn.ks === KAPPA_NEUTRAL && dn.kt === KAPPA_NEUTRAL &&
+      pn.src.state === "exempt" && pn.tgt.state === "uncoloured" &&
+      dn.kss === END_GLYPHS.source.exempt && dn.kts === END_GLYPHS.target.uncoloured,
+    "no family at either end (exempt / no colour): not two colours, no fault — grey with its two state glyphs",
   );
   const states = [
     ["exempt source end", paint.exSrc.src, "exempt", END_GLYPHS.source.exempt],
@@ -690,8 +737,9 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
   const du = kappaRelationData(paint.undeclared);
   check(
     paint.undeclared.pair === "undeclared" && du.kpair === "undeclared" &&
-      paint.undeclared.src.state === "colour" && paint.undeclared.tgt.state === "colour",
-    `undeclared pair: both ends keep their κ; the pair is marked (${UNDECLARED_MARKER.lineStyle} line, '${UNDECLARED_MARKER.midGlyph}' midway)`,
+      paint.undeclared.src.state === "colour" && paint.undeclared.tgt.state === "colour" &&
+      du.kfault === "fault",
+    `undeclared pair: both ends keep their family; the pair is marked (${UNDECLARED_MARKER.lineStyle} line, '${UNDECLARED_MARKER.midGlyph}' midway) — two families here, so also a fault`,
   );
   const glyphSets = [
     Object.values(END_GLYPHS.source),
@@ -700,17 +748,21 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
   check(
     glyphSets.every((g) => new Set(g).size === g.length) &&
       !glyphSets.flat().includes(UNDECLARED_MARKER.midGlyph) &&
+      !glyphSets.flat().includes(FAULT_MARKER.midGlyph) &&
+      FAULT_MARKER.midGlyph !== UNDECLARED_MARKER.midGlyph &&
       UNDECLARED_MARKER.lineStyle !== "solid",
-    "the three states have three distinct glyphs at each end, and the undeclared marker is none of them",
+    "the three states have three distinct glyphs at each end; the undeclared and the fault marker are none of them, nor each other",
   );
   // Hue follows the family, never the order the engine lists its ports in.
   const reversed = normalizeEngineGrammar(
     { ...raw, portColors: { port_colors: Object.fromEntries(Object.entries(raw.portColors.port_colors).reverse()) } },
     { source: "lens-smoke", ontology_version: "lens-smoke-1" },
   );
+  const d1 = kappaRelationData(p1);
   check(
-    kappaRelationData(paintRelation(cases.two, reversed)).ks === d2.ks &&
-      kappaRelationData(paintRelation(cases.two, reversed)).kt === d2.kt,
+    JSON.stringify(kappaFamilies(reversed)) === JSON.stringify(kappaFamilies(grammar)) &&
+      kappaRelationData(paintRelation(cases.one, reversed)).ks === d1.ks &&
+      kappaRelationData(paintRelation(cases.one, reversed)).kt === d1.kt,
     "a family keeps its hue whatever order /operad/port-colors lists the ports in",
   );
   // t342 P1: K1's additive keys (`color_rule`, `color_source`) are read when the engine states
@@ -735,8 +787,8 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
   check(
     grammar.color_rule === null && grammar.color_source === null &&
       k1.status === "engine" && k1.color_rule === "lens-smoke-rule" && k1.color_source === "lens-smoke-source" &&
-      kappaRelationData(paintRelation(cases.two, k1)).ks === d2.ks &&
-      kappaRelationData(paintRelation(cases.two, k1)).kt === d2.kt &&
+      kappaRelationData(paintRelation(cases.one, k1)).ks === d1.ks &&
+      kappaRelationData(paintRelation(cases.one, k1)).kt === d1.kt &&
       matrixOnly.status === "engine" && matrixOnly.port_colors === null &&
       /port_colors/.test(matrixOnly.port_colors_reason) && matrixOnly.pairs.length === grammar.pairs.length &&
       kappaRelationData(paintRelation(cases.two, matrixOnly)) === null,
@@ -777,7 +829,7 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
   );
   const census = kappaCensus(Object.values(cases), grammar);
   check(
-    census.kind === 0 && census.exempt === 2 && census.uncoloured === 2 && census.undeclared === 1 &&
+    census.kind === 0 && census.exempt === 3 && census.uncoloured === 3 && census.undeclared === 1 &&
       census.twoTone === 6,
     `census: ${census.relations} relations, 0 relation-kind, exempt ${census.exempt} · uncoloured ${census.uncoloured} ends, ${census.undeclared} undeclared pair, ${census.twoTone} two-tone`,
   );
@@ -810,6 +862,73 @@ console.log("\nH. relation ends coloured by κ(port): one hue, two tones, three 
       `${drawn.port.kind} in relation kind${drawn.port.wrong.length ? `, WRONG: ${drawn.port.wrong.join(", ")}` : ""}; ` +
       `switched: ${drawn.kind.port} still in port colour${drawn.kind.wrong.length ? `, WRONG: ${drawn.kind.wrong.join(", ")}` : ""}`,
   );
+  // t344 PIL-13: which relations are a fault is read here from the synthetic port_colors — a
+  // family is a non-empty colour, an exempt or unknown port has none — not from the painter.
+  // Every relation whose two ends' families differ is DRAWN as a fault (grey line and ends,
+  // the square midway: drawCheck's `drawnFault`), no other one is, and the census's two-tone
+  // count is the number drawn so.
+  const familyOf = (p) => {
+    const c = raw.portColors.port_colors[p];
+    return typeof c === "string" && c !== "" ? c : null;
+  };
+  const wantFault = drawRels
+    .filter((r) => familyOf(r.properties.src_port) !== familyOf(r.properties.tgt_port))
+    .map((r) => r.urn)
+    .sort();
+  const gotFault = [...drawn.port.fault].sort();
+  const drawnCensus = kappaCensus(drawRels, grammar);
+  check(
+    wantFault.length === 6 && JSON.stringify(gotFault) === JSON.stringify(wantFault) &&
+      drawnCensus.twoTone === gotFault.length,
+    `two colours a fault, drawn: the ${wantFault.length} of ${drawRels.length} relations whose ends are in two families ` +
+      `are drawn grey with '${FAULT_MARKER.midGlyph}' midway and no family hue (${gotFault.length} drawn so` +
+      `${JSON.stringify(gotFault) === JSON.stringify(wantFault) ? "" : `, WANTED ${wantFault.join(", ")}`}); ` +
+      `kappaCensus.twoTone ${drawnCensus.twoTone} = the fault count ${gotFault.length}; no line in two tones`,
+  );
+  // t344 PIL-13 (Copilot on #49): a fault on the NESTING port is never folded into a box. Under
+  // `nested` a nesting relation whose target can be a box is drawn as the box, not as a line; a
+  // fault folded so would be counted by the legend and the census with no grey line or square
+  // drawn. The real drawingPlan, under `nested`: a box target, one nesting relation with no
+  // family at either end (boxed), one that is a fault (a family at the target end only). The
+  // fault must stay a line, drawn as a fault, and the legend row and the census must count
+  // exactly the faults drawn.
+  {
+    const NU = (n) => `urn:moos:claim:lens-smoke.nest-${n}`;
+    const box = "urn:moos:domain_tag:lens-smoke.nest-box";
+    const nestRel = (n, tgtPort) => ({
+      urn: `urn:moos:relation:lens-smoke.nest-${n}`,
+      type_id: "WF12",
+      label: KB_NESTING_PORT,
+      source_urn: NU(n),
+      target_urn: box,
+      properties: { src_port: KB_NESTING_PORT, tgt_port: tgtPort },
+    });
+    const nestRels = [nestRel("boxed", P("gone-in")), nestRel("fault", P("a-in"))];
+    const nestFrame = {
+      provenance: { grammar },
+      nodes: [
+        ...["boxed", "fault"].map((n) => ({ urn: NU(n), label: n, type_id: "claim", properties: {} })),
+        { urn: box, label: "box", type_id: "domain_tag", properties: {} },
+      ],
+      relations: nestRels,
+    };
+    const plan = fg.drawingPlan(nestFrame, "nested", false);
+    const nestDrawn = drawCheck(fg, nestFrame, plan.elements);
+    const lines = new Set(plan.elements.filter((e) => e.group === "edges").map((e) => String(e.data.id)));
+    const nestCensus = kappaCensus(nestRels, grammar);
+    const nestRow = fg.legendOf(nestFrame, plan.parents).relations.find((r) => r.port === KB_NESTING_PORT);
+    check(
+      plan.parents.get(NU("boxed")) === box && !plan.parents.has(NU("fault")) &&
+        !lines.has(nestRels[0].urn) && lines.has(nestRels[1].urn) &&
+        nestDrawn.port.wrong.length === 0 &&
+        JSON.stringify(nestDrawn.port.fault) === JSON.stringify([nestRels[1].urn]) &&
+        nestCensus.twoTone === nestDrawn.port.fault.length &&
+        nestRow?.fault === nestDrawn.port.fault.length && nestRow?.boxed === 1,
+      `a fault on the nesting port is never a box: under nested, the boxed relation is the box (${plan.parents.get(NU("boxed")) === box}), ` +
+        `the fault stays a line (${lines.has(nestRels[1].urn)}) drawn as a fault (${nestDrawn.port.fault.length} drawn so${nestDrawn.port.wrong.length ? `, WRONG: ${nestDrawn.port.wrong.join(", ")}` : ""}); ` +
+        `census two-tone ${nestCensus.twoTone}, legend row faults ${nestRow?.fault} and boxed ${nestRow?.boxed}`,
+    );
+  }
   // Node fills stay a type palette that never uses a κ hue (nor the neutral of the states).
   const { NODE_FILLS } = fg;
   const fills = [...NODE_FILLS, ...KB_CLAIM_KINDS.map((k) => k.display)].map((c) => c.toLowerCase());
@@ -1417,6 +1536,183 @@ console.log("\nJ. nested: components, not a type/urn grid; sources inside the bo
     `one cose budget per frame, drawn: 4 components of 110 nodes -> ${multi.report?.refined.length} refined (${multi.report?.iterations?.join(", ")} iterations, ${multiSteps} pair-steps ≤ ${COSE_PAIR_STEPS}), the fourth breadth-first`,
   );
   if (failures === before) pass("J holds");
+}
+
+// K — the converse of every port from the engine's declared pairs (t344 PIL-14). The idea is
+// b85f0dd's getConversePorts (the laptop Antigravity seat), written fresh. A synthetic grammar
+// first (runs everywhere, CI included), then two recorded grammars read from OUTSIDE this
+// public repo — AGENTS.md: no operad data is written here — each identified by its sha256.
+console.log("\nK. the converse from the engine's grammar, for every pair (PIL-14)");
+{
+  const before = failures;
+  const check = (cond, msg) => (cond ? pass(msg) : fail(msg));
+  const fg = await loadFrameGraph();
+  const P = (n) => `lens-smoke-k-${n}`;
+  const kbRel = KB_RELATIONS.find((r) => r.src_port !== r.tgt_port);
+  const synth = normalizeEngineGrammar(
+    {
+      nodeTypes: { [P("type")]: {} },
+      rewriteCategories: {
+        WF90: {
+          ID: "WF90",
+          SrcPort: P("a-out"),
+          TgtPort: P("a-in"),
+          AdditionalPortPairs: [
+            { SrcPort: P("self"), TgtPort: P("self") }, // self-converse
+            { SrcPort: P("own"), TgtPort: P("own-1") }, // one port on two pairs:
+            { SrcPort: P("own"), TgtPort: P("own-2") }, //   its converse is both names
+            { SrcPort: kbRel.src_port, TgtPort: P("other") }, // the vocabulary is read first
+          ],
+        },
+      },
+      portColors: null,
+    },
+    { source: "lens-smoke", ontology_version: "lens-smoke-k" },
+  );
+  const row = (port) => ({ port, count: 1, boxed: 0, ks: null, kt: null, undeclared: 0, fault: 0 });
+  const incoming = (label, tgtPort) => ({ label, properties: tgtPort === undefined ? {} : { tgt_port: tgtPort } });
+  check(
+    JSON.stringify(conversePorts(synth, P("a-out"))) === JSON.stringify([P("a-in")]) &&
+      JSON.stringify(conversePorts(synth, P("a-in"))) === JSON.stringify([P("a-out")]) &&
+      JSON.stringify(conversePorts(synth, P("self"))) === JSON.stringify([P("self")]) &&
+      JSON.stringify(conversePorts(synth, P("own"))) === JSON.stringify([P("own-1"), P("own-2")]) &&
+      conversePorts(synth, P("nowhere")).length === 0 &&
+      conversePorts(undefined, P("a-out")).length === 0 &&
+      conversePorts({ status: "absent", reason: "x" }, P("a-out")).length === 0,
+    "conversePorts: either end of a declared pair gives the other, a self-converse port itself, a port on two pairs both (sorted); none off the pairs or without an engine grammar",
+  );
+  check(
+    fg.converseName(P("a-out"), synth) === P("a-in") &&
+      fg.converseName(P("own"), synth) === `${P("own-1")} / ${P("own-2")}` &&
+      fg.converseName(kbRel.src_port, synth) === kbConversePort(kbRel.src_port) &&
+      fg.converseName(kbRel.src_port, undefined) === kbConversePort(kbRel.src_port) &&
+      fg.converseName(P("a-out"), undefined) === null,
+    "converseName: the knowledge vocabulary's converse first (even where the engine pairs the port otherwise), then the engine's pairs, several joined by ' / '; null without either",
+  );
+  check(
+    fg.relationTitle(row(P("a-out")), synth).startsWith(`${P("a-out")} (from the other end: ${P("a-in")}) · 1`) &&
+      fg.relationTitle(row(P("own")), synth).startsWith(`${P("own")} (from the other end: ${P("own-1")} / ${P("own-2")})`) &&
+      fg.relationTitle(row(P("self")), synth).startsWith(`${P("self")} · 1`) &&
+      fg.relationTitle(row(P("a-out")), undefined).startsWith(`${P("a-out")} · 1`),
+    "the legend tooltip names the converse from the engine's grammar; a self-converse port and a frame without a grammar show the port alone",
+  );
+  check(
+    fg.conversePortOf(incoming(kbRel.src_port, P("carried")), synth) === kbConversePort(kbRel.src_port) &&
+      fg.conversePortOf(incoming(P("own"), P("own-2")), synth) === P("own-2") &&
+      fg.conversePortOf(incoming(P("own")), synth) === `${P("own-1")} / ${P("own-2")}` &&
+      fg.conversePortOf(incoming(P("a-out"), null), synth) === P("a-in") &&
+      fg.conversePortOf(incoming(P("a-out")), undefined) === P("a-out"),
+    "the inspector's name from the target end: the vocabulary first, then the relation's own tgt_port, then the engine's pairs, then the label",
+  );
+
+  // The recorded grammars: the ontology files, read where they live (PILOT_OPERAD_FILES, a
+  // list split on the platform's path delimiter, or the Z440 checkouts), never copied in.
+  const RECORDED = [
+    {
+      version: "mtdc-2.2.0",
+      bytes: 211415,
+      sha256: "d264d885e0d286799e4cbb2b4083157b1419e3059bcda481b342b7828df19b59",
+      pairs: 47,
+      names: 89,
+      fixed: 5,
+    },
+    {
+      version: "4.0.9",
+      bytes: 197398,
+      sha256: "6192181927e0bed8d29f8ed8ac85f168e8f00381a7391eb3e66f6f13f5d5230c",
+      pairs: 35,
+      names: 66,
+      several: 1, // ports on more than one pair (the converse is not a function on them)
+      opposite: 2, // the converse names of that port
+    },
+  ];
+  const candidates = (
+    process.env.PILOT_OPERAD_FILES?.split(delimiter).filter(Boolean) ?? [
+      "D:/HPZ440/mtdc-lab/operad/moos-mtdc-2.2.0.json",
+      "D:/HPZ440/ffs0/kb/superset/ontology.json",
+    ]
+  ).map((path) => {
+    try {
+      const bytes = readFileSync(path);
+      return { path, bytes, sha256: createHash("sha256").update(bytes).digest("hex") };
+    } catch {
+      return { path, bytes: null, sha256: null };
+    }
+  });
+  const recorded = (rec) => {
+    const hit = candidates.find((c) => c.sha256 === rec.sha256 && c.bytes.length === rec.bytes);
+    if (!hit) {
+      const seen = candidates.map((c) => `${c.path} ${c.sha256 ? c.sha256.slice(0, 12) : "unreadable"}`).join("; ");
+      console.log(`  [SKIP] ${rec.version}: no file with sha256 ${rec.sha256.slice(0, 12)}… (${rec.bytes} bytes) — looked at ${seen}; set PILOT_OPERAD_FILES`);
+      return null;
+    }
+    const json = JSON.parse(hit.bytes.toString("utf8"));
+    const g = normalizeEngineGrammar(
+      { nodeTypes: Object.values(json.types ?? {}).flat(), rewriteCategories: json.rewrite_categories, portColors: null },
+      { source: hit.path, ontology_version: String(json.version) },
+    );
+    const names = [...new Set((g.pairs ?? []).flatMap((p) => [p.src_port, p.tgt_port]))].sort();
+    return { json, g, names, path: hit.path };
+  };
+  const shown = (g, n) => {
+    const c = fg.converseName(n, g);
+    const title = fg.relationTitle(row(n), g);
+    return c === n ? title.startsWith(`${n} · `) : title.startsWith(`${n} (from the other end: ${c}) · `);
+  };
+
+  const mtdc = recorded(RECORDED[0]);
+  if (mtdc) {
+    const { g, names } = mtdc;
+    const conv = new Map(names.map((n) => [n, conversePorts(g, n)]));
+    const single = names.filter((n) => conv.get(n).length === 1);
+    const back = single.filter((n) => JSON.stringify(conversePorts(g, conv.get(n)[0])) === JSON.stringify([n]));
+    const fixed = single.filter((n) => conv.get(n)[0] === n);
+    const named = names.filter((n) => {
+      const c = fg.converseName(n, g);
+      return c === conv.get(n).join(" / ") && fg.converseName(c, g) === n;
+    });
+    const titles = names.filter((n) => shown(g, n));
+    const pairsOk = g.pairs.every((p) => conv.get(p.src_port)[0] === p.tgt_port && conv.get(p.tgt_port)[0] === p.src_port);
+    check(
+      mtdc.json.version === RECORDED[0].version && g.pairs.length === RECORDED[0].pairs &&
+        names.length === RECORDED[0].names && single.length === names.length && back.length === names.length &&
+        fixed.length === RECORDED[0].fixed && named.length === names.length && titles.length === names.length && pairsOk,
+      `${mtdc.json.version} (sha256 ${RECORDED[0].sha256.slice(0, 12)}…, read from ${mtdc.path}): ${g.pairs.length} pairs, ${names.length} names; ` +
+        `each maps to one converse ${single.length} of ${names.length}, and back (†† = id) ${back.length} of ${names.length}; ` +
+        `${fixed.length} map to themselves; the panel's converse name agrees ${named.length} of ${names.length} (the vocabulary's ports included) ` +
+        `and the legend tooltip shows it ${titles.length} of ${names.length}`,
+    );
+  }
+
+  const fleet = recorded(RECORDED[1]);
+  if (fleet) {
+    const { g, names } = fleet;
+    const conv = new Map(names.map((n) => [n, conversePorts(g, n)]));
+    const several = names.filter((n) => conv.get(n).length > 1);
+    const fixed = names.filter((n) => conv.get(n).length === 1 && conv.get(n)[0] === n);
+    // Derived from the pinned file, never written here: the one port on two pairs and the two
+    // names opposite it.
+    const multi = several[0] ?? "";
+    const opposite = conv.get(multi) ?? [];
+    const both = opposite.join(" / ");
+    const own = fg.converseName(multi, g);
+    check(
+      fleet.json.version === RECORDED[1].version && g.pairs.length === RECORDED[1].pairs &&
+        names.length === RECORDED[1].names && several.length === RECORDED[1].several &&
+        opposite.length === RECORDED[1].opposite &&
+        own === both &&
+        fg.relationTitle(row(multi), g).startsWith(`${multi} (from the other end: ${both}) · `) &&
+        opposite.every((o) => JSON.stringify(conversePorts(g, o)) === JSON.stringify([multi])) &&
+        fg.conversePortOf(incoming(multi), g) === both &&
+        fg.conversePortOf(incoming(multi, opposite[1]), g) === opposite[1] &&
+        names.filter((n) => shown(g, n)).length === names.length,
+      `${fleet.json.version} (sha256 ${RECORDED[1].sha256.slice(0, 12)}…, read from ${fleet.path}): ${g.pairs.length} pairs, ${names.length} names; ` +
+        `the converse is not a function on ${several.length} name (${several.join(", ")}), which shows "${own}" — both of its ` +
+        `${opposite.length} converses, each mapping back to it alone; the legend tooltip shows the converse of all ${names.length}; ` +
+        `${fixed.length} map to themselves; an incoming relation on that port that carries its tgt_port keeps it`,
+    );
+  }
+  if (failures === before) pass("K holds");
 }
 
 console.log(

@@ -64,8 +64,10 @@ declared — by the connected engine, by the knowledge vocabulary, or on the com
 list `LEGACY_PORTS` (`realizes`, `cites`, `curates`: in no operad and no live fold at t342) —
 and (i) the port colours of the live fold as FrameGraph DRAWS them — its real `toElements`,
 `STYLE` and `applyPalette` in headless Cytoscape: in port colour no relation in the
-relation-kind palette and each in its κ hue, two tones, glyphs and marker; switched to relation
-kind, none left in port colour (see "Port colours and the engine's grammar"). It
+relation-kind palette and each in its one κ hue, glyphs and markers — a relation whose ends
+are in two colour families drawn as a fault, and as many drawn so as the census counts
+two-tone (t344 PIL-13); switched to relation kind, none left in port colour (see "Port colours
+and the engine's grammar" and "Two colours a fault"). It
 also exercises the **A16 surface→channel→engine resolution** with the code the
 worker runs: candidate/alias mapping, the display_name engine-hint grammar, the local
 transport table (twins answer MCP on :9001–:9003, not :8080), the live directory chain
@@ -148,13 +150,16 @@ only relation runs to a withheld seat is unlinked there — on the real `unlinke
 from `FrameGraph.tsx` the way `smoke:live` loads it. H (t342 P1) is the port-colour fixture:
 a SYNTHETIC grammar (synthetic port names and colour families — no operad data enters this
 repo) through the real `engine-grammar.js` and `port-colour.js` gives one hue for a relation
-whose ends share a family, two tones for one whose ends do not, and each of the three states
-its own glyph on a neutral grey, never a hue — exempt (`⊣` / `▸⊣`), uncoloured (`○` / `○▸`),
+whose ends share a family, a fault for one whose ends do not (t344 PIL-13: grey, `■` midway, no
+family hue; two tones before), none for one with no family at either end, and each of the three
+states its own glyph on a neutral grey, never a hue — exempt (`⊣` / `▸⊣`), uncoloured (`○` / `○▸`),
 undeclared pair (dotted, `◇` midway); a family keeps its hue whatever order the engine lists
 its ports in; a frame without a grammar draws every relation by relation kind; what FrameGraph
 DRAWS — its real `toElements`, `STYLE` and `applyPalette` in headless Cytoscape — matches:
-every relation in its κ (hue or two tones, end glyphs, the undeclared marker, a grey end always
-with its state's glyph) and, switched, every one back in relation kind (a knowledge relation in
+every relation in its one κ colour, line and both ends (end glyphs, the undeclared marker; off
+a fault a grey end always with its state's glyph), the relations whose ends' families differ —
+read from the synthetic map, not from the painter — exactly the ones drawn as a fault, as many
+as `kappaCensus.twoTone`, and, switched, every one back in relation kind (a knowledge relation in
 its vocabulary colour); the node fills (types and claim kinds) share no colour with the eight
 hues, none of them nor the state grey is within OKLab ΔE 3 of a fill, and no close pair exists
 beyond those listed under "Limits" below (a new one fails); and no code under `src/` names
@@ -205,6 +210,11 @@ their relations, the small components on one urn row, the sources moved to a col
 box is drawn, cose on the panel's own canvas (the 36-node component moved by up to 131 px),
 label boxes off their grid (a second run moved all 66 nodes), and a cose budget per component
 (in the helper, or FrameGraph ignoring the frame's).
+K (t344 PIL-14) holds the converse of every port from the engine's declared pairs — the real
+`conversePorts` of `engine-grammar.js` and FrameGraph's `converseName`, `conversePortOf` and
+`relationTitle` — on a synthetic grammar and on two recorded grammars read from outside this
+repo by sha256 (see "The converse from the engine's grammar"); on a runner without those files
+it prints two `[SKIP]` lines and the synthetic checks still run.
 
 **`selftest.html`** (open it from the extension: `chrome-extension://<id>/selftest.html`) is
 the one surface that can exercise what the harnesses fake — the worker seam with real
@@ -438,7 +448,9 @@ map and no mtdc-only name is written into the repo; the measured counts below ar
 not by the engine's family names.
 
 **The drawing** (decision 2: port colour by default). Every relation end is drawn in κ(port):
-one hue when both ends share a colour family, two tones split at the middle when they do not.
+one hue when both ends share a colour family; since t344 (PIL-13, "Two colours a fault" below) a
+relation whose ends are in two families is a fault, drawn grey with a filled square midway — it
+was two tones split at the middle until then, as the t342 measurements below describe.
 Three states are not colours and get a glyph on a neutral grey, never a hue: exempt (`κ = ""`,
 only on 98f2ccc kernels with 4.0.x — one port on hp-laptop's kernel; a tee at the source
 end, a tee behind the arrow at the target end), uncoloured (the port is not in the map; a
@@ -830,6 +842,91 @@ t343 review) — whether to floor the find's zoom at the cut is hand-off C's ope
 not an order here. The u2b-capture of goal U reads the copy of the harness the Z440 seat
 serves; it will show these numbers once that copy is this build.
 
+## Two colours a fault (t344, work order PIL-13)
+
+**Why.** Until t344 a relation whose two ends are in two colour families was drawn in two
+tones, as a feature. No declared pair joins two families on the grammars read at t344, so such a
+line is never a declared pair in its own colours: it appears only on an undeclared pair, on a
+relation without a `tgt_port`, or where an engine's map still has the exempt `""`. Counted from
+the declared pairs and the engine's port colours (GET only, t344): 0 of 35 pairs on the Z440
+primary (4.0.9), 0 of 47 on scratch (mtdc-2.1.0), 0 of 47 on mtdc-2.2.0 (the lab file, read
+locally, colours as scratch serves them — the version changed none); no pair has an uncoloured
+or exempt end on any of the three. That matches the count in mtdc-lab#28 (a), 0 and 0.
+
+**What is drawn** (`port-colour.js` `paintRelation`, `FAULT_MARKER`, `KAPPA_STATES`;
+`FrameGraph.tsx` STYLE (its port-colour rule), the legend, the canvas label; `NodeInspector.tsx`). A
+relation is a fault when `src.family !== tgt.family` — two families, or a family at one end and
+none at the other (an exempt or uncoloured end). It is drawn in the state grey — the line and
+both ends — with a filled square midway (the mid-source arrow; an undeclared pair's hollow
+diamond is the mid-target arrow, so a fault on an undeclared pair shows both side by side on its
+dotted line); each end keeps its own glyph, and its family for the counts. Family hues go only
+on one-colour relations, and no line is drawn in two tones any more (the gradient style is
+gone). The legend has a fourth state row, `two colours: a fault` (`■`, counted per relation,
+`legend-state-fault`), a relation row with faults carries `■` and says how many in its
+tooltip, the inspector's row dot is the grey and its tooltip adds `two colours: a fault`, and
+the canvas label adds `N relations with two colours drawn as a fault` when there are any.
+`kappaCensus.twoTone` is the fault count. One reading of the order: a relation with no family at
+either end (exempt at one end, no colour at the other) is NOT two colours — it is grey with its
+two state glyphs and no fault marker. Before t344 it counted as two-tone (the states differ).
+
+**Asserted.** `smoke:lens` H, on its synthetic fixture (nine relations, eight on declared pairs):
+the six whose ends' families differ — read from the fixture's own map, not from the painter — are
+exactly the six drawn as a fault (grey line and ends, the square midway, filled), none of the
+others is, no relation is drawn in two tones, and `kappaCensus.twoTone` is 6. The check was run
+against two broken copies of `FrameGraph.tsx` and fails on each: no fault square (two FAILs) and
+the gradient back on a fault (one). `smoke:live` (i) asserts the same count on the live fold:
+on the Z440 primary (4.0.9, log 713) 0 of 242 relations are two-tone and 0 are drawn as a fault
+(the fold has 17 relations on undeclared pairs, with 18 uncoloured ends: none of them has a
+family at one end only).
+
+## The converse from the engine's grammar (t344, work order PIL-14)
+
+**Why.** The legend's tooltip named a port's converse only for the knowledge vocabulary, and the
+inspector named an incoming relation from its target end by the vocabulary, then the relation's
+own `tgt_port`, then its label. mtdc-2.2.0 declares 47 pairs (main and additional) over 89 port
+names; its converse is a function on all of them.
+
+**What changed.** `engine-grammar.js` `conversePorts(grammar, port)`: every port a declared pair
+puts at the other end from `port`, either side, sorted — the idea of b85f0dd's `getConversePorts`
+(the laptop Antigravity seat), written fresh; `mapRelation` is unchanged. `FrameGraph.tsx`
+`converseName`: the knowledge vocabulary's converse first, then the engine's, several joined by
+` / ` — 4.0.9 declares one port on two pairs and it reads both converse names, `a / b`, the honest
+non-function, never one of the two picked. The legend's relation tooltip reads `p (from the other
+end: c) · N …` for every port, not only the knowledge ports (a self-converse port shows the
+port alone, as before). The inspector (`conversePortOf`, moved to `FrameGraph.tsx`): the
+vocabulary's converse, then the relation's own `tgt_port` — what that relation says at that end,
+also on an undeclared pair or for one of that port's two — then the engine's pairs, then the label.
+So on the fleet, where every relation carries its `tgt_port`, an inspector row reads as before;
+the grammar names a relation that carries none.
+
+**The grammars are read, not copied.** The order asked for a recorded fixture of mtdc-2.2.0's
+grammar in the pilot. This repo is public and mtdc-lab is private (`gh repo view`, t344), and
+AGENTS.md rules out operad data and mtdc-only names here, so `smoke:lens` K reads the two
+ontology files where they live — `PILOT_OPERAD_FILES` (a list split on the platform's path
+delimiter), by default the Z440 checkouts — and takes a file only if its size and sha256 are the
+recorded ones; otherwise it prints `[SKIP]` with what it found. Recorded at t344:
+
+| grammar | file | bytes | sha256 | committed at |
+|---|---|---|---|---|
+| mtdc-2.2.0 | mtdc-lab `operad/moos-mtdc-2.2.0.json` | 211415 | `d264d885e0d286799e4cbb2b4083157b1419e3059bcda481b342b7828df19b59` | mtdc-lab `e2945c0` |
+| 4.0.9 | ffs0 `kb/superset/ontology.json` | 197398 | `6192181927e0bed8d29f8ed8ac85f168e8f00381a7391eb3e66f6f13f5d5230c` | ffs0 `23ad36d` |
+
+The 4.0.9 file's 35 pairs are the ones the Z440 primary serves on `/operad/rewrite-categories`
+(GET, log 713), one port on two of them. No engine port name is written in this repo (Copilot
+on #49): `smoke:lens` K derives that port and its two converses from the pinned file.
+
+**Asserted** (`smoke:lens` K, measured at t344). Synthetic: either end of a pair gives the other,
+a self-converse port itself, a port on two pairs both; the vocabulary's converse wins where the
+engine pairs the port otherwise; the inspector keeps a carried `tgt_port` before the grammar.
+mtdc-2.2.0: 47 pairs, 89 names; each maps to one converse, 89 of 89, and back (†† = id), 89 of
+89; 5 map to themselves (the placeholder pair's `{…}` name among them); the panel's converse
+name agrees with the pairs on all 89, the vocabulary's own ports included, and the legend
+tooltip shows it on all 89. 4.0.9: 35 pairs, 66 names; the converse is not a function on one
+name, which shows both of its two converses joined by ` / `, each mapping back to it alone; 3 map
+to themselves; an incoming relation on that port without a `tgt_port` reads both names in the
+inspector, one that carries one of them keeps it.
+Broken copies fail it: `converseName` keeping the first of several names (four FAILs).
+
 ## Finding and inspecting in the knowledge graph (t337)
 
 **Find** ranks urn and label as before (0-4, unchanged) and then, one rank below, the
@@ -844,7 +941,7 @@ now reaches a claim (`CRDT` -> `2 matches · showing claim · in text`).
 **Inspector**: a node's `text` is a paragraph above the property table and no longer a
 row in it; an incoming relation is named by its converse port (`← has-part`,
 `← source-of`; from `tgt_port` for every other relation, e.g. `← composed-by` on the
-primary); a knowledge port carries its vocabulary colour; a click on a relation row selects
+primary; t344 PIL-14: from the engine's declared pairs where a relation carries none); a knowledge port carries its vocabulary colour; a click on a relation row selects
 the other node, centres the graph on it and scrolls the inspector back to its top. In the
 380 px side panel the pane was 120 px for every node — 0 of a claim's text lines on
 screen; for a node that carries a text it is now 45 % of the panel height (405 px at

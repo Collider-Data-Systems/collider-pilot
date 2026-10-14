@@ -78,6 +78,7 @@ import {
 import { grammarGap, grammarSummary } from "../src/mcp/engine-grammar.js";
 import {
   END_GLYPHS,
+  FAULT_MARKER,
   KAPPA_HUES,
   KAPPA_NEUTRAL,
   UNDECLARED_MARKER,
@@ -1538,6 +1539,12 @@ function liveAxisChecks(fold, health, grammar, gc, fg) {
       drawn.kind.port === 0 && drawn.kind.wrong.length === 0,
       `switched to relation kind: 0 of ${drawn.kind.edges} still in port colour, each in its vocabulary colour or the default line (got ${drawn.kind.port}, wrong ${drawn.kind.wrong.length})`,
     );
+    // t344 PIL-13: a relation whose ends are in two colour families is drawn as a fault (grey,
+    // the square midway), and the census's two-tone count is the number drawn so.
+    assert(
+      drawn.port.fault.length === census.twoTone,
+      `two colours a fault: ${drawn.port.fault.length} of ${drawn.port.edges} live relations drawn grey with the fault marker = two-tone ${census.twoTone}`,
+    );
     const families = kappaFamilies(grammar);
     assert(
       families.length <= KAPPA_HUES.length &&
@@ -1563,8 +1570,10 @@ function liveAxisChecks(fold, health, grammar, gc, fg) {
  * t342 P1 (review): what FrameGraph is asked to DRAW — its real toElements, STYLE and
  * applyPalette in headless Cytoscape (no canvas, nothing mounts); the same check as
  * smoke:lens H. In port colour every relation must carry the `kappa` class and its κ data and
- * be drawn in them (its hue or two tones, its end glyphs, the undeclared-pair marker; a
- * neutral end always with its state's glyph); after the switch to relation kind none may.
+ * be drawn in them (its one colour — t344 PIL-13: never two tones — its end glyphs, the
+ * undeclared-pair marker; on a relation that is not a fault a neutral end always with its
+ * state's glyph; a fault grey, line and ends, with FAULT_MARKER midway — `port.fault` lists
+ * them); after the switch to relation kind none may.
  */
 function drawCheck(fg, frame) {
   const rgb = (hex) => [0, 2, 4].map((i) => parseInt(String(hex).replace("#", "").slice(i, i + 2), 16)).join();
@@ -1581,7 +1590,7 @@ function drawCheck(fg, frame) {
   const val = (e, k) => e.pstyle(k).value;
   try {
     fg.applyPalette(cy, true);
-    const port = { edges: 0, kind: 0, wrong: [] };
+    const port = { edges: 0, kind: 0, wrong: [], fault: [] };
     cy.edges().forEach((e) => {
       port.edges += 1;
       const d = e.data();
@@ -1590,22 +1599,32 @@ function drawCheck(fg, frame) {
         return;
       }
       const [ks, kt] = [rgb(d.ks), rgb(d.kt)];
-      const stops = val(e, "line-gradient-stop-colors").map(col);
       const undeclared = d.kpair === "undeclared";
+      const fault = d.kfault === "fault";
+      const line = col(val(e, "line-color"));
+      const ends = [col(val(e, "source-arrow-color")), col(val(e, "target-arrow-color"))];
+      // t344 PIL-13: drawn as a fault — the line and both ends grey, the square midway.
+      const drawnFault =
+        val(e, "mid-source-arrow-shape") === FAULT_MARKER.midGlyph &&
+        val(e, "mid-source-arrow-fill") === "filled" &&
+        line === neutral && ends.every((c) => c === neutral);
       const ok =
-        (ks === kt
-          ? val(e, "line-fill") === "solid" && col(val(e, "line-color")) === ks
-          : val(e, "line-fill") === "linear-gradient" && stops[0] === ks && stops[stops.length - 1] === kt) &&
-        kappaRgb.has(ks) && kappaRgb.has(kt) &&
+        // one colour for the line and both ends — no relation is drawn in two tones
+        ks === kt && val(e, "line-fill") === "solid" && line === ks && ends.every((c) => c === ks) &&
+        kappaRgb.has(ks) &&
         val(e, "source-arrow-shape") === d.kss && val(e, "target-arrow-shape") === d.kts &&
         // both ends of the uncoloured state are hollow, every other end filled (Copilot on #46)
         val(e, "source-arrow-fill") === (d.kss === END_GLYPHS.source.uncoloured ? "hollow" : "filled") &&
         val(e, "target-arrow-fill") === (d.kts === END_GLYPHS.target.uncoloured ? "hollow" : "filled") &&
-        (ks === neutral) === (d.kss !== END_GLYPHS.source.colour) &&
-        (kt === neutral) === (d.kts !== END_GLYPHS.target.colour) &&
+        (fault
+          ? drawnFault
+          : val(e, "mid-source-arrow-shape") === "none" &&
+            (ks === neutral) === (d.kss !== END_GLYPHS.source.colour) &&
+            (kt === neutral) === (d.kts !== END_GLYPHS.target.colour)) &&
         val(e, "line-style") === (undeclared ? UNDECLARED_MARKER.lineStyle : "solid") &&
         val(e, "mid-target-arrow-shape") === (undeclared ? UNDECLARED_MARKER.midGlyph : "none");
       if (!ok) port.wrong.push(String(d.label));
+      if (drawnFault) port.fault.push(String(d.id));
     });
     fg.applyPalette(cy, false);
     const kind = { edges: 0, port: 0, wrong: [] };
