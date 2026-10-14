@@ -215,6 +215,11 @@ K (t344 PIL-14) holds the converse of every port from the engine's declared pair
 `relationTitle` — on a synthetic grammar and on two recorded grammars read from outside this
 repo by sha256 (see "The converse from the engine's grammar"); on a runner without those files
 it prints two `[SKIP]` lines and the synthetic checks still run.
+L (t347 PIL-22) holds a node type's interface on a synthetic grammar — the real
+`normalizeEngineGrammar` and `interfaceOf` of `engine-grammar.js`: each pair keeps its served type
+lists, a second pair with the same two names merges its lists in, each type keeps its served
+ports, and `interfaceOf` gives the expected positions and directions with a `*` list, an empty
+list and a null list (see "A type's interface from the engine's grammar").
 
 **`selftest.html`** (open it from the extension: `chrome-extension://<id>/selftest.html`) is
 the one surface that can exercise what the harnesses fake — the worker seam with real
@@ -437,10 +442,11 @@ note and the audit drawer say "did not answer", not "serves no /operad/*"), and 
 kept for `GRAMMAR_RETRY_MS` (60 s) — a hung route delays one frame per minute, not every
 fold-stream re-read.
 Read: the declared pairs (main and additional), the declared types, `port_colors`, and
-`color_rule` / `color_source` when the engine states them (K1 builds). Never read: `matrix`,
-a relation's `src_color` / `tgt_color` (empty on every relation today: read, they would make
-every end "exempt"), and the kernel's type law — the pilot checks pairs only; the workbench's
-check 8 rules on admission. An engine without the routes stamps `absent` with its reason; the
+`color_rule` / `color_source` when the engine states them (K1 builds); since t347 (PIL-22) each
+pair's type lists and each type's served ports too, for `interfaceOf` (below). Never read:
+`matrix`, a relation's `src_color` / `tgt_color` (empty on every relation today: read, they
+would make every end "exempt"), and the kernel's type law — the pilot checks pairs only, no
+relation is judged by the type lists; the workbench's check 8 rules on admission. An engine without the routes stamps `absent` with its reason; the
 frame still lands, the drawer offers its static lists and the graph draws relation kinds, and
 both say so. An engine that serves node types and rewrite categories but no port colours keeps
 both in the drawer and only the graph falls back to relation kind. No operad data, no colour
@@ -926,6 +932,41 @@ name, which shows both of its two converses joined by ` / `, each mapping back t
 to themselves; an incoming relation on that port without a `tgt_port` reads both names in the
 inspector, one that carries one of them keeps it.
 Broken copies fail it: `converseName` keeping the first of several names (four FAILs).
+
+## A type's interface from the engine's grammar (t347, work order PIL-22)
+
+**Why.** A node type is an interface: its out-ports are its positions, its in-ports its
+directions (Sam's P1, P1b). `normalizeEngineGrammar` kept `{src_port, tgt_port,
+rewrite_category}` per pair and type names only, so the pilot could not say what a type's
+interface is. The node drawn as a box (PIL-17) needs these data first.
+
+**What changed** (`engine-grammar.js`, `types.ts`). Each pair keeps the type lists the engine
+serves on it (`SrcTypes` / `TgtTypes`; additional pairs carry their own), as served. A second
+pair with the same two port names is folded into the first, as before, but its lists are merged
+in, not dropped — the union, and `*` added where an empty list (every type) meets a named one, so
+the kept pair admits a type exactly when either did. Each type keeps its served `{out, in,
+self}` (`type_ports`). `interfaceOf(grammar, type)` is pure and reads the Workbench's way
+(mtdc-lab `operad-lib.js` `interfaceOf`, WB-12): the positions are the out-names of the pairs
+whose source list admits the type, the directions the in-names of the pairs whose target list
+admits it, each in the order the pairs first give them; a list admits a type when it holds `*`,
+the type, or nothing; a `{placeholder}` pair is skipped; `self` is the served one. Null without
+an engine grammar, for an undeclared type, and on a grammar read before PIL-22. Nothing is drawn
+from it yet. The stamped grammar grows from 7.1 to 13.6 KB on the Z440 primary (4.0.9) and from
+8.9 to 19.1 KB on scratch (mtdc-2.1.0), measured by GET at t347.
+
+**Asserted** (`smoke:lens` L, synthetic): the merged lists, the served ports (a null `Self` is
+empty) and three interfaces with a `*` list, an empty list, a null list, a merged pair and a
+placeholder pair. Broken copies fail it: the second pair's lists dropped (four FAILs), an empty
+list read as admitting nothing (three).
+
+**Cross-checked once, not a gate.** A script outside the repo fed the Workbench's recorded
+mtdc-2.1.0 engine grammar (mtdc-lab `tools/operad-workbench/testdata/live-mtdc-2.1.0`) to the
+pilot's `normalizeEngineGrammar` + `interfaceOf` and to the Workbench's `fromLive` +
+`interfaceOf`: equal for 56 of 56 types, order included; on the two live engines by GET, 56 of
+56 on each. Neither has a repeated pair, so the merge is held by L alone. One difference is
+possible there and not seen on any grammar read: where a merged pair's first copy does not admit
+a type and its second does, the pilot lists that name at the first copy's place and the
+Workbench at the second's — the same set, another order.
 
 ## Finding and inspecting in the knowledge graph (t337)
 

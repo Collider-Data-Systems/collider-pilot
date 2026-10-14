@@ -17,7 +17,9 @@
  *   - `src_color` / `tgt_color` on a relation — empty on every relation today (they would
  *     read as "exempt"), and K1 drops them; nothing in the pilot reads them;
  *   - the kernel's type law. The pilot checks PAIRS only (is this (src_port, tgt_port)
- *     declared?); the workbench's check 8 is the authority on admission.
+ *     declared?); the workbench's check 8 is the authority on admission. t347 PIL-22: the type
+ *     lists of each pair and each type's served ports are KEPT, for `interfaceOf` (a type's
+ *     positions and directions, the Workbench's reading) — no relation is judged by them.
  *
  * An engine without these routes (an older kernel) is not an error: the grammar comes back
  * `{ status: "absent", reason }`, the drawer falls back to its static lists and the graph to
@@ -62,6 +64,52 @@ const str = (v) => (typeof v === "string" && v.length > 0 ? v : null);
 const pairKey = (s, t) => `${s}\u0000${t}`;
 
 /**
+ * t347 PIL-22: a type list as the engine serves it (`SrcTypes` / `src_types`, a Go nil slice is
+ * `null`): the strings, in the served order. Absent or null is the empty list, which — like `*` —
+ * admits every type (the Workbench's reading, `admitsType`).
+ * @param {unknown} v
+ * @returns {string[]}
+ */
+const typeList = (v) => (Array.isArray(v) ? v.filter((t) => typeof t === "string" && t.length > 0) : []);
+
+/**
+ * t347 PIL-22: whether a type list admits a type — it holds `*`, the type, or nothing (the
+ * Workbench's reading, operad-lib.js `admitsType`).
+ * @param {readonly string[]} list
+ * @param {string} type
+ */
+const admitsType = (list, type) => list.length === 0 || list.includes("*") || list.includes(type);
+
+/** t347 PIL-22: a list that admits every type (empty, or holding `*`). @param {readonly string[]} list */
+const everyType = (list) => list.length === 0 || list.includes("*");
+
+/**
+ * t347 PIL-22: the type lists of two declared pairs with the same two port names, merged — so the
+ * one pair kept admits a type exactly when either did. The union, in order; and since an empty list
+ * admits every type, a union that no longer reads so (one list empty, the other not) gains `*`.
+ * @param {string[]} kept
+ * @param {string[]} other
+ * @returns {string[]}
+ */
+function mergeTypeLists(kept, other) {
+  const merged = [...new Set([...kept, ...other])];
+  return (everyType(kept) || everyType(other)) && !everyType(merged) ? ["*", ...merged] : merged;
+}
+
+/**
+ * t347 PIL-22: a type's ports as the engine serves them (`Ports: {Out, In, Self}` in the kernel's
+ * Go JSON, `ports: {out, in, self}` in a file), or null when the entry carries no ports block.
+ * @param {unknown} entry
+ * @returns {import("./types").GrammarTypePorts | null}
+ */
+function servedPorts(entry) {
+  if (!isObject(entry)) return null;
+  const p = entry.Ports ?? entry.ports;
+  if (!isObject(p)) return null;
+  return { out: typeList(p.Out ?? p.out), in: typeList(p.In ?? p.in), self: typeList(p.Self ?? p.self) };
+}
+
+/**
  * Normalise the three operad bodies into the grammar a frame carries. Tolerant of the two
  * spellings a kernel may use (`SrcPort` / `src_port`, keyed object / array) and of keys it
  * does not know; never reads `matrix`.
@@ -88,7 +136,8 @@ export function normalizeEngineGrammar(raw, meta) {
   if (!categories) return absent(`${OPERAD_PATHS.rewriteCategories} is not a list of rewrite categories`);
   /** @type {GrammarPair[]} */
   const pairs = [];
-  const seen = new Set();
+  /** @type {Map<string, GrammarPair>} */
+  const seen = new Map();
   for (const [key, wf] of categories) {
     if (!isObject(wf)) continue;
     const category = str(wf.ID) ?? str(wf.id) ?? str(key) ?? "";
@@ -97,22 +146,45 @@ export function normalizeEngineGrammar(raw, meta) {
       if (!isObject(p)) continue;
       const src = str(p.SrcPort) ?? str(p.src_port);
       const tgt = str(p.TgtPort) ?? str(p.tgt_port);
-      if (!src || !tgt || seen.has(pairKey(src, tgt))) continue;
-      seen.add(pairKey(src, tgt));
-      pairs.push({ src_port: src, tgt_port: tgt, rewrite_category: category });
+      if (!src || !tgt) continue;
+      // t347 PIL-22: each pair keeps the type lists the engine serves on it (additional pairs
+      // carry their own). A second pair with the same two names is not a second pair here: its
+      // lists are merged into the first, so no type it admits is lost.
+      const srcTypes = typeList(p.SrcTypes ?? p.src_types);
+      const tgtTypes = typeList(p.TgtTypes ?? p.tgt_types);
+      const first = seen.get(pairKey(src, tgt));
+      if (first) {
+        first.src_types = mergeTypeLists(first.src_types, srcTypes);
+        first.tgt_types = mergeTypeLists(first.tgt_types, tgtTypes);
+        continue;
+      }
+      const pair = { src_port: src, tgt_port: tgt, rewrite_category: category, src_types: srcTypes, tgt_types: tgtTypes };
+      seen.set(pairKey(src, tgt), pair);
+      pairs.push(pair);
     }
   }
   if (pairs.length === 0) return absent(`${OPERAD_PATHS.rewriteCategories} declares no port pair`);
 
   // Node types: { agent: {...}, … } or [ { ID: "agent" }, … ].
   const nt = raw.nodeTypes;
-  const typeNames = Array.isArray(nt)
-    ? nt.map((t) => (isObject(t) ? (str(t.ID) ?? str(t.id)) : str(t)))
+  const typeEntries = Array.isArray(nt)
+    ? nt.map((t) => /** @type {[string | null, unknown]} */ ([isObject(t) ? (str(t.ID) ?? str(t.id)) : str(t), t]))
     : isObject(nt)
-      ? Object.keys(nt)
+      ? Object.entries(nt)
       : null;
-  if (!typeNames) return absent(`${OPERAD_PATHS.nodeTypes} is not a list of node types`);
+  if (!typeEntries) return absent(`${OPERAD_PATHS.nodeTypes} is not a list of node types`);
+  const typeNames = typeEntries.map(([name]) => name);
   const types = [...new Set(typeNames.filter((t) => typeof t === "string" && t.length > 0))].sort();
+  // t347 PIL-22: each type's ports as served ({out, in, self}), for every entry that carries a
+  // ports block; the first entry of a name wins.
+  /** @type {Map<string, import("./types").GrammarTypePorts>} */
+  const portsByType = new Map();
+  for (const [name, entry] of typeEntries) {
+    const ports = servedPorts(entry);
+    if (typeof name === "string" && name.length > 0 && ports && !portsByType.has(name)) portsByType.set(name, ports);
+  }
+  // fromEntries makes every name an own key (a type called "__proto__" included).
+  const typePorts = Object.fromEntries(portsByType);
 
   // Port colours: `port_colors` only (never `matrix`), plus K1's two additive keys. Without
   // them the declared pairs and types still stand (P6); only κ is missing (t342 P6 review).
@@ -136,6 +208,7 @@ export function normalizeEngineGrammar(raw, meta) {
     src_ports: named((p) => [p.src_port]),
     ports: named((p) => [p.src_port, p.tgt_port]),
     types,
+    type_ports: typePorts,
     port_colors: portColors,
     port_colors_reason: portColors ? null : `${OPERAD_PATHS.portColors} carries no port_colors`,
     color_rule: portColors && isObject(pc) ? str(pc.color_rule) : null,
@@ -163,6 +236,37 @@ export function isDeclaredPair(grammar, srcPort, tgtPort) {
 }
 /** @type {WeakMap<object, Set<string>>} */
 const PAIR_INDEX = new WeakMap();
+
+/**
+ * t347 PIL-22: one node type as an interface, read from the engine's declared pairs with the
+ * Workbench's reading (mtdc-lab operad-lib.js `interfaceOf`, WB-12): its positions are the
+ * out-names of the pairs whose source list admits the type, its directions the in-names of the
+ * pairs whose target list admits it, each in the order the pairs first give them. A list admits
+ * a type when it holds `*`, the type, or nothing; a pair with a `{placeholder}` name at either end
+ * names no port and is skipped. `self` is the type's served `Ports.Self` (no pair describes it).
+ * Null without an engine grammar, for a type the engine does not declare, or on a grammar read
+ * before PIL-22 (its pairs carry no type lists). Pure; nothing draws it yet (PIL-17 will).
+ * @param {EngineGrammar | null | undefined} grammar
+ * @param {unknown} type
+ * @returns {{ positions: string[], directions: string[], self: string[] } | null}
+ */
+export function interfaceOf(grammar, type) {
+  if (grammar?.status !== "engine" || typeof type !== "string" || !grammar.types.includes(type)) return null;
+  if (!grammar.pairs.every((p) => Array.isArray(p.src_types) && Array.isArray(p.tgt_types))) return null;
+  /** @type {string[]} */
+  const positions = [];
+  /** @type {string[]} */
+  const directions = [];
+  for (const p of grammar.pairs) {
+    if (isPlaceholderPort(p.src_port) || isPlaceholderPort(p.tgt_port)) continue;
+    if (admitsType(p.src_types, type) && !positions.includes(p.src_port)) positions.push(p.src_port);
+    if (admitsType(p.tgt_types, type) && !directions.includes(p.tgt_port)) directions.push(p.tgt_port);
+  }
+  const served = grammar.type_ports && Object.prototype.hasOwnProperty.call(grammar.type_ports, type)
+    ? grammar.type_ports[type]
+    : null;
+  return { positions, directions, self: [...(served?.self ?? [])] };
+}
 
 /**
  * t344 PIL-14: the converse of a port name from the engine's declared pairs — every port that a

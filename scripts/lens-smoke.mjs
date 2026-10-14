@@ -98,6 +98,11 @@
  *      is on two pairs and reads both its converse names — the honest non-function. No engine
  *      port name is written here (Copilot on #49): the recorded file is pinned by sha256, so
  *      that port and its two converses are derived from it.
+ *   L. (t347 PIL-22) A node type as an interface: the grammar keeps each pair's type lists
+ *      (a second pair with the same two names merged in, not dropped) and each type's served
+ *      ports, and `interfaceOf` gives a type's positions and directions with the Workbench's
+ *      reading — `*`, the type, or an empty list admits; a `{placeholder}` pair is skipped —
+ *      on a synthetic grammar with a `*` list, an empty list, a null list and a merged pair.
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -137,6 +142,7 @@ import {
   clearEngineGrammarCache,
   conversePorts,
   grammarGap,
+  interfaceOf,
   isPlaceholderPort,
   normalizeEngineGrammar,
   readEngineGrammar,
@@ -1713,6 +1719,85 @@ console.log("\nK. the converse from the engine's grammar, for every pair (PIL-14
     );
   }
   if (failures === before) pass("K holds");
+}
+
+// L — a node type as an interface, from the engine's declared pairs (t347 PIL-22). The grammar
+// keeps each pair's type lists and each type's served ports, and `interfaceOf` reads a type's
+// positions and directions the Workbench's way (mtdc-lab operad-lib.js interfaceOf): `*`, the
+// type, or an empty list admits; a `{placeholder}` pair is skipped. Synthetic names only. The
+// one-off cross-check against the Workbench's own interfaceOf on a recorded engine grammar is
+// in the PIL-22 commit message, not here (no operad data in this public repo).
+console.log("\nL. a type's interface from the engine's declared pairs (PIL-22, synthetic)");
+{
+  const before = failures;
+  const check = (cond, msg) => (cond ? pass(msg) : fail(msg));
+  const P = (n) => `lens-smoke-l-${n}`;
+  const [A, B, C] = ["a", "b", "c"].map((t) => P(`type-${t}`));
+  const ports = (self) => ({ Out: [P("served-out")], In: [P("served-in")], Self: self });
+  const g = normalizeEngineGrammar(
+    {
+      nodeTypes: { [A]: { ID: A, Ports: ports([P("self")]) }, [B]: { ID: B, Ports: ports(null) }, [C]: { ID: C } },
+      rewriteCategories: {
+        WF90: {
+          ID: "WF90",
+          SrcPort: P("p-out"),
+          TgtPort: P("p-in"),
+          SrcTypes: [A],
+          TgtTypes: [B],
+          AdditionalPortPairs: [
+            { SrcPort: P("q-out"), TgtPort: P("q-in"), SrcTypes: ["*"], TgtTypes: [] }, // a `*` list, an empty list
+            { SrcPort: P("r-out"), TgtPort: P("r-in"), SrcTypes: [C], TgtTypes: [C] },
+            { SrcPort: "{lens-smoke-l}", TgtPort: "{lens-smoke-l}", SrcTypes: ["*"], TgtTypes: ["*"] }, // a placeholder: skipped
+          ],
+        },
+        // The same two names again, in another category: merged into the first pair, not dropped.
+        WF91: {
+          ID: "WF91",
+          SrcPort: P("r-out"),
+          TgtPort: P("r-in"),
+          SrcTypes: [B],
+          TgtTypes: null, // a Go nil slice: empty, every type
+          AdditionalPortPairs: [{ SrcPort: P("p-out"), TgtPort: P("p-in"), SrcTypes: [], TgtTypes: [C] }],
+        },
+      },
+      portColors: null,
+    },
+    { source: "lens-smoke", ontology_version: "lens-smoke-l" },
+  );
+  const lists = Object.fromEntries((g.pairs ?? []).map((p) => [p.src_port, [p.src_types, p.tgt_types]]));
+  check(
+    g.status === "engine" && g.pairs.length === 4 &&
+      JSON.stringify(lists[P("q-out")]) === JSON.stringify([["*"], []]) &&
+      JSON.stringify(lists[P("p-out")]) === JSON.stringify([["*", A], [B, C]]) &&
+      JSON.stringify(lists[P("r-out")]) === JSON.stringify([[C, B], ["*", C]]),
+    "each pair keeps its served type lists; a second pair with the same two names merges its lists into the first " +
+      "(an empty list merged with a named one reads as every type: `*` is added)",
+  );
+  check(
+    JSON.stringify(g.type_ports?.[A]) === JSON.stringify({ out: [P("served-out")], in: [P("served-in")], self: [P("self")] }) &&
+      JSON.stringify(g.type_ports?.[B]?.self) === "[]" && !(C in (g.type_ports ?? {})),
+    "each type's served {out, in, self} is kept (a null Self is empty; a type served without ports has none)",
+  );
+  const want = {
+    [A]: { positions: [P("p-out"), P("q-out")], directions: [P("q-in"), P("r-in")], self: [P("self")] },
+    [B]: { positions: [P("p-out"), P("q-out"), P("r-out")], directions: [P("p-in"), P("q-in"), P("r-in")], self: [] },
+    [C]: { positions: [P("p-out"), P("q-out"), P("r-out")], directions: [P("p-in"), P("q-in"), P("r-in")], self: [] },
+  };
+  const got = Object.fromEntries([A, B, C].map((t) => [t, interfaceOf(g, t)]));
+  for (const t of [A, B, C]) {
+    check(
+      JSON.stringify(got[t]) === JSON.stringify(want[t]),
+      `interfaceOf(${t}): positions ${JSON.stringify(got[t]?.positions)}, directions ${JSON.stringify(got[t]?.directions)}, ` +
+        `self ${JSON.stringify(got[t]?.self)} — \`*\` and the empty list admit it, the placeholder pair is skipped`,
+    );
+  }
+  const old = { ...g, pairs: g.pairs.map(({ src_port, tgt_port, rewrite_category }) => ({ src_port, tgt_port, rewrite_category })) };
+  check(
+    interfaceOf(g, P("nowhere")) === null && interfaceOf(undefined, A) === null &&
+      interfaceOf({ status: "absent", reason: "x" }, A) === null && interfaceOf(old, A) === null,
+    "no interface for a type the engine does not declare, without an engine grammar, or on a grammar read before PIL-22 (no type lists)",
+  );
+  if (failures === before) pass("L holds");
 }
 
 console.log(

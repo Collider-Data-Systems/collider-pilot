@@ -161,7 +161,11 @@ drawn in two tones before). The legend's `colour by` switch goes
 back to the relation-kind palette above. The grammar is read from the engine at run time
 (`src/mcp/engine-grammar.js`, cached per engine and ontology version) and the advanced drawer
 adds what it declares — types and ports the static lists do not name, and the fold's labels
-on no declared pair — so all 56 types of mtdc-2.1.0 can be selected. Nothing of the operad is
+on no declared pair — so all 56 types of mtdc-2.1.0 can be selected. Since t347 (PIL-22) the
+grammar also keeps each pair's type lists and each type's served ports, and
+`interfaceOf(grammar, type)` gives a type's interface — its positions and directions, read from
+the pairs the way the Workbench reads them; nothing draws it yet (TESTING.md, "A type's
+interface from the engine's grammar"). Nothing of the operad is
 written into this repo; an engine without `/operad/*` is drawn by relation kind and the
 legend and the drawer say so (TESTING.md, "Port colours and the engine's grammar").
 
@@ -264,7 +268,7 @@ src/state/scratch.ts               chrome.storage.session helpers (selection + f
 src/state/use-mirror-view.ts       what a mirror follows besides frame + selection: the stored layout choice and the scratch view (t337)
 src/ui/kb-vocab.json               knowledge vocabulary (ontology 4.0.8) — Lean-emitted, copied verbatim, never edited here (t337)
 src/ui/kb-vocab.js                 SHARED typed accessor over it: knowledge ports, per-port style, converse names, nesting port, claim kinds (t337)
-src/mcp/engine-grammar.js          SHARED read of the engine's grammar: GET /operad/node-types, /rewrite-categories, /port-colors, cached per engine + ontology version (t342)
+src/mcp/engine-grammar.js          SHARED read of the engine's grammar: GET /operad/node-types, /rewrite-categories, /port-colors, cached per engine + ontology version (t342); the converse of a port (t344); a type's interface, interfaceOf (t347)
 src/ui/port-colour.js              SHARED pure painter: each relation end by κ(port), the three non-colour states, the eight hues (t342)
 src/components/                    PostureStrip (strip + audit drawer) · SettingsPanel · GraphControls · FrameGraph (Cytoscape) · NodeInspector · ActionsPanel + ConfirmActionModal
 src/tools/types.ts                 controlled-tools contract: ToolKind/ToolChannel, ToolSpec, AffordancePack, ToolCall, PendingAction (Phase 4)

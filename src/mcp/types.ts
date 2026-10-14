@@ -175,6 +175,24 @@ export interface GrammarPair {
   src_port: string;
   tgt_port: string;
   rewrite_category: string;
+  /**
+   * t347 PIL-22: the type lists the engine serves on the pair (`SrcTypes` / `TgtTypes`), as
+   * served — `*`, the type, or an empty list admits a type (interfaceOf). Where a second pair
+   * with the same two port names is folded into this one, its lists are merged in.
+   */
+  src_types: string[];
+  tgt_types: string[];
+}
+
+/**
+ * t347 PIL-22: a node type's ports as the engine serves them on `/operad/node-types`
+ * (`Ports.Out` / `In` / `Self`). Kept as served: interfaceOf reads the positions and the
+ * directions from the declared pairs, and only `self` from here (no pair describes it).
+ */
+export interface GrammarTypePorts {
+  out: string[];
+  in: string[];
+  self: string[];
 }
 
 /**
@@ -198,6 +216,11 @@ export type EngineGrammar =
       ports: string[];
       /** The declared node types. */
       types: string[];
+      /**
+       * t347 PIL-22: each declared type's ports as the engine serves them, for the types whose
+       * entry carries a ports block (type name -> GrammarTypePorts).
+       */
+      type_ports: Record<string, GrammarTypePorts>;
       /**
        * κ: port -> colour family. `""` is the exemption of 98f2ccc kernels on 4.0.x. Null
        * (t342 P6 review): the engine serves its pairs and types but no port colours — the drawer
