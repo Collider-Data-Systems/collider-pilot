@@ -235,8 +235,10 @@ N (t347 PIL-17) holds the node as an interface in the inspector — the real `No
 to static markup and FrameGraph's real `drawingPlan` — on a synthetic frame, and on a saved copy
 of an engine's `GET /fold` read from outside this repo (`PILOT_STATE_COPY`; without the file it
 prints `[SKIP]` and the synthetic checks still run): the count words, what arrives on the left one
-row each, the out-ports held on the right, every row one relation, no drawn line between two nodes
-that share no relation (see "The node as an interface").
+row each, the out-ports held on the right (the source port each relation carries; relations that
+carry none in a group of their own), grouping linear, every row one relation, no drawn line between
+two nodes that share no relation, and every relation drawn once as a line except the nesting
+relations a container shows (see "The node as an interface").
 
 **`selftest.html`** (open it from the extension: `chrome-extension://<id>/selftest.html`) is
 the one surface that can exercise what the harnesses fake — the worker seam with real
@@ -1220,6 +1222,54 @@ holds none reads `holds no out-port`.
 **Not reached.** The copy carries no grammar, so N checks the count words on the synthetic
 grammar; the panel reads them from the engine. A knowledge source drawn inside the box that cites
 it (P3) is placement, not a line, and is unchanged; N holds the lines.
+
+**Review of #51 (t348; Copilot 4277217181, 4277217207, 4277217231, 4277217259).**
+- *An out-port is the source port the relation carries.* `transform.js` `mapRelation` sets a
+  relation's label to its `src_port`, else its `tgt_port`, else its rewrite category, so a label
+  is not always a source port: two relations with no `src_port` and two target ports became two
+  invented held out-ports. `nodeInterface` now reads the port as `paintRelation` does (one
+  function, `port-colour.js` `carriedSourcePort`): the carried `src_port`, and the label only for
+  a legacy relation built without carried ports. A relation that carries none (or an empty one)
+  is listed on the right under `out-port not known`, one row each (`data-unnamed-port`), named
+  after the held count (`holds 2 out-ports · 2 relations on an out-port not known`), and never
+  counted as an out-port. The count N makes from the saved copy uses the same rule: the distinct
+  non-empty `src_port` of a node's relations, the relations with none counted apart.
+- *Grouping is linear.* Each relation is appended to the array `nodeInterface` made for its port
+  (it copied the whole array on each append: k²/2 for k relations on one port). Pure; the order
+  within a port is the frame's.
+- *The drawn lines under `nested`.* N's line check used the automatic layout, which draws a frame
+  with a nesting box `nested`, where a nesting relation its container shows is not a line
+  (`toElements`). It now expects one line per relation less those, by the same test
+  (`isContainerNesting`, exported), and requires each of those shown by its container (its source
+  drawn inside its target) and drawn as no line; the stray-line and the inspector-row checks stay.
+- *A long port name in a half-width side.* `.insp-rel-label` kept `flex: none` and `nowrap`
+  from the flat list (t337), so a long name, or a converse of several names, ran past its side
+  and could squeeze the button to the other node to nothing. A port name now shrinks and wraps
+  inside its side (`overflow-wrap: anywhere` for a name with no break), and the button keeps at
+  least 4em (cut with an ellipsis); on the left side its name sits against the arrow.
+
+Asserted (N, synthetic): a nested frame — two claims in a domain_tag through the nesting relation,
+one plain relation between them — reads 1 line for 3 relations less 2 its container shows, with
+6 inspector rows; a node of A with one carried out-port, one legacy relation and two relations
+mapped with no `src_port` and two different target ports (their labels) reads `holds 2 out-ports · 2 relations on
+an out-port not known`, the two in their own group, in order; 2000 relations on one out-port are
+grouped in 2009 array steps (every array iteration counted through `Array.prototype[Symbol.iterator]`;
+the bound is 2 per relation), in the frame's order, the frame unchanged. Fails as it should (each
+break restored): the line count without the container subtraction 1 FAIL (the nested case: what N
+did before); the container's nesting relation also drawn as a line 3 (the nested case, and two in
+H); the bucket copied on each append 1 (2 003 009 steps); the order within a port reversed 1;
+the label read as the out-port 1, and 2 on a copy with two `src_port` removed (the copy check
+too); relations with no source port dropped 3 on that copy; the component as at PIL-17 2.
+
+Measured (t348). The saved copy under the new rule: all 242 relations carry a `src_port`, so the
+counts are unchanged — 325 of 325 nodes, 11 session nodes, 7 holding 4 out-ports, 3 holding 1, 1
+holding 0; 484 rows; 242 lines (concentric, no container). In the built `dist/preview-live.html`
+(the 380 px panel, identified, the primary; headless Chrome, GET only): 20 nodes (every session
+node and the 15 with the most relations), 248 rows and port heads, none past its side, no button
+under 20 px. On the node with rows on both sides, every port name replaced by a 79-character
+converse of three names, then by a 53-character name with no break: sides 165 px, 21 rows, 0 past
+their side, the narrowest button 44 px; with the rules before the fix put back, 5 rows past their
+side and the arriving row's button 0 px wide.
 
 ## Finding and inspecting in the knowledge graph (t337)
 

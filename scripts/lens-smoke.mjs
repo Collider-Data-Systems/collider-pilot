@@ -133,6 +133,9 @@
  *      node it names, and no drawn line between two nodes that share no relation; then on a saved
  *      copy of an engine's GET /fold read from outside this repo (PILOT_STATE_COPY; SKIP when
  *      absent): every node shows the out-ports it holds, equal to a count made from the copy.
+ *      t348 (review of #51): an out-port is the source port a relation carries (relations with
+ *      none in a group of their own, not counted), grouping is linear (counted array steps), and
+ *      the drawn lines are counted less the nesting relations a container shows (a nested case).
  *
  * WHY IT IS A SCRIPT AND NOT A SKILL: a capability that exists only as a SKILL.md cannot be
  * invoked by the Antigravity, VS Code or Codex seats. Script first, pointer in AGENTS.md,
@@ -166,7 +169,7 @@ import {
   linkedComponents,
   separateLabels,
 } from "../src/ui/component-layout.js";
-import { selectFrame } from "../src/mcp/transform.js";
+import { mapRelation, selectFrame } from "../src/mcp/transform.js";
 // t342 P1/P6: the engine-grammar normaliser and the port-colour painter, as the panel runs them.
 import {
   clearEngineGrammarCache,
@@ -2404,7 +2407,9 @@ console.log("\nM. the rendered words: no banned word; \"box\" and the vocabulary
 // (PILOT_STATE_COPY, default <tmp>/t347-primary-state.json; SKIP when absent, as K does): every
 // node shows how many out-ports it holds, equal to a count made here from the raw copy, and the
 // session nodes are counted out. On both, the drawn frame: no line joins two nodes that share no
-// relation.
+// relation. t348 (review of #51): an out-port is the source port a relation carries, never its
+// label when it carries none; grouping is linear; a nesting relation its container shows is not
+// expected as a line.
 console.log("\nN. the node as an interface: what arrives on the left, one row each; the out-ports it holds on the right (PIL-17)");
 {
   const before = failures;
@@ -2452,10 +2457,14 @@ console.log("\nN. the node as an interface: what arrives on the left, one row ea
       }));
     const held = /data-testid="inspector-held" data-held="(\d+)"[^>]*>([^<]*)</.exec(html);
     const typeLine = /data-testid="inspector-interface-type"[^>]*>([^<]*)</.exec(html);
+    // t348 (review of #51): the group of relations that carry no source port, and its rows.
+    const unnamedAt = right.indexOf("data-unnamed-port=");
     return {
       html: unescape(html),
       held: held ? Number(held[1]) : null,
       heldText: held ? unescape(held[2]) : null,
+      unnamed: unnamedAt >= 0 ? Number(/data-unnamed-port="(\d+)"/.exec(right.slice(unnamedAt))[1]) : 0,
+      unnamedRows: unnamedAt >= 0 ? rows(right.slice(unnamedAt)).map((x) => x.relation) : [],
       typeLine: typeLine ? unescape(typeLine[1]) : null,
       heads: [...html.matchAll(/class="insp-ifc-head"[^>]*>([^<]*)</g)].map((x) => unescape(x[1])),
       ports: [...right.matchAll(/data-held-port="([^"]*)"/g)].map((x) => unescape(x[1])),
@@ -2477,17 +2486,46 @@ console.log("\nN. the node as an interface: what arrives on the left, one row ea
     const each = (side) => new Set(side.map((x) => x.relation)).size === side.length;
     return { wrong, rows: shown.arriving.length + shown.leaving.length, want, ok: !wrong.length && each(shown.arriving) && each(shown.leaving) };
   };
-  /** Every drawn line is one relation of the frame, between that relation's own two nodes — no composite. */
+  /**
+   * Every drawn line is one relation of the frame, between that relation's own two nodes — no
+   * composite. t348 (review of #51, Copilot 4277217181): the automatic layout can be `nested`,
+   * where a nesting relation its container shows is drawn as the container, not as a line
+   * (toElements). Those relations — the same test, FrameGraph isContainerNesting — are taken out of
+   * the lines expected, and each must be shown by its container instead: its source drawn inside
+   * its target. Every other relation is drawn as exactly one line.
+   */
   const linesAreRelations = (frame) => {
     const layout = fgN.resolveGraphLayout("auto", frame);
+    const grammar = frame.provenance?.grammar;
     const rel = new Map(frame.relations.map((r) => [r.urn, r]));
-    const lines = fgN.drawingPlan(frame, layout, false).elements.filter((e) => e.group === "edges");
+    const plan = fgN.drawingPlan(frame, layout, false);
+    const lines = plan.elements.filter((e) => e.group === "edges");
+    const parentOf = new Map(plan.elements.filter((e) => e.group === "nodes").map((e) => [String(e.data.id), e.data.parent]));
     const stray = lines.filter((e) => {
       const r = rel.get(String(e.data.id));
       return !r || r.source_urn !== e.data.source || r.target_urn !== e.data.target;
     });
-    return { layout, lines: lines.length, stray: stray.map((e) => `${e.data.source} → ${e.data.target}`) };
+    const drawn = new Map();
+    for (const e of lines) drawn.set(String(e.data.id), (drawn.get(String(e.data.id)) ?? 0) + 1);
+    const contained = frame.relations.filter((r) => fgN.isContainerNesting(r, plan.parents, grammar));
+    const containedUrns = new Set(contained.map((r) => r.urn));
+    const notOnce = frame.relations.filter((r) => !containedUrns.has(r.urn) && drawn.get(r.urn) !== 1);
+    const notShown = contained.filter((r) => drawn.has(r.urn) || parentOf.get(r.source_urn) !== r.target_urn);
+    return {
+      layout,
+      lines: lines.length,
+      want: frame.relations.length - contained.length,
+      contained: contained.length,
+      stray: stray.map((e) => `${e.data.source} → ${e.data.target}`),
+      notOnce: notOnce.map((r) => r.urn),
+      notShown: notShown.map((r) => r.urn),
+      ok: stray.length === 0 && notOnce.length === 0 && notShown.length === 0 && lines.length === frame.relations.length - contained.length,
+    };
   };
+  const linesWords = (x) =>
+    `drawn (${x.layout}), ${x.lines} line${x.lines === 1 ? "" : "s"} for ${x.want + x.contained} relations less ${x.contained} its containers show, ` +
+    `each between its own relation's two nodes (${x.stray.length} other${x.stray.length ? `: ${x.stray.join("; ")}` : ""}` +
+    `${x.notOnce.length ? `; not drawn once: ${x.notOnce.join(", ")}` : ""}${x.notShown.length ? `; not shown by a container: ${x.notShown.join(", ")}` : ""})`;
   const ZERO = /\b0 (positions?|directions?|position coordinates?|direction coordinates?)\b/;
 
   // Synthetic: type A offers three out-ports and accepts one; type B accepts three and offers none.
@@ -2581,12 +2619,133 @@ console.log("\nN. the node as an interface: what arrives on the left, one row ea
   const synthRows = synth.nodes.map((n) => rowsJoinRelated(synth, n, shownFor(synth, n)));
   const synthLines = linesAreRelations(synth);
   check(
-    synthRows.every((x) => x.ok && x.rows === x.want) && synthLines.lines === synth.relations.length && synthLines.stray.length === 0,
+    synthRows.every((x) => x.ok && x.rows === x.want) && synthLines.ok && synthLines.contained === 0,
     `synthetic: each of the ${synthRows.reduce((s, x) => s + x.rows, 0)} rows of the ${synth.nodes.length} inspectors is one relation ` +
       `between its node and the node it names (${synthRows.reduce((s, x) => s + x.wrong.length, 0)} other, every relation once); ` +
-      `drawn (${synthLines.layout}), ${synthLines.lines} lines, each between its own relation's two nodes ` +
-      `(${synthLines.stray.length} other${synthLines.stray.length ? `: ${synthLines.stray.join("; ")}` : ""})`,
+      linesWords(synthLines),
   );
+  // t348 (review of #51, Copilot 4277217181): a frame the automatic layout draws `nested`. Two claims
+  // sit in a domain_tag through the vocabulary's nesting relation (drawn as the container, no line),
+  // and one plain relation joins the claims (a line). Before the fix N counted 1 line against 3
+  // relations and failed on a correct drawing.
+  {
+    const NN = (n) => `urn:moos:claim:lens-smoke.n-nest-${n}`;
+    const nbox = "urn:moos:domain_tag:lens-smoke.n-nest-box";
+    const nestRel = (id, s, sp, t, tp) => ({
+      urn: relUrn(`nest-${id}`),
+      type_id: "WF90",
+      label: sp,
+      source_urn: s,
+      target_urn: t,
+      properties: { src_port: sp, tgt_port: tp },
+    });
+    const nested = {
+      provenance: { grammar: g },
+      nodes: [
+        { urn: NN("c1"), label: "c1", type_id: "claim", properties: {} },
+        { urn: NN("c2"), label: "c2", type_id: "claim", properties: {} },
+        { urn: nbox, label: "nest", type_id: "domain_tag", properties: {} },
+      ],
+      relations: [
+        nestRel("1", NN("c1"), KB_NESTING_PORT, nbox, P("in")),
+        nestRel("2", NN("c2"), KB_NESTING_PORT, nbox, P("in")),
+        nestRel("3", NN("c1"), P("pa"), NN("c2"), P("da")),
+      ],
+    };
+    const nestedLines = linesAreRelations(nested);
+    const nestedRows = nested.nodes.map((n) => rowsJoinRelated(nested, n, shownFor(nested, n)));
+    check(
+      nestedLines.layout === "nested" && nestedLines.contained === 2 && nestedLines.lines === 1 && nestedLines.ok &&
+        nestedRows.every((x) => x.ok && x.rows === x.want) && nestedRows.reduce((s, x) => s + x.rows, 0) === 6,
+      `synthetic, nested: ${linesWords(nestedLines)}; the inspectors still list every relation, ` +
+        `${nestedRows.reduce((s, x) => s + x.rows, 0)} rows, each one relation (${nestedRows.reduce((s, x) => s + x.wrong.length, 0)} other)`,
+    );
+  }
+  // t348 (review of #51, Copilot 4277217231): an out-port is the source port a relation carries, not
+  // its label. A node of A holds one relation on a carried out-port, one legacy relation built
+  // without carried ports (read by its label), and two relations mapped from the engine with NO
+  // src_port and two different target ports (their label is the target port, transform.js
+  // mapRelation). Those two must not become two held out-ports: they show in their own group.
+  {
+    const raw = (id, s, sp, t, tp) => ({
+      urn: relUrn(id),
+      rewrite_category: "WF90",
+      src_urn: U(s),
+      ...(sp ? { src_port: sp } : {}),
+      tgt_urn: U(t),
+      tgt_port: tp,
+    });
+    const legacy = { urn: relUrn("10"), type_id: "WF90", label: P("pb"), source_urn: U("a4"), target_urn: U("b1"), properties: {} };
+    const noSrc = {
+      provenance: { grammar: g },
+      nodes: [...synth.nodes, node("a4", A)],
+      relations: [
+        ...synth.relations,
+        mapRelation(raw("7", "a4", null, "b1", P("dy"))),
+        mapRelation(raw("8", "a4", null, "b2", P("dz"))),
+        mapRelation(raw("9", "a4", P("pa"), "c1", P("da"))),
+        legacy,
+      ],
+    };
+    const a4n = noSrc.nodes[noSrc.nodes.length - 1];
+    const a4 = shownFor(noSrc, a4n);
+    const a4rows = rowsJoinRelated(noSrc, a4n, a4);
+    check(
+      noSrc.relations[6].label === P("dy") && noSrc.relations[7].label === P("dz") &&
+        a4.held === 2 && JSON.stringify(a4.ports) === JSON.stringify([P("pa"), P("pb")]) &&
+        a4.heldText === "holds 2 out-ports · 2 relations on an out-port not known" &&
+        a4.unnamed === 2 && JSON.stringify(a4.unnamedRows) === JSON.stringify([relUrn("7"), relUrn("8")]) &&
+        a4.right.includes("out-port not known") && a4.right.includes(`none held on ${P("pc")}`) &&
+        a4rows.ok && a4rows.rows === 4,
+      `synthetic, no carried source port: two relations without src_port and with target ports ${P("dy")} and ${P("dz")} ` +
+        `(their labels) are ${a4.unnamed} rows under "out-port not known" ${JSON.stringify(a4.unnamedRows)}, not held out-ports; ` +
+        `"${a4.heldText}" (data-held ${a4.held}) — ${JSON.stringify(a4.ports)}, the legacy relation read by its label; ` +
+        `${a4rows.rows} rows, each one relation`,
+    );
+  }
+  // t348 (review of #51, Copilot 4277217207): grouping is linear and pure. A node of A with 2000
+  // relations on one out-port; the array steps nodeInterface takes are counted (every array
+  // iteration — for-of, a spread — goes through Array.prototype[Symbol.iterator]). Copying the
+  // port's array on each append takes about k²/2 steps (2 million), appending about k.
+  {
+    const K = 2000;
+    const f = node("f1", A);
+    const fan = {
+      provenance: { grammar: g },
+      nodes: [f],
+      relations: Array.from({ length: K }, (_, i) => nrel(`fan-${i}`, "f1", P("pa"), `t${i}`, P("da"))),
+    };
+    const order = fan.relations.map((r) => r.urn);
+    const proto = Array.prototype;
+    const iterate = proto[Symbol.iterator];
+    let steps = 0;
+    let fanIfc;
+    proto[Symbol.iterator] = function () {
+      const it = iterate.call(this);
+      return {
+        next: () => {
+          steps += 1;
+          return it.next();
+        },
+        [Symbol.iterator]() {
+          return this;
+        },
+      };
+    };
+    try {
+      fanIfc = ni.nodeInterface(fan, f);
+    } finally {
+      proto[Symbol.iterator] = iterate;
+    }
+    const got = fanIfc.held[0]?.relations ?? [];
+    check(
+      steps <= 2 * K && fanIfc.held.length === 1 && got.length === K &&
+        JSON.stringify(got.map((r) => r.urn)) === JSON.stringify(order) &&
+        got !== fan.relations && JSON.stringify(fan.relations.map((r) => r.urn)) === JSON.stringify(order),
+      `synthetic, ${K} relations on one out-port: grouped in ${steps} array steps (at most ${2 * K}: linear), ` +
+        `in the frame's order, into an array of its own; the frame unchanged`,
+    );
+  }
   const bare = { nodes: synth.nodes, relations: synth.relations };
   const a1bare = shownFor(bare, a1n);
   check(
@@ -2613,12 +2772,28 @@ console.log("\nN. the node as an interface: what arrives on the left, one row ea
       healthz: { t_day: fold.t, log_len: fold.log_len },
       request: { view_filter: { types: ["*"] } },
     });
-    // Counted here from the raw copy: the distinct out-ports a node's relations leave from.
+    // Counted here from the raw copy: the distinct out-ports a node's relations leave from — the
+    // source port each relation carries (t348, review of #51: a relation with no src_port, or an
+    // empty one, names no out-port and is counted apart, as the inspector shows it).
     const counted = new Map();
-    for (const r of rawRelations) counted.set(r.src_urn, new Set([...(counted.get(r.src_urn) ?? []), r.src_port]));
+    const noPort = new Map();
+    for (const r of rawRelations) {
+      if (typeof r.src_port === "string" && r.src_port) {
+        if (!counted.has(r.src_urn)) counted.set(r.src_urn, new Set());
+        counted.get(r.src_urn).add(r.src_port);
+      } else noPort.set(r.src_urn, (noPort.get(r.src_urn) ?? 0) + 1);
+    }
+    const noPortTotal = [...noPort.values()].reduce((s, k) => s + k, 0);
     const rows = frame.nodes.map((n) => {
       const shown = shownFor(frame, n);
-      return { n, shown: shown.held, counted: counted.get(n.urn)?.size ?? 0, join: rowsJoinRelated(frame, n, shown) };
+      return {
+        n,
+        shown: shown.held,
+        counted: counted.get(n.urn)?.size ?? 0,
+        unnamed: shown.unnamed,
+        noPort: noPort.get(n.urn) ?? 0,
+        join: rowsJoinRelated(frame, n, shown),
+      };
     });
     const sessions = rows.filter((x) => x.n.type_id === "session");
     const hist = {};
@@ -2627,14 +2802,17 @@ console.log("\nN. the node as an interface: what arrives on the left, one row ea
       .sort((x, y) => Number(y[0]) - Number(x[0]))
       .map(([k, v]) => `${v} holding ${k}`)
       .join(", ");
-    const off = rows.filter((x) => x.shown !== x.counted);
+    const off = rows.filter((x) => x.shown !== x.counted || x.unnamed !== x.noPort);
     check(
       frame.nodes.length === Object.values(fold.nodes).length && frame.relations.length === rawRelations.length &&
         sessions.length > 0 && off.length === 0,
       `saved copy ${copyPath} (log ${fold.log_len}, ${frame.nodes.length} nodes, ${frame.relations.length} relations): ` +
-        `every node shows the out-ports it holds = the count from the copy (${rows.length - off.length} of ${rows.length}); ` +
+        `every node shows the out-ports it holds = the count from the copy, by the source port each relation carries, ` +
+        `and its relations with none apart (${rows.length - off.length} of ${rows.length}; ${noPortTotal} relations carry none); ` +
         `${sessions.length} session nodes: ${histWords}` +
-        (off.length ? ` — differ: ${off.slice(0, 5).map((x) => `${x.n.urn} shows ${x.shown}, holds ${x.counted}`).join("; ")}` : ""),
+        (off.length
+          ? ` — differ: ${off.slice(0, 5).map((x) => `${x.n.urn} shows ${x.shown} (+${x.unnamed}), holds ${x.counted} (+${x.noPort})`).join("; ")}`
+          : ""),
     );
     // The t344 measure on the Z440 primary at log 713 (the order's numbers); another log prints only.
     if (fold.log_len === 713) {
@@ -2647,10 +2825,9 @@ console.log("\nN. the node as an interface: what arrives on the left, one row ea
     const badRows = rows.filter((x) => !x.join.ok || x.join.rows !== x.join.want);
     const copyLines = linesAreRelations(frame);
     check(
-      badRows.length === 0 && copyLines.stray.length === 0 && copyLines.lines === frame.relations.length,
+      badRows.length === 0 && copyLines.ok,
       `saved copy: each of the ${rows.reduce((s, x) => s + x.join.rows, 0)} inspector rows (${rows.length} nodes) is one relation ` +
-        `between its node and the node it names (${badRows.length} nodes otherwise); drawn (${copyLines.layout}), ` +
-        `${copyLines.lines} lines, each between its own relation's two nodes (${copyLines.stray.length} other)`,
+        `between its node and the node it names (${badRows.length} nodes otherwise); ${linesWords(copyLines)}`,
     );
   }
   if (failures === before) pass("N holds");

@@ -643,10 +643,15 @@ body {
 }
 .insp-rel-label {
   color: var(--text-primary);
-  /* t337: a port name stays whole on one line; the other node's label — now often a
-     claim's text — is what gives way (it already ends in an ellipsis). */
-  flex: none;
-  white-space: nowrap;
+  /* t337: the other node's label — often a claim's text — gives way first (it ends in an
+     ellipsis). t348 (review of #51, Copilot 4277217259): the rows now sit in the interface's
+     half-width sides (t347 PIL-17), so a port name — a long one, or a converse of several
+     names — wraps inside its side instead of running past it (it stayed whole on one line,
+     `flex: none` and `nowrap`, and could squeeze the button to nothing). */
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .insp-rel-target {
   background: transparent;
@@ -726,6 +731,16 @@ body {
 }
 .insp-ifc .insp-relations li {
   min-width: 0;
+}
+/* t348 (review of #51, Copilot 4277217259): the button to the other node keeps visible room
+   beside a long port name (4em, its name cut with an ellipsis); on the left side its name
+   sits against the arrow. */
+.insp-ifc .insp-rel-target {
+  flex: 0 1 auto;
+  min-width: 4em;
+}
+.insp-ifc-side[data-side="directions"] .insp-rel-target {
+  text-align: right;
 }
 
 /* Scrollbar */

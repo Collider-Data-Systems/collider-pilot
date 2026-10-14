@@ -252,7 +252,9 @@ coordinate)`, never 0 — P1; P1b, R-prod), how many out-ports the node holds (`
 out-ports`), and two sides in one frame — `accepts` on the left, every relation arriving at it in
 a row of its own (fan-in is not grouped while Q2 is open), read from the node it comes from to the
 in-port it enters; `offers` on the right, each out-port it holds with its relations, each to the
-node it goes to, then the type's position coordinates it holds nothing on. Each row is one
+node it goes to, then the type's position coordinates it holds nothing on. An out-port is the
+source port the relation carries; a relation that carries none is listed under `out-port not
+known` and not counted (t348). Each row is one
 relation; none is composed with another (TESTING.md, "The node as an interface"). In a drawing
 with boxes, centring — a find
 hit, a relation row — also zooms in to where the node can be read (zoom 1; a box: as far

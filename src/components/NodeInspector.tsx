@@ -29,13 +29,17 @@
  * count words (WB-24) and how
  * many out-ports the node holds. Each row is one relation, the one step it is; no two are
  * composed into one (nodeInterface).
+ * t348 (review of #51): an out-port is the source port the relation carries (port-colour.js
+ * carriedSourcePort, as paintRelation reads it), not its label; a relation that carries none is
+ * listed under "out-port not known" and not counted as an out-port. A port name wraps inside its
+ * side, and the button to the other node keeps visible room (sidepanel.css).
  */
 
 import { useRef, useState } from "react";
 import type { HgFrame, HgNode, HgProperties, HgRelation } from "../mcp/types";
 import { interfaceOf } from "../mcp/engine-grammar.js";
 import { KB_VOCAB_VERSION, kbPortStyle } from "../ui/kb-vocab.js";
-import { hasPortColours, paintRelation } from "../ui/port-colour.js";
+import { carriedSourcePort, hasPortColours, paintRelation } from "../ui/port-colour.js";
 import { conversePortOf, relationColourWords, relationConverseWords, type RelationPalette } from "./FrameGraph";
 
 /** The property shown as a paragraph instead of a table row (t337). */
@@ -57,6 +61,13 @@ export interface NodeInterface {
    * known (no grammar, or a type it does not declare).
    */
   held: { port: string; declared: boolean | null; relations: HgRelation[] }[];
+  /**
+   * t348 (review of #51): the relations leaving the node that carry no source port (none served,
+   * or an empty one), in the frame's order. Their label is then the target port or the rewrite
+   * category (transform.js mapRelation), not an out-port, so they are shown in a group of their own
+   * ("out-port not known") and are not counted among the held out-ports.
+   */
+  unnamed: HgRelation[];
   /** The type's position coordinates on which the node holds no relation. */
   empty: string[];
   /**
@@ -77,9 +88,22 @@ export function nodeInterface(frame: HgFrame | null | undefined, node: Pick<HgNo
   const grammar = frame?.provenance?.grammar;
   const iface = interfaceOf(grammar, node.type_id);
   const byPort = new Map<string, HgRelation[]>();
+  const unnamed: HgRelation[] = [];
   for (const r of relations) {
     if (r.source_urn !== node.urn) continue;
-    byPort.set(r.label, [...(byPort.get(r.label) ?? []), r]);
+    // t348 (review of #51, Copilot 4277217231): the out-port is the source port the relation
+    // carries, read as paintRelation reads it (carriedSourcePort) — the label only for a legacy
+    // relation without carried ports. A relation that carries none names no out-port.
+    const port = carriedSourcePort(r);
+    if (!port) {
+      unnamed.push(r);
+      continue;
+    }
+    // t348 (review of #51, Copilot 4277217207): appended to the array this function made for the
+    // port — linear in the relations, in the frame's order; the frame is not touched.
+    const bucket = byPort.get(port);
+    if (bucket) bucket.push(r);
+    else byPort.set(port, [r]);
   }
   const positions = iface?.positions ?? [];
   const order = [...positions.filter((p) => byPort.has(p)), ...[...byPort.keys()].filter((p) => !positions.includes(p)).sort()];
@@ -90,6 +114,7 @@ export function nodeInterface(frame: HgFrame | null | undefined, node: Pick<HgNo
       declared: iface ? positions.includes(port) : null,
       relations: byPort.get(port) ?? [],
     })),
+    unnamed,
     empty: positions.filter((p) => !byPort.has(p)),
     arriving: relations
       .filter((r) => r.target_urn === node.urn)
@@ -111,14 +136,16 @@ export function interfaceCountWords(type: { positions: string[]; directions: str
  * t347 PIL-17: how many out-ports the node holds a relation on, in words, and how many of them its
  * type's interface does not have. The type's own count is the line above (interfaceCountWords), so
  * it is not repeated here: "holds 4 of 6" would read as 6 positions, and a node has one position
- * (P1b, R-prod: its out-ports are the coordinates of that one position).
+ * (P1b, R-prod: its out-ports are the coordinates of that one position). t348 (review of #51): the
+ * relations that carry no source port (`unnamed`) are named after it, never counted as out-ports.
  */
-export function heldWords(held: NodeInterface["held"]): string {
+export function heldWords(held: NodeInterface["held"], unnamed = 0): string {
   const n = held.length;
   const foreign = held.filter((h) => h.declared === false).length;
   return (
     (n === 0 ? "holds no out-port" : `holds ${n} out-port${n === 1 ? "" : "s"}`) +
-    (foreign ? ` (${foreign} its type does not have)` : "")
+    (foreign ? ` (${foreign} its type does not have)` : "") +
+    (unnamed ? ` · ${unnamed} relation${unnamed === 1 ? "" : "s"} on an out-port not known` : "")
   );
 }
 
@@ -245,6 +272,17 @@ export function NodeInspector({
       {labelOf(otherUrn)}
     </button>
   );
+  // A held row, a chain left to right: this out-port → the node it goes to.
+  const leavingRow = (r: HgRelation) => {
+    const { color, rowTitle } = rowPaint(r, true);
+    return (
+      <li key={r.urn} data-relation={r.urn} data-other={r.target_urn} title={rowTitle || undefined}>
+        <span className="insp-rel-dir">→</span>
+        {color && <i className="legend-dot insp-rel-dot" style={{ background: color }} />}
+        {targetButton(r.target_urn)}
+      </li>
+    );
+  };
 
   // t337: shown once, in full, as a paragraph — and so left out of the table below.
   const rawText = node.properties[TEXT_PROPERTY];
@@ -318,7 +356,7 @@ export function NodeInspector({
           data-held={ifc.held.length}
           title="The out-ports this node holds a relation on in this slice; each is listed on the right with the relations it holds there."
         >
-          {heldWords(ifc.held)}
+          {heldWords(ifc.held, ifc.unnamed.length)}
         </div>
         <div className="insp-ifc">
           <div className="insp-ifc-side" data-side="directions">
@@ -364,6 +402,7 @@ export function NodeInspector({
               offers
             </div>
             {ifc.held.length === 0 &&
+              ifc.unnamed.length === 0 &&
               (ifc.type && ifc.type.positions.length === 0 ? (
                 <div className="insp-empty" title="no out-port: it has exactly one position, with no coordinate">
                   one position (no coordinate)
@@ -388,21 +427,24 @@ export function NodeInspector({
                   <span className="insp-rel-label">{port}</span>
                   <span className="insp-ifc-n">{relations.length}</span>
                 </div>
-                <ul className="insp-relations">
-                  {relations.map((r) => {
-                    const { color, rowTitle } = rowPaint(r, true);
-                    // A chain, left to right: this out-port → the node it goes to.
-                    return (
-                      <li key={r.urn} data-relation={r.urn} data-other={r.target_urn} title={rowTitle || undefined}>
-                        <span className="insp-rel-dir">→</span>
-                        {color && <i className="legend-dot insp-rel-dot" style={{ background: color }} />}
-                        {targetButton(r.target_urn)}
-                      </li>
-                    );
-                  })}
-                </ul>
+                <ul className="insp-relations">{relations.map(leavingRow)}</ul>
               </div>
             ))}
+            {ifc.unnamed.length > 0 && (
+              <div className="insp-ifc-port" data-unnamed-port={ifc.unnamed.length}>
+                <div
+                  className="insp-ifc-port-head"
+                  title={
+                    "These relations carry no source port, so the out-port they leave from is not known. " +
+                    "Each is listed, one row each; none is counted among the out-ports the node holds."
+                  }
+                >
+                  <span className="insp-rel-label">out-port not known</span>
+                  <span className="insp-ifc-n">{ifc.unnamed.length}</span>
+                </div>
+                <ul className="insp-relations">{ifc.unnamed.map(leavingRow)}</ul>
+              </div>
+            )}
             {ifc.empty.length > 0 && (
               <div
                 className="insp-ifc-none"
