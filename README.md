@@ -161,15 +161,18 @@ drawn in two tones before). Since t347 (PIL-20) the legend names the colour as t
 Sam's P2: the switch reads `colour by: relation colour | relation kind`, the family group
 *relation colour (family)* with the tooltip "each relation carries one colour; its two ends show
 it", each family row counts the one-colour relations drawn in its hue (a fault counts only in
-the fault row), and the canvas's label says "relations coloured by family"; the *exempt* and *no
-colour* rows still count port ends. The legend's `colour by` switch goes
+the fault row; since t348 a nesting relation drawn as its container is no line and counts in no
+family row), the canvas's label says "relations coloured by family" and the inspector "relation
+colour: F" (a fault: "two colours: a fault"); the *exempt* and *no colour* rows still count port
+ends. The legend's `colour by` switch goes
 back to the relation-kind palette above. The grammar is read from the engine at run time
 (`src/mcp/engine-grammar.js`, cached per engine and ontology version) and the advanced drawer
 adds what it declares — types and ports the static lists do not name, and the fold's labels
 on no declared pair — so all 56 types of mtdc-2.1.0 can be selected. Since t347 (PIL-22) the
 grammar also keeps each pair's type lists and each type's served ports, and
-`interfaceOf(grammar, type)` gives a type's interface — its positions and directions, read from
-the pairs the way the Workbench reads them; nothing draws it yet (TESTING.md, "A type's
+`interfaceOf(grammar, type)` gives a type's interface — its position coordinates and direction
+coordinates (P1; P1b, R-prod), read from the pairs the way the Workbench reads them; nothing
+draws it yet (TESTING.md, "A type's
 interface from the engine's grammar"). Nothing of the operad is
 written into this repo; an engine without `/operad/*` is drawn by relation kind and the
 legend and the drawer say so (TESTING.md, "Port colours and the engine's grammar").
@@ -182,13 +185,16 @@ re-reading the frame; a relation row's tooltip names the port's converse from th
 declared pairs, not only the knowledge vocabulary's (t344 PIL-14), written with † since t347
 (PIL-21), as on the Workbench: `p · † c`, `p · † = itself` for a port that is its own converse,
 and `p · † is not a function here (a, b)` for a port the engine declares on two pairs — whether
-† is a function at each name is checked once per engine when its grammar is read. In the port
+† is a function at each name is checked once per engine when its grammar is read — or, since
+t348, whose relations in the frame carry two target ports; the inspector keeps a relation's own
+target port as its name and adds "† is not a function here (a, b)" after it there. In the port
 palette a relation that is its own converse has no target arrowhead (it reads the same from both
-ends); an end state keeps its glyph. It opens by itself only in a window at least 640 px wide and on a
+ends); an end state keeps its glyph. A relation whose target end carries no port keeps its
+arrowhead: its pair is not declared (t348). It opens by itself only in a window at least 640 px wide and on a
 frame that draws knowledge relations (their lines carry no port text); everywhere else it
 starts closed and the canvas keeps its height. Open, it grows to its rows (the panel
 scrolls) instead of scrolling inside a 110 px box, and it speaks the six words the pilot, the
-Workbench and the manual share — *colour family*, *port end*, *no colour*, *exempt*, *pair
+Workbench and the manual share — *relation colour*, *port end*, *no colour*, *exempt*, *pair
 not declared*, *port on no pair* — with no κ, commit hash, route or `src_port` in a tooltip
 (t342 hand-off C), and since t344 a fourth state row, *two colours: a fault*; since t347 the
 family group is titled *relation colour (family)*, the Workbench's words. The panel's own words

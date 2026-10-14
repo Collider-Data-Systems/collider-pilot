@@ -1555,6 +1555,27 @@ function liveAxisChecks(fold, health, grammar, gc, fg) {
         `arrowhead, on ${drawn.port.self.size} labels (${[...drawn.port.self].map(([l, n]) => `${l} ${n}`).join(", ") || "none"}); ` +
         `† not a function at ${(grammar.converse_not_function ?? []).length} names`,
     );
+    // t348 (review of #50, PIL-16's live half): the labels whose relations in this frame carry more
+    // than one target port — the legend's tooltip says "† is not a function here" there (a measure).
+    const liveFrame = { ...all, provenance: { ...all.provenance, grammar } };
+    const liveRows = fg
+      .legendOf(liveFrame, new Map())
+      .relations.filter((row) => (row.converses ?? []).length > 1);
+    line(
+      "† live",
+      `${liveRows.length} labels whose relations carry two or more target ports` +
+        (liveRows.length ? `: ${liveRows.map((row) => `${row.port} (${row.converses.join(", ")})`).join("; ")}` : "") +
+        (liveRows.length ? ` — tooltip: "${fg.relationTitle(liveRows[0], grammar).split(" · ").slice(0, 2).join(" · ")}"` : ""),
+    );
+    // t348 (review of #50, Copilot 4276877552): under `nested` the family rows leave out the nesting
+    // relations their containers show — the plan's containers passed as the panel passes them (a measure).
+    const nestPlan = fg.drawingPlan(liveFrame, "nested", false);
+    const rowSum = (legend) => legend.families.reduce((a, f) => a + f.relations, 0);
+    line(
+      "κ nested",
+      `family rows sum to ${rowSum(fg.kappaLegend(liveFrame, grammar, nestPlan.parents))} under nested ` +
+        `(${nestPlan.parents.size} nodes in a container), ${rowSum(fg.kappaLegend(liveFrame, grammar))} with none`,
+    );
     const families = kappaFamilies(grammar);
     assert(
       families.length <= KAPPA_HUES.length &&

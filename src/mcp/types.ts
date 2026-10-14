@@ -179,15 +179,19 @@ export interface GrammarPair {
    * t347 PIL-22: the type lists the engine serves on the pair (`SrcTypes` / `TgtTypes`), as
    * served — `*`, the type, or an empty list admits a type (interfaceOf). Where a second pair
    * with the same two port names is folded into this one, its lists are merged in.
+   * t348 (review of #50): merged PER SIDE, so they are not a list of type pairs. Pairs (A→B) and
+   * (C→D) with the same two port names keep ([A, C], [B, D]), which also admits A→D; read
+   * `src_types × tgt_types` as the pair's types only where no second pair was merged in.
+   * Absent on a grammar stamped before PIL-22.
    */
-  src_types: string[];
-  tgt_types: string[];
+  src_types?: string[];
+  tgt_types?: string[];
 }
 
 /**
  * t347 PIL-22: a node type's ports as the engine serves them on `/operad/node-types`
- * (`Ports.Out` / `In` / `Self`). Kept as served: interfaceOf reads the positions and the
- * directions from the declared pairs, and only `self` from here (no pair describes it).
+ * (`Ports.Out` / `In` / `Self`). Kept as served: interfaceOf reads the position and direction
+ * coordinates from the declared pairs, and only `self` from here (no pair describes it).
  */
 export interface GrammarTypePorts {
   out: string[];
@@ -218,9 +222,10 @@ export type EngineGrammar =
       types: string[];
       /**
        * t347 PIL-22: each declared type's ports as the engine serves them, for the types whose
-       * entry carries a ports block (type name -> GrammarTypePorts).
+       * entry carries a ports block (type name -> GrammarTypePorts). Absent on a grammar stamped
+       * before PIL-22.
        */
-      type_ports: Record<string, GrammarTypePorts>;
+      type_ports?: Record<string, GrammarTypePorts>;
       /**
        * t347 PIL-21 (the rest of PIL-16), condition (b2), checked at grammar load: the names on a
        * declared pair to which the pairs give more than one converse — † is not a function there —

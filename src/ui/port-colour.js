@@ -1,9 +1,10 @@
 /**
- * Collider Pilot - relation ends coloured by the engine's port colours (t342 P1, SHARED)
- * ===================================================================================
- * t342 work order P1 (hand-off A; decision 2: port colour is the default palette, relation
- * kind the alternative). Each relation END is coloured by κ(port) — the colour family the
- * engine's `/operad/port-colors` gives its port, read at run time (src/mcp/engine-grammar.js)
+ * Collider Pilot - the relation's colour, from the engine's colour families (t342 P1, SHARED)
+ * ===========================================================================================
+ * t342 work order P1 (hand-off A; decision 2: this palette is the default, relation kind the
+ * alternative). t347 PIL-20 (Sam's P2): the colour is the relation's, one per relation, and its
+ * two ends show it. It is read from κ(port) — the colour family the engine's
+ * `/operad/port-colors` gives the port at each end, read at run time (src/mcp/engine-grammar.js)
  * and never written here:
  *
  *   - both ends in one family  -> one hue for the whole line;

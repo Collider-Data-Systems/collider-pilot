@@ -27,10 +27,10 @@
  * readable (EXEMPT_LABELS). The nodes no relation of the frame touches sit in one band under
  * the linked drawing — the `unlinked N` chip in the bar hides or shows it.
  *
- * PORT COLOUR (t342 P1, decision 2): by default every relation END is coloured by κ(port),
- * the colour family the engine's `/operad/port-colors` gives it — one hue when both ends
- * share a family; ends in two families are a fault (t344 PIL-13), drawn grey with a square
- * midway; exempt, uncoloured and undeclared-pair ends carry glyphs, never a hue
+ * RELATION COLOUR (t342 P1, decision 2; t347 PIL-20): by default every relation is drawn in its
+ * one colour, which its two ends show — the colour family the engine's `/operad/port-colors`
+ * gives the ports at both ends (κ); ends in two families are a fault (t344 PIL-13), drawn grey
+ * with a square midway; exempt, uncoloured and undeclared-pair ends carry glyphs, never a hue
  * (src/ui/port-colour.js). κ comes from the frame's grammar, read
  * from the engine at run time; nothing of it is written here. The legend's "colour by" switch
  * goes back to the RELATION KIND palette — the knowledge vocabulary's colours and the default
@@ -94,7 +94,10 @@ import {
   separateLabels,
 } from "../ui/component-layout.js";
 
-/** t342 P1 (decision 2): the relation palette — port colour (the default) or relation kind. */
+/**
+ * t342 P1 (decision 2): the relation palette — relation colour (the default; the value "port" is
+ * the code's name for it, t347 PIL-20) or relation kind.
+ */
 export type RelationPalette = "port" | "kind";
 
 // t264: the slice can now render EVERY fold type (lenses/advanced) — color the spine
@@ -342,6 +345,23 @@ function isFault(
   return paint.palette === "port" && paint.twoTone;
 }
 
+/**
+ * t337: whether a nesting relation is shown by its container and so not drawn as a line (toElements);
+ * t344 PIL-13: a fault never is. t348 (review of #50): kappaLegend leaves out of the family rows
+ * exactly the relations this test drops.
+ */
+function isContainerNesting(
+  relation: Pick<HgRelation, "label" | "properties" | "source_urn" | "target_urn">,
+  parents: ReadonlyMap<string, string>,
+  grammar: EngineGrammar | null | undefined,
+): boolean {
+  return (
+    relation.label === KB_NESTING_PORT &&
+    parents.get(relation.source_urn) === relation.target_urn &&
+    !isFault(relation, grammar)
+  );
+}
+
 /** Which box each node is drawn inside: node urn -> parent urn (empty = nothing nests). */
 export function nestingParents(frame: HgFrame | null): Map<string, string> {
   const parents = new Map<string, string>();
@@ -551,10 +571,7 @@ export function toElements(
     // t337: a nesting relation the box already shows is not drawn again as a line. t344
     // PIL-13: a fault never is the box (nestingParents), so it is always drawn — also beside a
     // second, boxed relation between the same two nodes.
-    .filter(
-      (r) =>
-        !(r.label === KB_NESTING_PORT && parents.get(r.source_urn) === r.target_urn && !isFault(r, grammar)),
-    )
+    .filter((r) => !isContainerNesting(r, parents, grammar))
     .map((r) => ({
       group: "edges",
       data: {
@@ -566,7 +583,7 @@ export function toElements(
         ...(kappaRelationData(paintRelation(r, grammar)) ?? {}),
         // t347 PIL-21: a relation that is its own converse draws no target arrowhead in the
         // port palette (STYLE edge.kappa, port-colour.js targetGlyph).
-        ...(isSelfConverse(r, grammar) ? { kself: "self" } : {}),
+        ...(isSelfConverse(r) ? { kself: "self" } : {}),
       },
       ...(boxes.size > 0 ? { pannable: true } : {}),
     }));
@@ -620,6 +637,11 @@ export interface LegendRelationRow {
   undeclared: number;
   /** t344 PIL-13: how many of them have their ends in two colour families — drawn as a fault. */
   fault: number;
+  /**
+   * t348 (review of #50, PIL-16's live half): the target ports (`tgt_port`) the frame's relations of
+   * this port carry, sorted. More than one: † is not a function here (relationTitle).
+   */
+  converses?: string[];
 }
 interface LegendNodeRow {
   key: string;
@@ -648,8 +670,13 @@ export function legendOf(
     const paint = kappaRelationData(paintRelation(r, grammar));
     const row =
       ports.get(r.label) ??
-      { port: r.label, count: 0, boxed: 0, ks: paint?.ks ?? null, kt: paint?.kt ?? null, undeclared: 0, fault: 0 };
+      { port: r.label, count: 0, boxed: 0, ks: paint?.ks ?? null, kt: paint?.kt ?? null, undeclared: 0, fault: 0, converses: [] };
     row.count += 1;
+    // t348 (review of #50, PIL-16's live half): the converse names this frame's relations carry.
+    const carried = r.properties?.tgt_port;
+    if (typeof carried === "string" && carried && !row.converses?.includes(carried)) {
+      row.converses = [...(row.converses ?? []), carried].sort();
+    }
     if (paint?.kpair === "undeclared") row.undeclared += 1;
     if (paint?.kfault === "fault") row.fault += 1;
     if (
@@ -1744,7 +1771,9 @@ export function converseWords(port: string, grammar: EngineGrammar | null | unde
  * t347 PIL-21: the converse of one relation written with † — what the inspector says of a relation
  * read from its target end. PIL-14's order for naming that end: the knowledge vocabulary, then the
  * port the relation itself carries there (`tgt_port`), then the engine's pairs (converseWords).
- * Exported for the inspector and `smoke:lens`.
+ * t348 (review of #50): a carried name keeps its place, and where the engine's pairs give the label
+ * more than one converse (the (b2) check) the words say so after it — `p · † c (this relation);
+ * † is not a function here (c1, c2)`. Exported for the inspector and `smoke:lens`.
  */
 export function relationConverseWords(
   relation: Pick<HgRelation, "label" | "properties">,
@@ -1753,7 +1782,11 @@ export function relationConverseWords(
   const kb = kbConversePort(relation.label);
   if (kb) return daggerWords(relation.label, kb);
   const carried = relation.properties?.tgt_port;
-  if (typeof carried === "string" && carried) return daggerWords(relation.label, carried);
+  if (typeof carried === "string" && carried) {
+    const fault = converseFault(grammar, relation.label);
+    const words = daggerWords(relation.label, carried);
+    return fault ? `${words} (this relation); † is not a function here (${fault.join(", ")})` : words;
+  }
   return converseWords(relation.label, grammar);
 }
 
@@ -1761,34 +1794,37 @@ export function relationConverseWords(
  * t347 PIL-21: whether a relation is its own converse — it reads the same from both ends, so the
  * port palette draws it with no target arrowhead (the choice the relation-kind palette makes for a
  * self-converse knowledge port, now for every port). In PIL-14's order: the knowledge vocabulary's
- * converse, else the `tgt_port` the relation carries, else the engine's pairs where † is a
- * function at its label (the (b2) check). No converse known: false.
+ * converse, else the `tgt_port` the relation carries. t348 (review of #50): a relation whose target
+ * end carries no port is read one way — its pair is not declared (port-colour.js), and it keeps its
+ * arrowhead: no converse is read for it from the vocabulary or the engine's pairs. False then.
  */
-export function isSelfConverse(
-  relation: Pick<HgRelation, "label" | "properties">,
-  grammar: EngineGrammar | null | undefined,
-): boolean {
+export function isSelfConverse(relation: Pick<HgRelation, "label" | "properties">): boolean {
+  const carried = relation.properties?.tgt_port;
+  if (typeof carried !== "string" || !carried) return false;
   const kb = kbConversePort(relation.label);
   if (kb) return kb === relation.label;
-  const carried = relation.properties?.tgt_port;
-  if (typeof carried === "string" && carried) return carried === relation.label;
-  if (converseFault(grammar, relation.label)) return false;
-  const names = conversePorts(grammar, relation.label);
-  return names.length === 1 && names[0] === relation.label;
+  return carried === relation.label;
 }
 
 /**
  * The legend tooltip for a port: the port and its converse, the count, what the vocabulary
  * says. t344 PIL-14: the converse from the engine's grammar too, not only the knowledge
  * vocabulary's. t347 PIL-21: written with † (converseWords) — `p · † c`, `p · † = itself`, or
- * `p · † is not a function here (a, b)` for a port the engine declares on two pairs. Exported
- * for `smoke:lens` H and K.
+ * `p · † is not a function here (a, b)` for a port the engine declares on two pairs. t348 (review
+ * of #50, PIL-16's live half): and where the frame's relations of the port carry more than one
+ * target port (`converses`) — the carried names, with the declared ones where (b2) fails too.
+ * Exported for `smoke:lens` H and K.
  */
 export function relationTitle(
-  { port, count, boxed, undeclared, fault }: LegendRelationRow,
+  { port, count, boxed, undeclared, fault, converses = [] }: LegendRelationRow,
   grammar?: EngineGrammar | null,
 ): string {
-  const names = converseWords(port, grammar) ?? port;
+  const live = converses.length > 1
+    ? [...new Set([...converses, ...(converseFault(grammar, port) ?? [])])].sort()
+    : null;
+  const names = live
+    ? `${port} · † is not a function here (${live.join(", ")})`
+    : (converseWords(port, grammar) ?? port);
   const drawn = boxed > 0 ? ` (${boxed} drawn as boxes, ${count - boxed} as lines)` : "";
   const says = kbRelation(port)?.description;
   // t342 P1: the pair state, a pair check only (the workbench's check 8 rules on admission).
@@ -1802,6 +1838,31 @@ export function relationTitle(
 /** The shared name of a non-colour state (KAPPA_STATES), for the inspector and the legend. */
 export function kappaStateLabel(state: string): string {
   return KAPPA_STATES.find((st) => st.state === state)?.label ?? state;
+}
+
+/**
+ * t348 (review of #50, M5): the inspector's words for a relation's colour in the port palette,
+ * read from one end (`outgoing`: its source end). The colour is the relation's (Sam's P2; the
+ * Workbench's "relation colour", WB-28): "relation colour: F" when both ends are in family F,
+ * "two colours: a fault" for a fault, and "relation colour: none (this end: exempt)" — or "no
+ * colour" — when neither end has a family; " · pair not declared" after an undeclared pair. Null
+ * without the engine's port colours (relation kind only). Exported for the inspector and
+ * `smoke:lens` H.
+ */
+export function relationColourWords(
+  relation: Pick<HgRelation, "label" | "properties">,
+  grammar: EngineGrammar | null | undefined,
+  outgoing: boolean,
+): string | null {
+  const paint = paintRelation(relation, grammar);
+  if (paint.palette !== "port") return null;
+  const end = outgoing ? paint.src : paint.tgt;
+  const colour = paint.twoTone
+    ? kappaStateLabel("fault")
+    : end.family
+      ? `relation colour: ${end.family}`
+      : `relation colour: none (this end: ${kappaStateLabel(end.state)})`;
+  return paint.pair === "undeclared" ? `${colour} · ${kappaStateLabel("undeclared")}` : colour;
 }
 
 /**
@@ -1822,14 +1883,24 @@ function plainGrammar(grammar: EngineGrammar | undefined): string {
 /**
  * t342 P1: the legend's palette rows — the κ families present and the three states. t347 PIL-20:
  * a family row counts the one-colour relations of that family (kappaCensus), not port ends.
+ * t348 (review of #50, Copilot 4276877552): the relations DRAWN in its hue — a nesting relation its
+ * container shows (`parents`, the drawing plan's containers; isContainerNesting, toElements' own
+ * test) is no line and is left out of the family rows (and of `census.families`). The exempt and
+ * no-colour rows stay per port end over every relation in the frame, as do the pair and fault
+ * counts.
  * Exported for `smoke:lens` H.
  */
-export function kappaLegend(frame: HgFrame, grammar: EngineGrammar | undefined) {
+export function kappaLegend(
+  frame: HgFrame,
+  grammar: EngineGrammar | undefined,
+  parents: ReadonlyMap<string, string> = new Map(),
+) {
   const typeOf = new Set(nodesOf(frame).map((n) => n.urn));
-  const drawn = relationsOf(frame).filter(
+  const inFrame = relationsOf(frame).filter(
     (r) => typeOf.has(r.source_urn) && typeOf.has(r.target_urn),
   );
-  const census = kappaCensus(drawn, grammar);
+  const lines = kappaCensus(inFrame.filter((r) => !isContainerNesting(r, parents, grammar)), grammar);
+  const census = { ...kappaCensus(inFrame, grammar), families: lines.families };
   return {
     census,
     families: kappaFamilies(grammar).map(({ family, hue }) => ({
@@ -1913,6 +1984,8 @@ export function FrameGraph({
     return {
       elements,
       key: structureKey(elements),
+      // t348 (review of #50): the containers, for the family rows (kappaLegend).
+      parents,
       legend: legendOf(frame, parents),
       unlinked: unlinked.size,
       sourcesInBoxes: sources.box.size,
@@ -1957,7 +2030,11 @@ export function FrameGraph({
     onPaletteChange?.(next);
   };
   const portColour = palette === "port" && portColourAvailable;
-  const kappa = useMemo(() => kappaLegend(frame, grammar), [frame, grammar]);
+  // t348 (review of #50): the family rows count what is drawn, so they follow the layout and its containers.
+  const kappa = useMemo(
+    () => kappaLegend(frame, grammar, plan.parents),
+    [frame, grammar, plan.parents, drawn],
+  );
   const legendOpen =
     legendChoice ?? (wide === true && plan.legend.relations.some((row) => isKbPort(row.port)));
 
@@ -2426,7 +2503,7 @@ export function FrameGraph({
                   key={f.family}
                   className={`legend-item legend-kappa${f.relations === 0 ? " is-empty" : ""}`}
                   data-testid={`legend-family-${f.family}`}
-                  title={`${f.family} · ${f.relations} relation${f.relations === 1 ? "" : "s"} in this colour in this frame — a relation with two colours counts only as a fault${f.hue ? "" : " · no colour of its own (more than eight colour families)"}`}
+                  title={`${f.family} · ${f.relations} relation${f.relations === 1 ? "" : "s"} drawn in this colour in this frame — a relation with two colours counts only as a fault${f.hue ? "" : " · no colour of its own (more than eight colour families)"}`}
                 >
                   <i className="legend-dot" style={{ background: f.hue ?? KAPPA_NEUTRAL }} />
                   {f.family}

@@ -59,9 +59,15 @@
  *      port; relationTitle gives "p · † c", "p · † = itself" and "p · † is not a function here
  *      (a, b)"; the inspector's words keep PIL-14's order; and drawn headless, a self-converse
  *      relation has no target arrowhead in the port palette (its state glyph stays).
+ *      (t348, review of #50) The live half: a label whose relations in the frame carry two
+ *      target ports reads "† is not a function here" in the legend; the inspector adds that
+ *      qualifier after a carried name where (b2) fails; a relation whose target end carries no
+ *      port keeps its arrowhead.
  *      (t347 PIL-20) The colour is the relation's: the legend's family rows count one-colour
- *      relations — they sum to the relations drawn in a family hue and count no fault's end —
- *      and no rendered string (renderedStrings) says "port colour" or "port's colour".
+ *      relations — they sum to the relations drawn in a family hue and count no fault's end,
+ *      under `nested` too (t348: a nesting relation its container shows counts in none) —
+ *      and no rendered string (renderedStrings) says "port colour" or "port's colour"; the
+ *      group title, the canvas label and the inspector name the colour as the relation's.
  *   I. (t342 P6) The drawer offers the static groups (A-C) first, then the types and source
  *      ports the ENGINE declares and the permitted fold's own labels (the real drawerVocab);
  *      an untick expands from all of it; the legacy list is a group of its own; a fold label
@@ -110,7 +116,8 @@
  *      (a second pair with the same two names merged in, not dropped) and each type's served
  *      ports, and `interfaceOf` gives a type's positions and directions with the Workbench's
  *      reading — `*`, the type, or an empty list admits; a `{placeholder}` pair is skipped —
- *      on a synthetic grammar with a `*` list, an empty list, a null list and a merged pair.
+ *      on a synthetic grammar with a `*` list, an empty list, a null list and a merged pair;
+ *      a list `[""]` admits no type (t348).
  *   M. (t347 PIL-24) The rendered words: every shown string under src/, the knowledge
  *      vocabulary, the manifest and the page titles (renderedStrings, from the parsed source;
  *      code contexts such as Cytoscape selectors and class names set apart) scanned with the
@@ -1014,6 +1021,18 @@ console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two
       `${JSON.stringify(gotFault) === JSON.stringify(wantFault) ? "" : `, WANTED ${wantFault.join(", ")}`}); ` +
       `kappaCensus.twoTone ${drawnCensus.twoTone} = the fault count ${gotFault.length}; no line in two tones`,
   );
+  // The nested fixture (t344 PIL-13; t348 PIL-20 uses it too): claims nesting in one domain_tag
+  // through the vocabulary's nesting relation, each relation with the target port it is given.
+  const NU = (n) => `urn:moos:claim:lens-smoke.nest-${n}`;
+  const box = "urn:moos:domain_tag:lens-smoke.nest-box";
+  const nestRel = (n, tgtPort) => ({
+    urn: `urn:moos:relation:lens-smoke.nest-${n}`,
+    type_id: "WF12",
+    label: KB_NESTING_PORT,
+    source_urn: NU(n),
+    target_urn: box,
+    properties: { src_port: KB_NESTING_PORT, tgt_port: tgtPort },
+  });
   // t344 PIL-13 (Copilot on #49): a fault on the NESTING port is never folded into a box. Under
   // `nested` a nesting relation whose target can be a box is drawn as the box, not as a line; a
   // fault folded so would be counted by the legend and the census with no grey line or square
@@ -1022,16 +1041,6 @@ console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two
   // fault must stay a line, drawn as a fault, and the legend row and the census must count
   // exactly the faults drawn.
   {
-    const NU = (n) => `urn:moos:claim:lens-smoke.nest-${n}`;
-    const box = "urn:moos:domain_tag:lens-smoke.nest-box";
-    const nestRel = (n, tgtPort) => ({
-      urn: `urn:moos:relation:lens-smoke.nest-${n}`,
-      type_id: "WF12",
-      label: KB_NESTING_PORT,
-      source_urn: NU(n),
-      target_urn: box,
-      properties: { src_port: KB_NESTING_PORT, tgt_port: tgtPort },
-    });
     const nestRels = [nestRel("boxed", P("gone-in")), nestRel("fault", P("a-in"))];
     const nestFrame = {
       provenance: { grammar },
@@ -1096,12 +1105,89 @@ console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two
         `family hue; the ${faults.length} faults change no family count; exempt ${legend.census.exempt} and no colour ` +
         `${legend.census.uncoloured} stay per port end`,
     );
+    // t348 (review of #50, Copilot 4276877552): under `nested` a nesting relation its container
+    // shows is not drawn as a line, so no family row counts it. The nested fixture above, under the
+    // same grammar with the nesting port given a family (fam-one): one nesting relation in fam-one
+    // at both ends (the container), one a fault (fam-one, fam-two: a grey line), and a plain fam-one
+    // line between the two claims. FrameGraph's kappaLegend with the plan's containers, as the
+    // panel calls it: the family rows sum to the relations drawn in a family hue — 1 under
+    // `nested`, 2 under `concentric`, where the nesting relation is a line. And on the PIL-13 fixture itself (one
+    // container relation with no family at either end, one fault) the exempt and no-colour rows
+    // stay per port end in both layouts: the container relation's two ends count.
+    const ng = normalizeEngineGrammar(
+      { ...raw, portColors: { port_colors: { ...raw.portColors.port_colors, [KB_NESTING_PORT]: "fam-one" } } },
+      { source: "lens-smoke", ontology_version: "lens-smoke-nest" },
+    );
+    const nestFrameOf = (g, rels) => ({
+      provenance: { grammar: g },
+      nodes: [...new Set(rels.flatMap((r) => [r.source_urn, r.target_urn]))].map((urn) =>
+        urn === box
+          ? { urn, label: "box", type_id: "domain_tag", properties: {} }
+          : { urn, label: urn, type_id: "claim", properties: {} },
+      ),
+      relations: rels,
+    });
+    const inLayouts = (frame, g) =>
+      ["nested", "concentric"].map((layout) => {
+        const plan = fg.drawingPlan(frame, layout, false);
+        const legend = fg.kappaLegend(frame, g, plan.parents);
+        const drawnHere = drawCheck(fg, frame, plan.elements).port;
+        return {
+          containers: plan.parents.size,
+          drawn: drawnHere,
+          rows: Object.fromEntries(legend.families.map((f) => [f.family, f.relations])),
+          sum: legend.families.reduce((a, f) => a + f.relations, 0),
+          census: legend.census,
+        };
+      });
+    const hueFrame = nestFrameOf(ng, [
+      nestRel("hue", P("a-in")),
+      nestRel("fault", P("c-in")),
+      { ...rel("nest-line", P("a-out"), P("a-in")), source_urn: NU("hue"), target_urn: NU("fault") },
+    ]);
+    const [hueNested, hueFlat] = inLayouts(hueFrame, ng);
+    const [endNested, endFlat] = inLayouts(nestFrameOf(grammar, [nestRel("boxed", P("gone-in")), nestRel("fault", P("a-in"))]), grammar);
+    check(
+      hueNested.containers === 1 && hueFlat.containers === 0 &&
+        [hueNested, hueFlat].every((x) => x.drawn.wrong.length === 0 && x.drawn.fault.length === 1 && x.census.twoTone === 1) &&
+        hueNested.sum === hueNested.drawn.hued.length && hueNested.sum === 1 &&
+        hueFlat.sum === hueFlat.drawn.hued.length && hueFlat.sum === 2 &&
+        endNested.containers === 1 && endNested.census.uncoloured === 3 && endFlat.census.uncoloured === 3 &&
+        endNested.census.exempt === endFlat.census.exempt,
+      `nested: the family rows ${JSON.stringify(hueNested.rows)} sum to ${hueNested.sum} = the ${hueNested.drawn.hued.length} ` +
+        `relation drawn in a family hue (the nesting relation drawn as its container counts in none); concentric ${JSON.stringify(hueFlat.rows)}: ` +
+        `${hueFlat.sum} = ${hueFlat.drawn.hued.length} drawn; the no-colour row counts ${endNested.census.uncoloured} ends under nested ` +
+        `and ${endFlat.census.uncoloured} under concentric (per port end, the container relation's included)`,
+    );
     // The rendered words (renderedStrings: every shown string under src/ and the knowledge
     // vocabulary): the colour is never the port's.
     const portWords = renderedStrings().filter((s) => !s.code && /\bport('s)? colou?rs?\b/i.test(s.text));
     check(
       portWords.length === 0,
       `no rendered string says "port colour" or "port's colour" (${portWords.map((s) => `${s.file}:${s.line} ${JSON.stringify(s.text)}`).join("; ") || "0 hits"})`,
+    );
+    // t348 (review of #50, M5): where the panel names the colour it names the relation's — the
+    // family group's title, the canvas label and the inspector's words (relationColourWords:
+    // "relation colour: F", a fault "two colours: a fault"); no shown string keeps the inspector's
+    // old per-end "colour family: F" or the canvas's old "coloured by port".
+    const shownWords = renderedStrings().filter((s) => !s.code);
+    const fgFile = "src/components/FrameGraph.tsx";
+    const named = ["relation colour (family)", ", relations coloured by family", "relation colour: "].map(
+      (text) => [text, shownWords.some((s) => s.file === fgFile && s.text === text)],
+    );
+    const oldWords = shownWords.filter((s) => /\bcolou?r family:|\bcoloured by port\b/i.test(s.text));
+    const cw = (r, out) => fg.relationColourWords(r, grammar, out);
+    check(
+      named.every(([, found]) => found) && oldWords.length === 0 &&
+        cw(cases.one, true) === "relation colour: fam-one" && cw(cases.one, false) === "relation colour: fam-one" &&
+        cw(cases.two, false) === "two colours: a fault" &&
+        cw(cases.undeclared, true) === "two colours: a fault · pair not declared" &&
+        cw(cases.noFamily, true) === "relation colour: none (this end: exempt)" &&
+        cw(cases.noFamily, false) === "relation colour: none (this end: no colour)" &&
+        fg.relationColourWords(cases.one, undefined, true) === null,
+      `the colour named as the relation's: ${named.map(([t, found]) => `${JSON.stringify(t)} ${found ? "shown" : "MISSING"}`).join(", ")} ` +
+        `in ${fgFile}; the inspector says "${cw(cases.one, false)}", "${cw(cases.two, false)}", "${cw(cases.noFamily, false)}"; ` +
+        `old words: ${oldWords.map((s) => `${s.file}:${s.line} ${JSON.stringify(s.text)}`).join("; ") || "0 hits"}`,
     );
   }
   // t347 PIL-21 (with the rest of PIL-16): the converse written with †, in the Workbench's words,
@@ -1149,23 +1235,59 @@ console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two
         tOwn.startsWith(`${D("own")} · † is not a function here (${D("own-1")}, ${D("own-2")}) · 1`),
       `relationTitle writes the converse with †: "${tA}" · "${tSame}" · "${tOwn}"`,
     );
+    // t348 (review of #50: PIL-16's live half): per label, the target ports the FRAME's relations
+    // carry (legendOf's `converses`). Where they carry more than one, the legend tooltip says "† is
+    // not a function here" as the (b2) check on the declared pairs does — with the declared
+    // converses too where (b2) fails as well; one carried converse leaves the declared words.
+    const live = (n, src, tgt) => ({ ...rel(n, src, tgt), source_urn: `${SFX}live-s`, target_urn: `${SFX}live-t-${n}` });
+    const liveRels = [
+      live("a-b", D("a"), D("b")),
+      live("a-x", D("a"), D("live-x")), // a second converse of a, on no declared pair
+      live("same-1", D("same"), D("same")),
+      live("same-2", D("same"), D("same")),
+      live("own-1", D("own"), D("own-1")),
+      live("own-3", D("own"), D("live-own-3")),
+    ];
+    const liveFrame = {
+      provenance: { grammar: dg },
+      nodes: [...new Set(liveRels.flatMap((r) => [r.source_urn, r.target_urn]))].map((urn) => ({
+        urn, label: urn, type_id: "session", properties: {},
+      })),
+      relations: liveRels,
+    };
+    const liveRows = Object.fromEntries(fg.legendOf(liveFrame, new Map()).relations.map((r) => [r.port, r]));
+    const liveTitle = (p) => fg.relationTitle(liveRows[p], dg);
+    check(
+      JSON.stringify(liveRows[D("a")]?.converses) === JSON.stringify([D("b"), D("live-x")]) &&
+        liveTitle(D("a")).startsWith(`${D("a")} · † is not a function here (${D("b")}, ${D("live-x")}) · 2`) &&
+        liveTitle(D("same")).startsWith(`${D("same")} · † = itself · 2`) &&
+        liveTitle(D("own")).startsWith(`${D("own")} · † is not a function here (${D("live-own-3")}, ${D("own-1")}, ${D("own-2")}) · 2`) &&
+        fg.relationTitle(lrow(D("a")), dg).startsWith(`${D("a")} · † ${D("b")} · 1`),
+      `the live half: a label whose relations carry two target ports reads "${liveTitle(D("a"))}"; one carried converse keeps ` +
+        `"${liveTitle(D("same"))}"; with (b2) failing as well, both lists: "${liveTitle(D("own"))}"`,
+    );
     // The inspector's words for a relation read from its target end, in PIL-14's order: the
-    // knowledge vocabulary, then the relation's own tgt_port, then the engine's pairs.
+    // knowledge vocabulary, then the relation's own tgt_port, then the engine's pairs. t348 (review
+    // of #50): where (b2) fails at the label, a carried name keeps its place and the qualifier
+    // follows it — "(this relation); † is not a function here (…)".
     const inc = (label, tgt) => ({ label, properties: tgt === undefined ? {} : { tgt_port: tgt } });
     const kbConv = kbConversePort(kbRel.src_port);
     check(
       fg.relationConverseWords(inc(D("own")), dg) === `${D("own")} · † is not a function here (${D("own-1")}, ${D("own-2")})` &&
-        fg.relationConverseWords(inc(D("own"), D("own-2")), dg) === `${D("own")} · † ${D("own-2")}` &&
+        fg.relationConverseWords(inc(D("own"), D("own-2")), dg) ===
+          `${D("own")} · † ${D("own-2")} (this relation); † is not a function here (${D("own-1")}, ${D("own-2")})` &&
+        fg.relationConverseWords(inc(D("a"), D("b")), dg) === `${D("a")} · † ${D("b")}` &&
         fg.relationConverseWords(inc(D("same")), dg) === `${D("same")} · † = itself` &&
         fg.relationConverseWords(inc(kbRel.src_port, D("b")), dg) ===
           (kbConv === kbRel.src_port ? `${kbRel.src_port} · † = itself` : `${kbRel.src_port} · † ${kbConv}`) &&
         fg.relationConverseWords(inc(D("nowhere")), dg) === null,
-      "the inspector's † words: the vocabulary first, then the relation's own tgt_port, then the engine's pairs (\"† is not a function here\" where (b2) fails); none for a port on no pair",
+      "the inspector's † words: the vocabulary first, then the relation's own tgt_port (with \"† is not a function here\" after it where (b2) fails), then the engine's pairs; none for a port on no pair",
     );
     // Drawn, headless, the real STYLE: in the port palette a self-converse relation has no target
-    // arrowhead — on a pair that says so itself, and on one known only from the grammar (its target
-    // end then carries no port: its state glyph without the triangle) — and every other relation
-    // keeps it; switched to relation kind, a port outside the vocabulary keeps the triangle.
+    // arrowhead, and every other relation keeps it; switched to relation kind, a port outside the
+    // vocabulary keeps the triangle. t348 (review of #50): a relation whose target end carries no
+    // port is read one way — its pair is not declared, and it keeps its arrowhead (its uncoloured
+    // state glyph with the triangle); no converse is read for it from the grammar.
     const dRels = [
       rel("dag-same", D("same"), D("same")),
       { ...rel("dag-same-bare", D("same"), D("same")), properties: {} },
@@ -1189,11 +1311,11 @@ console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two
     cy.destroy();
     check(
       dDrawn.port.wrong.length === 0 &&
-        inPort["dag-same"] === "none" && inPort["dag-same-bare"] === "circle" &&
+        inPort["dag-same"] === "none" && inPort["dag-same-bare"] === END_GLYPHS.target.uncoloured &&
         inPort["dag-ab"] === "triangle" && inPort["dag-own"] === "triangle" &&
         Object.values(inKind).every((s) => s === "triangle"),
-      `port palette: a self-converse relation is drawn with target arrow shape "${inPort["dag-same"]}" ("${inPort["dag-same-bare"]}" when ` +
-        `only the grammar says so and its target end is uncoloured), the others "${inPort["dag-ab"]}" / "${inPort["dag-own"]}"; ` +
+      `port palette: a self-converse relation is drawn with target arrow shape "${inPort["dag-same"]}"; one whose target end carries ` +
+        `no port "${inPort["dag-same-bare"]}" (pair not declared, arrowhead kept), the others "${inPort["dag-ab"]}" / "${inPort["dag-own"]}"; ` +
         `relation kind: ${JSON.stringify(Object.values(inKind))}${dDrawn.port.wrong.length ? `; drawn WRONG: ${dDrawn.port.wrong.join(", ")}` : ""}`,
     );
   }
@@ -2071,6 +2193,24 @@ console.log("\nL. a type's interface from the engine's declared pairs (PIL-22, s
       interfaceOf({ status: "absent", reason: "x" }, A) === null && interfaceOf(old, A) === null,
     "no interface for a type the engine does not declare, without an engine grammar, or on a grammar read before PIL-22 (no type lists)",
   );
+  // t348 (review of #50): a list holding only the empty name admits NO type, as the Workbench reads
+  // it (its list is not empty and holds neither `*` nor the type) — not every type, as an empty list.
+  const ge = normalizeEngineGrammar(
+    {
+      nodeTypes: { [A]: {}, [B]: {} },
+      rewriteCategories: { WF92: { ID: "WF92", SrcPort: P("e-out"), TgtPort: P("e-in"), SrcTypes: [""], TgtTypes: [A] } },
+      portColors: null,
+    },
+    { source: "lens-smoke", ontology_version: "lens-smoke-l-empty" },
+  );
+  const [eA, eB] = [A, B].map((t) => interfaceOf(ge, t));
+  check(
+    JSON.stringify(ge.pairs?.[0]?.src_types) === JSON.stringify([""]) &&
+      eA?.positions.length === 0 && JSON.stringify(eA?.directions) === JSON.stringify([P("e-in")]) &&
+      eB?.positions.length === 0 && eB?.directions.length === 0,
+    `a type list [""] is kept as served and admits no type: interfaceOf(${A}) positions ${JSON.stringify(eA?.positions)}, ` +
+      `directions ${JSON.stringify(eA?.directions)}; interfaceOf(${B}) positions ${JSON.stringify(eB?.positions)}`,
+  );
   if (failures === before) pass("L holds");
 }
 
@@ -2134,7 +2274,7 @@ console.log("\nM. the rendered words: no banned word; \"box\" and the vocabulary
       text: "other ends stay lit and are brought into view; clear the box to bring the rest back.",
       covers: ["box"],
       waits: AQ4,
-      where: "the find field's tooltip: the search box",
+      where: "the find input's tooltip: the search box",
     },
     {
       file: SP,

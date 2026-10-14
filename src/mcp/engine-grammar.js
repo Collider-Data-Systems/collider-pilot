@@ -19,7 +19,7 @@
  *   - the kernel's type law. The pilot checks PAIRS only (is this (src_port, tgt_port)
  *     declared?); the workbench's check 8 is the authority on admission. t347 PIL-22: the type
  *     lists of each pair and each type's served ports are KEPT, for `interfaceOf` (a type's
- *     positions and directions, the Workbench's reading) — no relation is judged by them.
+ *     position and direction coordinates, the Workbench's reading) — no relation is judged by them.
  *
  * An engine without these routes (an older kernel) is not an error: the grammar comes back
  * `{ status: "absent", reason }`, the drawer falls back to its static lists and the graph to
@@ -66,11 +66,12 @@ const pairKey = (s, t) => `${s}\u0000${t}`;
 /**
  * t347 PIL-22: a type list as the engine serves it (`SrcTypes` / `src_types`, a Go nil slice is
  * `null`): the strings, in the served order. Absent or null is the empty list, which — like `*` —
- * admits every type (the Workbench's reading, `admitsType`).
+ * admits every type (the Workbench's reading, `admitsType`). t348 (review of #50): an empty name
+ * is kept as served, so `[""]` is not the empty list and admits no type, as the Workbench reads it.
  * @param {unknown} v
  * @returns {string[]}
  */
-const typeList = (v) => (Array.isArray(v) ? v.filter((t) => typeof t === "string" && t.length > 0) : []);
+const typeList = (v) => (Array.isArray(v) ? v.filter((t) => typeof t === "string") : []);
 
 /**
  * t347 PIL-22: whether a type list admits a type — it holds `*`, the type, or nothing (the
@@ -245,9 +246,10 @@ const PAIR_INDEX = new WeakMap();
 
 /**
  * t347 PIL-22: one node type as an interface, read from the engine's declared pairs with the
- * Workbench's reading (mtdc-lab operad-lib.js `interfaceOf`, WB-12): its positions are the
- * out-names of the pairs whose source list admits the type, its directions the in-names of the
- * pairs whose target list admits it, each in the order the pairs first give them. A list admits
+ * Workbench's reading (mtdc-lab operad-lib.js `interfaceOf`, WB-12): its position coordinates
+ * (`positions`) are the out-names of the pairs whose source list admits the type, its direction
+ * coordinates (`directions`) the in-names of the pairs whose target list admits it (P1; P1b,
+ * R-prod), each in the order the pairs first give them. A list admits
  * a type when it holds `*`, the type, or nothing; a pair with a `{placeholder}` name at either end
  * names no port and is skipped. `self` is the type's served `Ports.Self` (no pair describes it).
  * Null without an engine grammar, for a type the engine does not declare, or on a grammar read

@@ -26,7 +26,7 @@ import { useRef, useState } from "react";
 import type { HgFrame, HgNode, HgProperties } from "../mcp/types";
 import { KB_VOCAB_VERSION, kbPortStyle } from "../ui/kb-vocab.js";
 import { hasPortColours, paintRelation } from "../ui/port-colour.js";
-import { conversePortOf, kappaStateLabel, relationConverseWords, type RelationPalette } from "./FrameGraph";
+import { conversePortOf, relationColourWords, relationConverseWords, type RelationPalette } from "./FrameGraph";
 
 /** The property shown as a paragraph instead of a table row (t337). */
 const TEXT_PROPERTY = "text";
@@ -186,10 +186,10 @@ export function NodeInspector({
               const kappa = paint && paint.palette === "port" ? paint : null;
               const end = kappa ? (outgoing ? kappa.src : kappa.tgt) : null;
               const color = end ? end.hue : kbPortStyle(r.label)?.color;
+              // t348 (review of #50, M5): the colour is the relation's — "relation colour: F",
+              // a fault "two colours: a fault" (FrameGraph relationColourWords).
               const colourNote = end
-                ? `colour family: ${end.state === "colour" ? end.family : kappaStateLabel(end.state)}` +
-                  (kappa?.pair === "undeclared" ? ` · ${kappaStateLabel("undeclared")}` : "") +
-                  (kappa?.twoTone ? ` · ${kappaStateLabel("fault")}` : "")
+                ? relationColourWords(r, grammar, outgoing)
                 : color
                   ? `relation kind (kb-vocab ${KB_VOCAB_VERSION})`
                   : null;
