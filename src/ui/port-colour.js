@@ -70,6 +70,32 @@ export const END_GLYPHS = Object.freeze({
   target: Object.freeze({ colour: "triangle", exempt: "triangle-tee", uncoloured: "circle-triangle" }),
 });
 
+/**
+ * t347 PIL-21: a relation whose label is its own converse reads the same from both ends, so its
+ * target end shows no direction: the plain arrowhead goes, and a state keeps its glyph without
+ * the triangle. The relation-kind palette already draws a self-converse knowledge port so; in the
+ * port palette it now holds for every port.
+ */
+export const SELF_CONVERSE_TARGET = Object.freeze({
+  triangle: "none",
+  "triangle-tee": "tee",
+  "circle-triangle": "circle",
+});
+
+/**
+ * t347 PIL-21: the target glyph drawn for a relation — its end state's glyph (`kts`), without the
+ * direction triangle when the relation is self-converse.
+ * @param {unknown} kts
+ * @param {boolean} selfConverse
+ * @returns {string}
+ */
+export function targetGlyph(kts, selfConverse) {
+  const glyph = String(kts);
+  return selfConverse && Object.prototype.hasOwnProperty.call(SELF_CONVERSE_TARGET, glyph)
+    ? SELF_CONVERSE_TARGET[/** @type {keyof typeof SELF_CONVERSE_TARGET} */ (glyph)]
+    : glyph;
+}
+
 /** The marker of an undeclared pair: a dotted line with a hollow diamond midway. */
 export const UNDECLARED_MARKER = Object.freeze({ lineStyle: "dotted", midGlyph: "diamond" });
 

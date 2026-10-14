@@ -200,6 +200,11 @@ export function normalizeEngineGrammar(raw, meta) {
 
   const named = (/** @type {(p: GrammarPair) => string[]} */ ends) =>
     [...new Set(pairs.flatMap(ends))].filter((p) => !isPlaceholderPort(p)).sort();
+  // t347 PIL-21 (the rest of PIL-16), condition (b2): where the declared pairs give a name more
+  // than one converse, † is not a function there — recorded once, at grammar load.
+  const converseNotFunction = conversesOf(pairs)
+    .filter(([, converses]) => converses.length > 1)
+    .map(([name, converses]) => ({ name, converses }));
   return {
     status: "engine",
     source: meta.source,
@@ -209,6 +214,7 @@ export function normalizeEngineGrammar(raw, meta) {
     ports: named((p) => [p.src_port, p.tgt_port]),
     types,
     type_ports: typePorts,
+    converse_not_function: converseNotFunction,
     port_colors: portColors,
     port_colors_reason: portColors ? null : `${OPERAD_PATHS.portColors} carries no port_colors`,
     color_rule: portColors && isObject(pc) ? str(pc.color_rule) : null,
@@ -284,24 +290,58 @@ export function conversePorts(grammar, port) {
   if (grammar?.status !== "engine" || typeof port !== "string") return [];
   let index = CONVERSE_INDEX.get(grammar);
   if (!index) {
-    /** @type {Map<string, Set<string>>} */
-    const sets = new Map();
-    const add = (/** @type {string} */ from, /** @type {string} */ to) => {
-      const set = sets.get(from) ?? new Set();
-      set.add(to);
-      sets.set(from, set);
-    };
-    for (const p of grammar.pairs) {
-      add(p.src_port, p.tgt_port);
-      add(p.tgt_port, p.src_port);
-    }
-    index = new Map([...sets].map(([name, set]) => [name, Object.freeze([...set].sort())]));
+    index = new Map(conversesOf(grammar.pairs).map(([name, list]) => [name, Object.freeze(list)]));
     CONVERSE_INDEX.set(grammar, index);
   }
   return [...(index.get(port) ?? [])];
 }
 /** @type {WeakMap<object, Map<string, readonly string[]>>} */
 const CONVERSE_INDEX = new WeakMap();
+
+/**
+ * Every name on a declared pair (either end, placeholders included, as the Workbench lists them)
+ * with the names a pair puts opposite it, both sorted.
+ * @param {readonly { src_port: string, tgt_port: string }[]} pairs
+ * @returns {[string, string[]][]}
+ */
+function conversesOf(pairs) {
+  /** @type {Map<string, Set<string>>} */
+  const sets = new Map();
+  const add = (/** @type {string} */ from, /** @type {string} */ to) => {
+    const set = sets.get(from) ?? new Set();
+    set.add(to);
+    sets.set(from, set);
+  };
+  for (const p of pairs) {
+    add(p.src_port, p.tgt_port);
+    add(p.tgt_port, p.src_port);
+  }
+  return [...sets].map(([name, set]) => /** @type {[string, string[]]} */ ([name, [...set].sort()])).sort((a, b) =>
+    a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0,
+  );
+}
+
+/**
+ * t347 PIL-21 (the rest of PIL-16): condition (b2) at one port — do the engine's declared pairs
+ * give `port` exactly one converse? Null when they do (or the port is on no pair, or there is no
+ * engine grammar); where they do not, † is not a function at `port` and this is its converses,
+ * sorted — the Workbench's "† is not a function here (…)" (WB-14). Read from the grammar's
+ * `converse_not_function`, computed once at grammar load; a grammar stamped before PIL-21 has
+ * none, and the pairs are read instead.
+ * @param {EngineGrammar | null | undefined} grammar
+ * @param {unknown} port
+ * @returns {string[] | null}
+ */
+export function converseFault(grammar, port) {
+  if (grammar?.status !== "engine" || typeof port !== "string") return null;
+  const listed = grammar.converse_not_function;
+  if (Array.isArray(listed)) {
+    const hit = listed.find((x) => x.name === port);
+    return hit ? [...hit.converses] : null;
+  }
+  const names = conversePorts(grammar, port);
+  return names.length > 1 ? names : null;
+}
 
 /**
  * t342 P1/P6 (review): what is missing, in a few words, for the legend, the drawer note and the

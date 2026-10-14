@@ -54,6 +54,11 @@
  *      the number drawn as a fault. No κ hue nor the
  *      state grey within OKLab ΔE 3 of a node fill, and no close pair beyond those TESTING.md
  *      records. An engine without port colours keeps its pairs and types.
+ *      (t347 PIL-21, with the rest of PIL-16) The converse written with †: on a synthetic
+ *      grammar with one port on two pairs, the (b2) check at grammar load records exactly that
+ *      port; relationTitle gives "p · † c", "p · † = itself" and "p · † is not a function here
+ *      (a, b)"; the inspector's words keep PIL-14's order; and drawn headless, a self-converse
+ *      relation has no target arrowhead in the port palette (its state glyph stays).
  *   I. (t342 P6) The drawer offers the static groups (A-C) first, then the types and source
  *      ports the ENGINE declares and the permitted fold's own labels (the real drawerVocab);
  *      an untick expands from all of it; the legacy list is a group of its own; a fold label
@@ -140,6 +145,7 @@ import { selectFrame } from "../src/mcp/transform.js";
 // t342 P1/P6: the engine-grammar normaliser and the port-colour painter, as the panel runs them.
 import {
   clearEngineGrammarCache,
+  converseFault,
   conversePorts,
   grammarGap,
   interfaceOf,
@@ -157,6 +163,7 @@ import {
   kappaRelationData,
   kappaFamilies,
   paintRelation,
+  targetGlyph,
 } from "../src/ui/port-colour.js";
 
 const SRC = resolve(process.cwd(), "src/components/GraphControls.tsx");
@@ -279,7 +286,8 @@ function drawCheck(fg, frame, elements = fg.toElements(frame, new Map(), new Set
         // one colour for the line and both ends — no relation is drawn in two tones
         ks === kt && val(e, "line-fill") === "solid" && line === ks && ends.every((c) => c === ks) &&
         kappaRgb.has(ks) &&
-        val(e, "source-arrow-shape") === d.kss && val(e, "target-arrow-shape") === d.kts &&
+        // t347 PIL-21: a self-converse relation (kself) shows its target state without the arrowhead
+        val(e, "source-arrow-shape") === d.kss && val(e, "target-arrow-shape") === targetGlyph(d.kts, d.kself === "self") &&
         // both ends of the uncoloured state are hollow, every other end filled (Copilot on #46)
         val(e, "source-arrow-fill") === (d.kss === END_GLYPHS.source.uncoloured ? "hollow" : "filled") &&
         val(e, "target-arrow-fill") === (d.kts === END_GLYPHS.target.uncoloured ? "hollow" : "filled") &&
@@ -933,6 +941,99 @@ console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two
       `a fault on the nesting port is never a box: under nested, the boxed relation is the box (${plan.parents.get(NU("boxed")) === box}), ` +
         `the fault stays a line (${lines.has(nestRels[1].urn)}) drawn as a fault (${nestDrawn.port.fault.length} drawn so${nestDrawn.port.wrong.length ? `, WRONG: ${nestDrawn.port.wrong.join(", ")}` : ""}); ` +
         `census two-tone ${nestCensus.twoTone}, legend row faults ${nestRow?.fault} and boxed ${nestRow?.boxed}`,
+    );
+  }
+  // t347 PIL-21 (with the rest of PIL-16): the converse written with †, in the Workbench's words,
+  // and no target arrowhead on a self-converse relation in the port palette. A synthetic grammar
+  // of the order's shape — one port on two pairs, a self-converse port, a plain pair — with no
+  // engine name. The (b2) check at grammar load: one converse per name, except the port on two.
+  {
+    const D = (n) => P(`dag-${n}`);
+    const dg = normalizeEngineGrammar(
+      {
+        nodeTypes: { [P("type")]: {} },
+        rewriteCategories: {
+          WF92: {
+            ID: "WF92",
+            SrcPort: D("own"),
+            TgtPort: D("own-1"),
+            AdditionalPortPairs: [
+              { SrcPort: D("own"), TgtPort: D("own-2") }, // the same out-name on a second pair
+              { SrcPort: D("same"), TgtPort: D("same") }, // its own converse
+              { SrcPort: D("a"), TgtPort: D("b") }, // one converse each way
+            ],
+          },
+        },
+        portColors: {
+          port_colors: Object.fromEntries(
+            ["own", "own-1", "own-2", "same", "a", "b"].map((n) => [D(n), n.startsWith("own") ? "fam-one" : "fam-two"]),
+          ),
+        },
+      },
+      { source: "lens-smoke", ontology_version: "lens-smoke-dag" },
+    );
+    const others = ["own-1", "own-2", "same", "a", "b"].map(D);
+    check(
+      JSON.stringify(dg.converse_not_function) === JSON.stringify([{ name: D("own"), converses: [D("own-1"), D("own-2")] }]) &&
+        converseFault(dg, D("own"))?.join() === `${D("own-1")},${D("own-2")}` &&
+        others.every((n) => converseFault(dg, n) === null),
+      `the (b2) check at grammar load: † is not a function at ${JSON.stringify(dg.converse_not_function?.map((x) => x.name))} ` +
+        `(two converses), and is at the other ${others.filter((n) => converseFault(dg, n) === null).length} of ${others.length} names`,
+    );
+    const lrow = (port) => ({ port, count: 1, boxed: 0, ks: null, kt: null, undeclared: 0, fault: 0 });
+    const [tA, tSame, tOwn] = [D("a"), D("same"), D("own")].map((p) => fg.relationTitle(lrow(p), dg));
+    check(
+      tA.startsWith(`${D("a")} · † ${D("b")} · 1`) &&
+        tSame.startsWith(`${D("same")} · † = itself · 1`) &&
+        tOwn.startsWith(`${D("own")} · † is not a function here (${D("own-1")}, ${D("own-2")}) · 1`),
+      `relationTitle writes the converse with †: "${tA}" · "${tSame}" · "${tOwn}"`,
+    );
+    // The inspector's words for a relation read from its target end, in PIL-14's order: the
+    // knowledge vocabulary, then the relation's own tgt_port, then the engine's pairs.
+    const inc = (label, tgt) => ({ label, properties: tgt === undefined ? {} : { tgt_port: tgt } });
+    const kbConv = kbConversePort(kbRel.src_port);
+    check(
+      fg.relationConverseWords(inc(D("own")), dg) === `${D("own")} · † is not a function here (${D("own-1")}, ${D("own-2")})` &&
+        fg.relationConverseWords(inc(D("own"), D("own-2")), dg) === `${D("own")} · † ${D("own-2")}` &&
+        fg.relationConverseWords(inc(D("same")), dg) === `${D("same")} · † = itself` &&
+        fg.relationConverseWords(inc(kbRel.src_port, D("b")), dg) ===
+          (kbConv === kbRel.src_port ? `${kbRel.src_port} · † = itself` : `${kbRel.src_port} · † ${kbConv}`) &&
+        fg.relationConverseWords(inc(D("nowhere")), dg) === null,
+      "the inspector's † words: the vocabulary first, then the relation's own tgt_port, then the engine's pairs (\"† is not a function here\" where (b2) fails); none for a port on no pair",
+    );
+    // Drawn, headless, the real STYLE: in the port palette a self-converse relation has no target
+    // arrowhead — on a pair that says so itself, and on one known only from the grammar (its target
+    // end then carries no port: its state glyph without the triangle) — and every other relation
+    // keeps it; switched to relation kind, a port outside the vocabulary keeps the triangle.
+    const dRels = [
+      rel("dag-same", D("same"), D("same")),
+      { ...rel("dag-same-bare", D("same"), D("same")), properties: {} },
+      rel("dag-ab", D("a"), D("b")),
+      rel("dag-own", D("own"), D("own-1")),
+    ];
+    const dFrame = {
+      provenance: { grammar: dg },
+      nodes: [...new Set(dRels.flatMap((r) => [r.source_urn, r.target_urn]))].map((urn) => ({
+        urn, label: urn, type_id: "session", properties: {},
+      })),
+      relations: dRels,
+    };
+    const dDrawn = drawCheck(fg, dFrame);
+    const cy = cytoscape({ headless: true, styleEnabled: true, elements: fg.toElements(dFrame, new Map(), new Set()), style: fg.STYLE });
+    const shapes = (port) => Object.fromEntries(
+      (fg.applyPalette(cy, port), cy.edges().map((e) => [e.id().split(".").pop(), e.pstyle("target-arrow-shape").value])),
+    );
+    const inPort = shapes(true);
+    const inKind = shapes(false);
+    cy.destroy();
+    check(
+      dDrawn.port.wrong.length === 0 &&
+        inPort["dag-same"] === "none" && inPort["dag-same-bare"] === "circle" &&
+        inPort["dag-ab"] === "triangle" && inPort["dag-own"] === "triangle" &&
+        Object.values(inKind).every((s) => s === "triangle"),
+      `port palette: a self-converse relation is drawn with target arrow shape "${inPort["dag-same"]}" ("${inPort["dag-same-bare"]}" when ` +
+        `only the grammar says so and its target end is uncoloured), the others "${inPort["dag-ab"]}" / "${inPort["dag-own"]}"; ` +
+        `relation kind: ${JSON.stringify(Object.values(inKind))}${dDrawn.port.wrong.length ? `; drawn WRONG: ${dDrawn.port.wrong.join(", ")}` : ""}`,
     );
   }
   // Node fills stay a type palette that never uses a κ hue (nor the neutral of the states).
@@ -1595,12 +1696,13 @@ console.log("\nK. the converse from the engine's grammar, for every pair (PIL-14
       fg.converseName(P("a-out"), undefined) === null,
     "converseName: the knowledge vocabulary's converse first (even where the engine pairs the port otherwise), then the engine's pairs, several joined by ' / '; null without either",
   );
+  // t347 PIL-21: the legend tooltip writes the converse with † (the Workbench's words).
   check(
-    fg.relationTitle(row(P("a-out")), synth).startsWith(`${P("a-out")} (from the other end: ${P("a-in")}) · 1`) &&
-      fg.relationTitle(row(P("own")), synth).startsWith(`${P("own")} (from the other end: ${P("own-1")} / ${P("own-2")})`) &&
-      fg.relationTitle(row(P("self")), synth).startsWith(`${P("self")} · 1`) &&
+    fg.relationTitle(row(P("a-out")), synth).startsWith(`${P("a-out")} · † ${P("a-in")} · 1`) &&
+      fg.relationTitle(row(P("own")), synth).startsWith(`${P("own")} · † is not a function here (${P("own-1")}, ${P("own-2")}) · 1`) &&
+      fg.relationTitle(row(P("self")), synth).startsWith(`${P("self")} · † = itself · 1`) &&
       fg.relationTitle(row(P("a-out")), undefined).startsWith(`${P("a-out")} · 1`),
-    "the legend tooltip names the converse from the engine's grammar; a self-converse port and a frame without a grammar show the port alone",
+    "the legend tooltip names the converse from the engine's grammar with †: one name, '† = itself', or '† is not a function here (…)'; a frame without a grammar shows the port alone",
   );
   check(
     fg.conversePortOf(incoming(kbRel.src_port, P("carried")), synth) === kbConversePort(kbRel.src_port) &&
@@ -1660,10 +1762,17 @@ console.log("\nK. the converse from the engine's grammar, for every pair (PIL-14
     const names = [...new Set((g.pairs ?? []).flatMap((p) => [p.src_port, p.tgt_port]))].sort();
     return { json, g, names, path: hit.path };
   };
+  // t347 PIL-21: the legend tooltip with † — "n · † c", "n · † = itself", or where † is not a
+  // function at n (the grammar's (b2) check) "n · † is not a function here (a, b)".
   const shown = (g, n) => {
     const c = fg.converseName(n, g);
+    const fault = converseFault(g, n);
     const title = fg.relationTitle(row(n), g);
-    return c === n ? title.startsWith(`${n} · `) : title.startsWith(`${n} (from the other end: ${c}) · `);
+    return fault
+      ? title.startsWith(`${n} · † is not a function here (${fault.join(", ")}) · `)
+      : c === n
+        ? title.startsWith(`${n} · † = itself · `)
+        : title.startsWith(`${n} · † ${c} · `);
   };
 
   const mtdc = recorded(RECORDED[0]);
@@ -1682,11 +1791,13 @@ console.log("\nK. the converse from the engine's grammar, for every pair (PIL-14
     check(
       mtdc.json.version === RECORDED[0].version && g.pairs.length === RECORDED[0].pairs &&
         names.length === RECORDED[0].names && single.length === names.length && back.length === names.length &&
-        fixed.length === RECORDED[0].fixed && named.length === names.length && titles.length === names.length && pairsOk,
+        fixed.length === RECORDED[0].fixed && named.length === names.length && titles.length === names.length && pairsOk &&
+        Array.isArray(g.converse_not_function) && g.converse_not_function.length === 0,
       `${mtdc.json.version} (sha256 ${RECORDED[0].sha256.slice(0, 12)}…, read from ${mtdc.path}): ${g.pairs.length} pairs, ${names.length} names; ` +
         `each maps to one converse ${single.length} of ${names.length}, and back (†† = id) ${back.length} of ${names.length}; ` +
         `${fixed.length} map to themselves; the panel's converse name agrees ${named.length} of ${names.length} (the vocabulary's ports included) ` +
-        `and the legend tooltip shows it ${titles.length} of ${names.length}`,
+        `and the legend tooltip shows it with † ${titles.length} of ${names.length}; the (b2) check finds † not a function at ` +
+        `${g.converse_not_function?.length} names`,
     );
   }
 
@@ -1707,14 +1818,16 @@ console.log("\nK. the converse from the engine's grammar, for every pair (PIL-14
         names.length === RECORDED[1].names && several.length === RECORDED[1].several &&
         opposite.length === RECORDED[1].opposite &&
         own === both &&
-        fg.relationTitle(row(multi), g).startsWith(`${multi} (from the other end: ${both}) · `) &&
+        fg.relationTitle(row(multi), g).startsWith(`${multi} · † is not a function here (${opposite.join(", ")}) · `) &&
+        JSON.stringify(g.converse_not_function) === JSON.stringify([{ name: multi, converses: opposite }]) &&
         opposite.every((o) => JSON.stringify(conversePorts(g, o)) === JSON.stringify([multi])) &&
         fg.conversePortOf(incoming(multi), g) === both &&
         fg.conversePortOf(incoming(multi, opposite[1]), g) === opposite[1] &&
         names.filter((n) => shown(g, n)).length === names.length,
       `${fleet.json.version} (sha256 ${RECORDED[1].sha256.slice(0, 12)}…, read from ${fleet.path}): ${g.pairs.length} pairs, ${names.length} names; ` +
         `the converse is not a function on ${several.length} name (${several.join(", ")}), which shows "${own}" — both of its ` +
-        `${opposite.length} converses, each mapping back to it alone; the legend tooltip shows the converse of all ${names.length}; ` +
+        `${opposite.length} converses, each mapping back to it alone; the (b2) check records exactly that name; ` +
+        `the legend tooltip says "† is not a function here" there and shows the converse with † for all ${names.length}; ` +
         `${fixed.length} map to themselves; an incoming relation on that port that carries its tgt_port keeps it`,
     );
   }

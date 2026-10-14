@@ -210,9 +210,10 @@ their relations, the small components on one urn row, the sources moved to a col
 box is drawn, cose on the panel's own canvas (the 36-node component moved by up to 131 px),
 label boxes off their grid (a second run moved all 66 nodes), and a cose budget per component
 (in the helper, or FrameGraph ignoring the frame's).
-K (t344 PIL-14) holds the converse of every port from the engine's declared pairs — the real
-`conversePorts` of `engine-grammar.js` and FrameGraph's `converseName`, `conversePortOf` and
-`relationTitle` — on a synthetic grammar and on two recorded grammars read from outside this
+K (t344 PIL-14; t347 PIL-21) holds the converse of every port from the engine's declared pairs — the real
+`conversePorts` and `converseFault` of `engine-grammar.js` and FrameGraph's `converseName`,
+`conversePortOf` and `relationTitle` (written with † since t347; H holds the (b2) check, the
+three † forms and the self-converse arrowhead) — on a synthetic grammar and on two recorded grammars read from outside this
 repo by sha256 (see "The converse from the engine's grammar"); on a runner without those files
 it prints two `[SKIP]` lines and the synthetic checks still run.
 L (t347 PIL-22) holds a node type's interface on a synthetic grammar — the real
@@ -899,7 +900,7 @@ puts at the other end from `port`, either side, sorted — the idea of b85f0dd's
 ` / ` — 4.0.9 declares one port on two pairs and it reads both converse names, `a / b`, the honest
 non-function, never one of the two picked. The legend's relation tooltip reads `p (from the other
 end: c) · N …` for every port, not only the knowledge ports (a self-converse port shows the
-port alone, as before). The inspector (`conversePortOf`, moved to `FrameGraph.tsx`): the
+port alone, as before) — since t347 written with † instead (PIL-21, below). The inspector (`conversePortOf`, moved to `FrameGraph.tsx`): the
 vocabulary's converse, then the relation's own `tgt_port` — what that relation says at that end,
 also on an undeclared pair or for one of that port's two — then the engine's pairs, then the label.
 So on the fleet, where every relation carries its `tgt_port`, an inspector row reads as before;
@@ -967,6 +968,46 @@ pilot's `normalizeEngineGrammar` + `interfaceOf` and to the Workbench's `fromLiv
 possible there and not seen on any grammar read: where a merged pair's first copy does not admit
 a type and its second does, the pilot lists that name at the first copy's place and the
 Workbench at the second's — the same set, another order.
+
+## The converse written with † (t347, work order PIL-21, with the rest of PIL-16)
+
+**Why.** Sam's P4 makes the converse an operator on one relation with two ends. The pilot had no
+† on screen: the legend said `p (from the other end: c)`, the inspector `c — the converse of p`,
+and where the engine's pairs give a port two converses it listed both without saying † fails
+there. A relation that is its own converse kept a target arrowhead in the port palette, a
+direction its converse does not have.
+
+**What changed.**
+- `engine-grammar.js`: the (b2) check, at grammar load — for every name on a declared pair (the
+  out-names, and the in-names with them, as the Workbench reads them), do the pairs give it
+  exactly one converse? The names where they do not are stamped with the grammar,
+  `converse_not_function` (`{name, converses}`, sorted; empty when † is a function on the
+  engine), and `converseFault(grammar, port)` reads it (a grammar stamped before t347: the pairs).
+  This is the part of PIL-16 that PIL-14 left: PIL-16 is covered by PIL-14 plus this check.
+- `FrameGraph.tsx` `converseWords`: the Workbench's words (WB-14) — `p · † c`, `p · † = itself`
+  for a self-converse port, and where (b2) fails `p · † is not a function here (c1, c2)`; the
+  knowledge vocabulary's converse first, then the engine's pairs. The legend's relation tooltip
+  starts with it. `relationConverseWords` keeps PIL-14's order for naming a target end — the
+  vocabulary, the relation's own `tgt_port`, the engine's pairs — and is the inspector's tooltip
+  on an incoming row (`NodeInspector.tsx`; it read `c — the converse of p`).
+- No target arrowhead on a self-converse relation in the port palette (`isSelfConverse`, the same
+  order; data `kself`; `port-colour.js` `targetGlyph`): the plain arrowhead goes, and a state
+  keeps its glyph without the triangle (exempt `tee`, no colour a hollow `circle`). The
+  relation-kind palette is unchanged: there only a self-converse knowledge port drops it, as
+  before.
+
+**Asserted.** `smoke:lens` H, on a synthetic grammar of the order's shape (one port on two pairs,
+a self-converse port, a plain pair; no engine name): the (b2) record names exactly the port on
+two pairs; `relationTitle` gives `a · † b`, `same · † = itself` and `own · † is not a function here
+(own-1, own-2)`; the inspector's words in PIL-14's order; drawn headless, a relation on the
+self-converse pair has target arrow shape `none` (one known only from the grammar, with an
+uncoloured target end, `circle`), the others `triangle`, and every one `triangle` after the switch
+to relation kind. K on the recorded grammars: mtdc-2.2.0's (b2) record is empty and all 89
+tooltips carry †; 4.0.9's records exactly its one port on two pairs, whose tooltip says † is not
+a function there. Broken copies fail it: no `kself` (one FAIL), the old tooltip wording (four),
+no (b2) record (five). `smoke:live` (i) holds each relation's drawn target glyph and prints the
+self-converse count: 0 of 242 on the Z440 primary (4.0.9, log 713; † not a function at 1 name),
+9 of 419 on scratch (mtdc-2.1.0, log 1030; 2 labels; † a function everywhere).
 
 ## Finding and inspecting in the knowledge graph (t337)
 

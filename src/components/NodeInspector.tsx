@@ -26,7 +26,7 @@ import { useRef, useState } from "react";
 import type { HgFrame, HgNode, HgProperties } from "../mcp/types";
 import { KB_VOCAB_VERSION, kbPortStyle } from "../ui/kb-vocab.js";
 import { hasPortColours, paintRelation } from "../ui/port-colour.js";
-import { conversePortOf, kappaStateLabel, type RelationPalette } from "./FrameGraph";
+import { conversePortOf, kappaStateLabel, relationConverseWords, type RelationPalette } from "./FrameGraph";
 
 /** The property shown as a paragraph instead of a table row (t337). */
 const TEXT_PROPERTY = "text";
@@ -193,8 +193,10 @@ export function NodeInspector({
                 : color
                   ? `relation kind (kb-vocab ${KB_VOCAB_VERSION})`
                   : null;
+              // t347 PIL-21: an incoming row says its converse with †, in the Workbench's
+              // words ("p · † c", "p · † = itself", "† is not a function here (a, b)").
               const rowTitle = [
-                port === r.label ? null : `${port} — the converse of ${r.label}`,
+                outgoing ? null : relationConverseWords(r, grammar),
                 colourNote,
               ]
                 .filter(Boolean)

@@ -61,7 +61,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import cytoscape from "cytoscape";
 import type { EngineGrammar, HgFrame, HgNode, HgRelation } from "../mcp/types";
-import { conversePorts } from "../mcp/engine-grammar.js";
+import { converseFault, conversePorts } from "../mcp/engine-grammar.js";
 import type { GraphLayoutName } from "../state/prefs";
 import { DEFAULT_GRAPH_LAYOUT } from "../state/prefs";
 import {
@@ -84,6 +84,7 @@ import {
   kappaRelationData,
   kappaFamilies,
   paintRelation,
+  targetGlyph,
 } from "../ui/port-colour.js";
 import {
   breadthFirstPlacement,
@@ -563,6 +564,9 @@ export function toElements(
         label: r.label,
         type_id: r.type_id,
         ...(kappaRelationData(paintRelation(r, grammar)) ?? {}),
+        // t347 PIL-21: a relation that is its own converse draws no target arrowhead in the
+        // port palette (STYLE edge.kappa, port-colour.js targetGlyph).
+        ...(isSelfConverse(r, grammar) ? { kself: "self" } : {}),
       },
       ...(boxes.size > 0 ? { pannable: true } : {}),
     }));
@@ -586,7 +590,7 @@ function structureKey(elements: cytoscape.ElementDefinition[]): string {
 }
 
 /** t342 P1: the relation data the port-colour style reads (port-colour.js kappaRelationData). */
-const KAPPA_KEYS = ["ks", "kt", "kss", "kts", "kpair", "kfault"];
+const KAPPA_KEYS = ["ks", "kt", "kss", "kts", "kpair", "kfault", "kself"];
 
 /** Update the data styling reads, in place — no element is added, removed or moved. */
 function syncData(cy: cytoscape.Core, el: cytoscape.ElementDefinition): void {
@@ -1589,7 +1593,8 @@ export const STYLE: cytoscape.StylesheetStyle[] = [
       "source-arrow-color": "data(ks)",
       "source-arrow-fill": (e: cytoscape.EdgeSingular) =>
         e.data("kss") === "circle" ? "hollow" : "filled",
-      "target-arrow-shape": "data(kts)",
+      // t347 PIL-21: a self-converse relation (`kself`) shows its end state without the arrowhead.
+      "target-arrow-shape": (e: cytoscape.EdgeSingular) => targetGlyph(e.data("kts"), e.data("kself") === "self"),
       "target-arrow-color": "data(kt)",
       // the uncoloured state is hollow at both ends (Cytoscape fills every arrow by default)
       "target-arrow-fill": (e: cytoscape.EdgeSingular) =>
@@ -1714,18 +1719,76 @@ export function conversePortOf(
   return converseName(relation.label, grammar) ?? relation.label;
 }
 
+/** t347 PIL-21: `p · † c`, or `p · † = itself` for a port that is its own converse. */
+const daggerWords = (port: string, converse: string): string =>
+  converse === port ? `${port} · † = itself` : `${port} · † ${converse}`;
+
+/**
+ * t347 PIL-21: the converse of a port written with †, in the Workbench's words (WB-14): `p · † c`,
+ * `p · † = itself` for a self-converse port, and — where the engine's declared pairs give `p`
+ * more than one converse, so † is not a function there (the grammar's (b2) check,
+ * engine-grammar.js converseFault) — `p · † is not a function here (c1, c2)`. The knowledge
+ * vocabulary's converse first, then the engine's pairs (PIL-14's order). Null when neither names
+ * one (a port on no declared pair, a frame without a grammar). Exported for `smoke:lens`.
+ */
+export function converseWords(port: string, grammar: EngineGrammar | null | undefined): string | null {
+  const kb = kbConversePort(port);
+  if (kb) return daggerWords(port, kb);
+  const fault = converseFault(grammar, port);
+  if (fault) return `${port} · † is not a function here (${fault.join(", ")})`;
+  const [converse] = conversePorts(grammar, port);
+  return converse ? daggerWords(port, converse) : null;
+}
+
+/**
+ * t347 PIL-21: the converse of one relation written with † — what the inspector says of a relation
+ * read from its target end. PIL-14's order for naming that end: the knowledge vocabulary, then the
+ * port the relation itself carries there (`tgt_port`), then the engine's pairs (converseWords).
+ * Exported for the inspector and `smoke:lens`.
+ */
+export function relationConverseWords(
+  relation: Pick<HgRelation, "label" | "properties">,
+  grammar: EngineGrammar | null | undefined,
+): string | null {
+  const kb = kbConversePort(relation.label);
+  if (kb) return daggerWords(relation.label, kb);
+  const carried = relation.properties?.tgt_port;
+  if (typeof carried === "string" && carried) return daggerWords(relation.label, carried);
+  return converseWords(relation.label, grammar);
+}
+
+/**
+ * t347 PIL-21: whether a relation is its own converse — it reads the same from both ends, so the
+ * port palette draws it with no target arrowhead (the choice the relation-kind palette makes for a
+ * self-converse knowledge port, now for every port). In PIL-14's order: the knowledge vocabulary's
+ * converse, else the `tgt_port` the relation carries, else the engine's pairs where † is a
+ * function at its label (the (b2) check). No converse known: false.
+ */
+export function isSelfConverse(
+  relation: Pick<HgRelation, "label" | "properties">,
+  grammar: EngineGrammar | null | undefined,
+): boolean {
+  const kb = kbConversePort(relation.label);
+  if (kb) return kb === relation.label;
+  const carried = relation.properties?.tgt_port;
+  if (typeof carried === "string" && carried) return carried === relation.label;
+  if (converseFault(grammar, relation.label)) return false;
+  const names = conversePorts(grammar, relation.label);
+  return names.length === 1 && names[0] === relation.label;
+}
+
 /**
  * The legend tooltip for a port: the port and its converse, the count, what the vocabulary
  * says. t344 PIL-14: the converse from the engine's grammar too, not only the knowledge
- * vocabulary's — `p (from the other end: a / b)` for 4.0.9's port on two pairs. Exported for
- * `smoke:lens` K.
+ * vocabulary's. t347 PIL-21: written with † (converseWords) — `p · † c`, `p · † = itself`, or
+ * `p · † is not a function here (a, b)` for a port the engine declares on two pairs. Exported
+ * for `smoke:lens` H and K.
  */
 export function relationTitle(
   { port, count, boxed, undeclared, fault }: LegendRelationRow,
   grammar?: EngineGrammar | null,
 ): string {
-  const converse = converseName(port, grammar);
-  const names = converse && converse !== port ? `${port} (from the other end: ${converse})` : port;
+  const names = converseWords(port, grammar) ?? port;
   const drawn = boxed > 0 ? ` (${boxed} drawn as boxes, ${count - boxed} as lines)` : "";
   const says = kbRelation(port)?.description;
   // t342 P1: the pair state, a pair check only (the workbench's check 8 rules on admission).

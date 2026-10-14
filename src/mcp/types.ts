@@ -222,6 +222,13 @@ export type EngineGrammar =
        */
       type_ports: Record<string, GrammarTypePorts>;
       /**
+       * t347 PIL-21 (the rest of PIL-16), condition (b2), checked at grammar load: the names on a
+       * declared pair to which the pairs give more than one converse — † is not a function there —
+       * each with its converses, sorted. Empty: † is a function on this engine's pairs. Absent on
+       * a grammar stamped before PIL-21 (`converseFault` then reads the pairs).
+       */
+      converse_not_function?: { name: string; converses: string[] }[];
+      /**
        * κ: port -> colour family. `""` is the exemption of 98f2ccc kernels on 4.0.x. Null
        * (t342 P6 review): the engine serves its pairs and types but no port colours — the drawer
        * keeps them, the graph draws relation kinds.
