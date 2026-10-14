@@ -1523,7 +1523,8 @@ function liveAxisChecks(fold, health, grammar, gc, fg) {
   const famText = kappaFamilies(grammar)
     .map((f) => `${f.family} ${census.families[f.family] ?? 0}`)
     .join(" · ");
-  line("κ ends", famText || "(no colour families)");
+  // t347 PIL-20: a family counts the one-colour relations drawn in its hue, not port ends.
+  line("κ relations", famText || "(no colour families)");
   line(
     "κ states",
     `exempt ${census.exempt} ends · uncoloured ${census.uncoloured} ends · undeclared pair ` +

@@ -1815,12 +1815,16 @@ function plainGrammar(grammar: EngineGrammar | undefined): string {
       ? "the engine's grammar did not answer"
       : "the engine serves no grammar";
   }
-  if (!grammar.port_colors) return `the engine (ontology ${grammar.ontology_version}) serves no port colours`;
+  if (!grammar.port_colors) return `the engine (ontology ${grammar.ontology_version}) serves no colour families`;
   return `ontology ${grammar.ontology_version} · ${kappaFamilies(grammar).length} colour families over ${Object.keys(grammar.port_colors).length} ports`;
 }
 
-/** t342 P1: the legend's palette rows — the κ families present and the three states. */
-function kappaLegend(frame: HgFrame, grammar: EngineGrammar | undefined) {
+/**
+ * t342 P1: the legend's palette rows — the κ families present and the three states. t347 PIL-20:
+ * a family row counts the one-colour relations of that family (kappaCensus), not port ends.
+ * Exported for `smoke:lens` H.
+ */
+export function kappaLegend(frame: HgFrame, grammar: EngineGrammar | undefined) {
   const typeOf = new Set(nodesOf(frame).map((n) => n.urn));
   const drawn = relationsOf(frame).filter(
     (r) => typeOf.has(r.source_urn) && typeOf.has(r.target_urn),
@@ -1831,7 +1835,7 @@ function kappaLegend(frame: HgFrame, grammar: EngineGrammar | undefined) {
     families: kappaFamilies(grammar).map(({ family, hue }) => ({
       family,
       hue,
-      ends: census.families[family] ?? 0,
+      relations: census.families[family] ?? 0,
     })),
   };
 }
@@ -2263,7 +2267,7 @@ export function FrameGraph({
       : "") +
     (boxCount > 0 ? `, boxes of ${countOf(boxCount, "kind")}` : "") +
     (plan.unlinked > 0 ? `, ${plan.unlinked} unlinked in a band` : "") +
-    (portColour ? ", relation ends coloured by port" : ", relations coloured by kind") +
+    (portColour ? ", relations coloured by family" : ", relations coloured by kind") +
     (portColour && kappa.census.twoTone > 0
       ? `, ${countOf(kappa.census.twoTone, "relation")} with two colours drawn as a fault`
       : "") +
@@ -2389,11 +2393,11 @@ export function FrameGraph({
               onClick={() => setPalette("port")}
               title={
                 portColourAvailable
-                  ? `Port colour: each end of a relation in the colour family the engine gives its port — ${plainGrammar(grammar)}`
-                  : `Port colours are not available: ${plainGrammar(grammar)}`
+                  ? `Relation colour: each relation carries one colour; its two ends show it — ${plainGrammar(grammar)}`
+                  : `Relation colours are not available: ${plainGrammar(grammar)}`
               }
             >
-              port colour
+              relation colour
             </button>
             <button
               type="button"
@@ -2414,19 +2418,19 @@ export function FrameGraph({
           {portColour && (
             <div
               className="legend-group"
-              title={`Colour families: the engine gives each port a family, and each end of a relation takes its port's colour — ${plainGrammar(grammar)}`}
+              title={`each relation carries one colour; its two ends show it — ${plainGrammar(grammar)}`}
             >
-              <span className="legend-title">colour family</span>
+              <span className="legend-title">relation colour (family)</span>
               {kappa.families.map((f) => (
                 <span
                   key={f.family}
-                  className={`legend-item legend-kappa${f.ends === 0 ? " is-empty" : ""}`}
+                  className={`legend-item legend-kappa${f.relations === 0 ? " is-empty" : ""}`}
                   data-testid={`legend-family-${f.family}`}
-                  title={`${f.family} · ${f.ends} port end${f.ends === 1 ? "" : "s"} in this frame${f.hue ? "" : " · no colour of its own (more than eight colour families)"}`}
+                  title={`${f.family} · ${f.relations} relation${f.relations === 1 ? "" : "s"} in this colour in this frame — a relation with two colours counts only as a fault${f.hue ? "" : " · no colour of its own (more than eight colour families)"}`}
                 >
                   <i className="legend-dot" style={{ background: f.hue ?? KAPPA_NEUTRAL }} />
                   {f.family}
-                  <span className="legend-count">{f.ends}</span>
+                  <span className="legend-count">{f.relations}</span>
                 </span>
               ))}
               {KAPPA_STATES.map((st) => {

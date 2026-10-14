@@ -157,7 +157,12 @@ does not declare; dotted, `◇` midway). Ends in two families — or a family at
 at the other — are a fault since t344 (PIL-13): no declared pair joins two families, so the
 line is drawn grey, both ends too, with a filled `■` midway, and the legend's row reads *two
 colours: a fault*; a family's hue goes only on a relation whose two ends share it (it was
-drawn in two tones before). The legend's `colour by` switch goes
+drawn in two tones before). Since t347 (PIL-20) the legend names the colour as the relation's,
+Sam's P2: the switch reads `colour by: relation colour | relation kind`, the family group
+*relation colour (family)* with the tooltip "each relation carries one colour; its two ends show
+it", each family row counts the one-colour relations drawn in its hue (a fault counts only in
+the fault row), and the canvas's label says "relations coloured by family"; the *exempt* and *no
+colour* rows still count port ends. The legend's `colour by` switch goes
 back to the relation-kind palette above. The grammar is read from the engine at run time
 (`src/mcp/engine-grammar.js`, cached per engine and ontology version) and the advanced drawer
 adds what it declares — types and ports the static lists do not name, and the fold's labels
@@ -185,7 +190,8 @@ starts closed and the canvas keeps its height. Open, it grows to its rows (the p
 scrolls) instead of scrolling inside a 110 px box, and it speaks the six words the pilot, the
 Workbench and the manual share — *colour family*, *port end*, *no colour*, *exempt*, *pair
 not declared*, *port on no pair* — with no κ, commit hash, route or `src_port` in a tooltip
-(t342 hand-off C), and since t344 a fourth state row, *two colours: a fault*. An unticked row stays unticked on the other
+(t342 hand-off C), and since t344 a fourth state row, *two colours: a fault*; since t347 the
+family group is titled *relation colour (family)*, the Workbench's words. An unticked row stays unticked on the other
 lenses — the bar counts them and `show all` ticks every row back — and ticking back a node
 kind the layout last ran without runs the layout again, so its nodes get a place.
 

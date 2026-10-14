@@ -268,10 +268,12 @@ export function kappaRelationData(paint) {
 }
 
 /**
- * Counts for the legend and the smokes: ends per colour family, ends per state, relations on
+ * Counts for the legend and the smokes: relations per colour family, ends per state, relations on
  * an undeclared pair, two-tone relations (each drawn as a fault since t344: the legend's
- * "two colours: a fault" count), and relations left in the relation-kind palette. A fault's
- * ends are still counted under their families — the family is the port's, not the line's.
+ * "two colours: a fault" count), and relations left in the relation-kind palette.
+ * t347 PIL-20: the colour is the relation's (Sam's P2), so a family counts the one-colour
+ * relations drawn in its hue — both ends in that family — not port ends; a fault counts only as
+ * a fault, never under a family. The two end states (exempt, no colour) stay per port end.
  * @param {Pick<HgRelation, "label" | "properties">[]} relations
  * @param {EngineGrammar | null | undefined} grammar
  */
@@ -286,10 +288,11 @@ export function kappaCensus(relations, grammar) {
       out.kind += 1;
       continue;
     }
+    // t347 PIL-20: one count per one-colour relation, under its family.
+    if (!paint.twoTone && paint.src.family) families[paint.src.family] = (families[paint.src.family] ?? 0) + 1;
     for (const e of [paint.src, paint.tgt]) {
-      if (e.state === "colour" && e.family) families[e.family] = (families[e.family] ?? 0) + 1;
-      else if (e.state === "exempt") out.exempt += 1;
-      else out.uncoloured += 1;
+      if (e.state === "exempt") out.exempt += 1;
+      else if (e.state === "uncoloured") out.uncoloured += 1;
     }
     if (paint.pair === "undeclared") out.undeclared += 1;
     if (paint.twoTone) out.twoTone += 1;

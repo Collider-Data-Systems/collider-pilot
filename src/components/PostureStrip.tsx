@@ -440,7 +440,7 @@ export function PostureStrip({
             <Field
               label="κ source"
               value={kappaText}
-              title="t342: where the port colours (κ) of the relation ends came from. The pilot reads port_colors (and color_rule / color_source when the engine states them), never the matrix and never a relation's src_color / tgt_color."
+              title="t342: where the colours (κ) of the relations came from — the colour family the engine gives each port; a relation carries one colour, and its two ends show it (t347). The pilot reads port_colors (and color_rule / color_source when the engine states them), never the matrix and never a relation's src_color / tgt_color."
             />
             <Field
               label="kb-vocab"

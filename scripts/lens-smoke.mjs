@@ -59,6 +59,9 @@
  *      port; relationTitle gives "p · † c", "p · † = itself" and "p · † is not a function here
  *      (a, b)"; the inspector's words keep PIL-14's order; and drawn headless, a self-converse
  *      relation has no target arrowhead in the port palette (its state glyph stays).
+ *      (t347 PIL-20) The colour is the relation's: the legend's family rows count one-colour
+ *      relations — they sum to the relations drawn in a family hue and count no fault's end —
+ *      and no rendered string (renderedStrings) says "port colour" or "port's colour".
  *   I. (t342 P6) The drawer offers the static groups (A-C) first, then the types and source
  *      ports the ENGINE declares and the permitted fold's own labels (the real drawerVocab);
  *      an untick expands from all of it; the legacy list is a group of its own; a fold label
@@ -253,6 +256,7 @@ function drawCheck(fg, frame, elements = fg.toElements(frame, new Map(), new Set
   const rgb = (hex) => [0, 2, 4].map((i) => parseInt(String(hex).replace("#", "").slice(i, i + 2), 16)).join();
   const col = (v) => (Array.isArray(v) ? v.join() : String(v));
   const kappaRgb = new Set([...KAPPA_HUES, KAPPA_NEUTRAL].map(rgb));
+  const familyRgb = new Set(KAPPA_HUES.map(rgb));
   const neutral = rgb(KAPPA_NEUTRAL);
   const baseLine = fg.STYLE.find((s) => s.selector === "edge").style["line-color"];
   const cy = cytoscape({
@@ -264,7 +268,8 @@ function drawCheck(fg, frame, elements = fg.toElements(frame, new Map(), new Set
   const val = (e, k) => e.pstyle(k).value;
   try {
     fg.applyPalette(cy, true);
-    const port = { edges: 0, kind: 0, wrong: [], fault: [] };
+    // t347 PIL-20: `hued` lists the relations drawn in a family's hue (their line one of the eight).
+    const port = { edges: 0, kind: 0, wrong: [], fault: [], hued: [] };
     cy.edges().forEach((e) => {
       port.edges += 1;
       const d = e.data();
@@ -300,6 +305,7 @@ function drawCheck(fg, frame, elements = fg.toElements(frame, new Map(), new Set
         val(e, "mid-target-arrow-shape") === (undeclared ? UNDECLARED_MARKER.midGlyph : "none");
       if (!ok) port.wrong.push(String(d.label));
       if (drawnFault) port.fault.push(String(d.id));
+      if (familyRgb.has(line)) port.hued.push(String(d.id));
     });
     fg.applyPalette(cy, false);
     const kind = { edges: 0, port: 0, wrong: [] };
@@ -318,6 +324,94 @@ function drawCheck(fg, frame, elements = fg.toElements(frame, new Map(), new Set
   } finally {
     cy.destroy();
   }
+}
+
+/**
+ * t347 PIL-20 / PIL-24: the text the panel can put on screen, read from the source — offline, no
+ * browser. Every string literal, template part and JSX text in the code under `src/` (parsed: a
+ * comment is never a hit), and every string of the knowledge vocabulary (`src/ui/kb-vocab.json`,
+ * whose descriptions reach the legend's tooltips as data). A string in a place that is never shown
+ * is marked `code` with the reason: a type, a module specifier, a property key or index, a
+ * comparison, a JSX attribute the browser does not show (`className`, `data-*`, `key`, `role`, …)
+ * or an object property that is code (`selector`, `group`, `className`, `key`, `id`, `type` — the
+ * Cytoscape selectors and element groups among them). Every other string is `shown`. Cytoscape's
+ * own identifiers (`cy.edges()`) are identifiers, not strings, and never collected. `sources` lets
+ * the smoke run the same collector on a planted file.
+ * @param {{ file: string, text: string }[]} [sources]
+ * @returns {{ file: string, line: number, text: string, code: string | null, data: boolean }[]}
+ */
+function renderedStrings(sources) {
+  const NOT_SHOWN_ATTR =
+    /^(className|class|key|id|type|role|htmlFor|name|rel|target|href|src|style|ref|autoComplete|spellCheck|inputMode|lang|dir|method|data-.*|aria-(hidden|pressed|expanded|controls|haspopup|live|current|selected|checked|disabled|labelledby|describedby))$/;
+  const CODE_KEYS = new Set(["selector", "group", "classes", "className", "class", "key", "id", "type"]);
+  const EQUALITY = new Set([
+    ts.SyntaxKind.EqualsEqualsEqualsToken,
+    ts.SyntaxKind.ExclamationEqualsEqualsToken,
+    ts.SyntaxKind.EqualsEqualsToken,
+    ts.SyntaxKind.ExclamationEqualsToken,
+  ]);
+  const keyOf = (n) => (n.name && (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name)) ? n.name.text : null);
+  const codeContext = (node) => {
+    for (let at = node, up = node.parent; up; at = up, up = up.parent) {
+      if (ts.isTypeNode(up) && !ts.isExpressionWithTypeArguments(up)) return "a type";
+      if ((ts.isImportDeclaration(up) || ts.isExportDeclaration(up)) && up.moduleSpecifier === at) return "a module";
+      if (ts.isCallExpression(up) && importedModule(up) !== null) return "a module";
+      if (ts.isJsxAttribute(up)) return NOT_SHOWN_ATTR.test(up.name.getText()) ? `attribute ${up.name.getText()}` : null;
+      if (ts.isPropertyAssignment(up) && up.name === at) return "a property key";
+      if (ts.isPropertyAssignment(up) && up.initializer === at) return CODE_KEYS.has(keyOf(up)) ? `property ${keyOf(up)}` : null;
+      if (ts.isElementAccessExpression(up) && up.argumentExpression === at) return "an index";
+      if (ts.isBinaryExpression(up) && EQUALITY.has(up.operatorToken.kind)) return "a comparison";
+      if (ts.isCaseClause(up) && up.expression === at) return "a comparison";
+      if (ts.isBlock(up) || ts.isSourceFile(up) || ts.isVariableDeclaration(up) || ts.isReturnStatement(up)) return null;
+    }
+    return null;
+  };
+  const files =
+    sources ??
+    (() => {
+      const list = [];
+      const walkSrc = (dir) => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = join(dir, entry.name);
+          if (entry.isDirectory()) walkSrc(full);
+          else if (/\.(ts|tsx|js)$/.test(entry.name) && !entry.name.endsWith(".d.ts")) {
+            list.push({ file: relative(process.cwd(), full).replaceAll("\\", "/"), text: readFileSync(full, "utf8") });
+          }
+        }
+      };
+      walkSrc(resolve(process.cwd(), "src"));
+      return list;
+    })();
+  const out = [];
+  for (const { file, text } of files) {
+    const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : file.endsWith(".ts") ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
+    const visit = (n) => {
+      let s = null;
+      if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n)) {
+        s = n.text;
+      } else if (ts.isJsxText(n)) {
+        s = n.text.replace(/\s+/g, " ").trim();
+      }
+      if (s) {
+        out.push({ file, line: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1, text: s, code: codeContext(n), data: false });
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(sf);
+  }
+  if (!sources) {
+    // The knowledge vocabulary is data the legend shows (a relation's description in its tooltip).
+    const raw = readFileSync(resolve(process.cwd(), "src/ui/kb-vocab.json"), "utf8");
+    const lines = raw.split("\n");
+    const strings = (v) =>
+      typeof v === "string" ? [v] : Array.isArray(v) ? v.flatMap(strings) : v && typeof v === "object" ? Object.values(v).flatMap(strings) : [];
+    for (const s of strings(JSON.parse(raw))) {
+      const at = lines.findIndex((l) => l.includes(JSON.stringify(s).slice(1, -1)));
+      out.push({ file: "src/ui/kb-vocab.json", line: at + 1, text: s, code: null, data: true });
+    }
+  }
+  return out;
 }
 
 const m = await loadModule();
@@ -837,7 +931,7 @@ console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two
   const withoutKeys = paintedThrough(kFold({}));
   check(
     withKeys.stamped && withKeys.census.relations === 1 && withKeys.census.exempt === 0 &&
-      withKeys.census.families["fam-one"] === 2 &&
+      withKeys.census.families["fam-one"] === 1 &&
       JSON.stringify(withKeys.census) === JSON.stringify(withoutKeys.census),
     "through selectFrame: an empty src_color / tgt_color on a relation is not read (0 exempt ends), and its absence changes nothing",
   );
@@ -941,6 +1035,52 @@ console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two
       `a fault on the nesting port is never a box: under nested, the boxed relation is the box (${plan.parents.get(NU("boxed")) === box}), ` +
         `the fault stays a line (${lines.has(nestRels[1].urn)}) drawn as a fault (${nestDrawn.port.fault.length} drawn so${nestDrawn.port.wrong.length ? `, WRONG: ${nestDrawn.port.wrong.join(", ")}` : ""}); ` +
         `census two-tone ${nestCensus.twoTone}, legend row faults ${nestRow?.fault} and boxed ${nestRow?.boxed}`,
+    );
+  }
+  // t347 PIL-20: the colour named and counted as the relation's (Sam's P2). A family row counts
+  // the one-colour relations of that family — the fixture's own map decides which, not the
+  // painter — so the family counts sum to the relations DRAWN in a family hue, and no fault's end
+  // is counted under a family; the "exempt" and "no colour" rows stay per port end. Two more
+  // one-colour relations (one on an undeclared pair) join the fixture, so both families count.
+  {
+    const famRels = [...drawRels, rel("one-b", P("a-out"), P("a-in")), rel("two-same", P("c-in"), P("c-in"))];
+    const famFrame = {
+      provenance: { grammar },
+      nodes: [...new Set(famRels.flatMap((r) => [r.source_urn, r.target_urn]))].map((urn) => ({
+        urn, label: urn, type_id: "session", properties: {},
+      })),
+      relations: famRels,
+    };
+    const famDrawn = drawCheck(fg, famFrame);
+    const legend = fg.kappaLegend(famFrame, grammar);
+    const rows = Object.fromEntries(legend.families.map((f) => [f.family, f.relations]));
+    const want = {};
+    for (const r of famRels) {
+      const [s, t] = [familyOf(r.properties.src_port), familyOf(r.properties.tgt_port)];
+      if (s && s === t) want[s] = (want[s] ?? 0) + 1;
+    }
+    const sum = Object.values(rows).reduce((a, b) => a + b, 0);
+    const faults = famRels.filter((r) => familyOf(r.properties.src_port) !== familyOf(r.properties.tgt_port));
+    const withoutFaults = fg.kappaLegend({ ...famFrame, relations: famRels.filter((r) => !faults.includes(r)) }, grammar);
+    const ends = famRels.flatMap((r) => [r.properties.src_port, r.properties.tgt_port]);
+    const portOf = (p) => raw.portColors.port_colors[p];
+    check(
+      famDrawn.port.wrong.length === 0 && sum === famDrawn.port.hued.length && sum === 3 &&
+        JSON.stringify(rows) === JSON.stringify({ "fam-one": want["fam-one"] ?? 0, "fam-three": 0, "fam-two": want["fam-two"] ?? 0 }) &&
+        faults.length === 6 &&
+        JSON.stringify(withoutFaults.families) === JSON.stringify(legend.families) &&
+        legend.census.exempt === ends.filter((p) => portOf(p) === "").length &&
+        legend.census.uncoloured === ends.filter((p) => portOf(p) === undefined).length,
+      `family rows count relations: ${JSON.stringify(rows)}, summing to ${sum} = the ${famDrawn.port.hued.length} relations drawn in a ` +
+        `family hue; the ${faults.length} faults change no family count; exempt ${legend.census.exempt} and no colour ` +
+        `${legend.census.uncoloured} stay per port end`,
+    );
+    // The rendered words (renderedStrings: every shown string under src/ and the knowledge
+    // vocabulary): the colour is never the port's.
+    const portWords = renderedStrings().filter((s) => !s.code && /\bport('s)? colou?rs?\b/i.test(s.text));
+    check(
+      portWords.length === 0,
+      `no rendered string says "port colour" or "port's colour" (${portWords.map((s) => `${s.file}:${s.line} ${JSON.stringify(s.text)}`).join("; ") || "0 hits"})`,
     );
   }
   // t347 PIL-21 (with the rest of PIL-16): the converse written with †, in the Workbench's words,
@@ -1139,7 +1279,7 @@ console.log("\nH. relation ends coloured by κ(port): one hue, three glyphs, two
   check(
     noKappa.status === "engine" && noKappa.port_colors === null && /HTTP 404/.test(noKappa.port_colors_reason) &&
       noKappa.pairs.length === grammar.pairs.length && noKappa.types.length === grammar.types.length &&
-      kappaRelationData(paintRelation(cases.one, noKappa)) === null && /no port colours/.test(grammarGap(noKappa)) &&
+      kappaRelationData(paintRelation(cases.one, noKappa)) === null && /no colour families/.test(grammarGap(noKappa)) &&
       m.drawerVocab(noKappa, null).source === "engine" &&
       noTypes.status === "absent" && /node-types answered HTTP 404/.test(noTypes.reason),
     `no /operad/port-colors: the engine's ${noKappa.pairs?.length} pairs and ${noKappa.types?.length} type(s) stand, relation kind only; no /operad/node-types: absent`,

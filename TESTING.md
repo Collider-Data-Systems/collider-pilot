@@ -170,6 +170,9 @@ the fold does not carry — one it carries on a declared pair is an engine port,
 undeclared one); an untick expands from all of it and ticking back returns to the sentinel;
 without a grammar the static lists stand alone and the note says so; the legacy list is one
 group of its own.
+Since t347 (PIL-20) H also holds the legend's family rows to relations, not port ends — they sum to
+the relations drawn in a family hue and count no fault — and no rendered string saying "port
+colour" (see "The colour is the relation's").
 H also holds the read itself on an injected fetch (offline): `color_rule` / `color_source` are
 read when the engine states them (K1) and "not stated" when it does not (today's
 `{matrix, port_colors}`); a body carrying only `matrix` colours nothing; a relation carrying an
@@ -471,7 +474,7 @@ those floors — the reference palette's own series cap — so a family is never
 alone: the port name rides on every port-colour line (held to the label cut) and the legend
 names each family with its count. Node fills stay the type palette and share no colour with
 them (`smoke:lens` H, which also holds the close pairs under "Limits" below). The legend's
-**colour by: port colour | relation kind** switch brings back the relation-kind palette — the
+**colour by: port colour | relation kind** switch (since t347 **relation colour | relation kind**, PIL-20) brings back the relation-kind palette — the
 knowledge vocabulary's colours and dashes, the default line for every other port — labelled
 as such. Like the legend ticks it is not saved. The inspector's relation rows follow the
 same switch: in port colour a row takes κ of the port named from the selected node's end (a
@@ -1008,6 +1011,38 @@ a function there. Broken copies fail it: no `kself` (one FAIL), the old tooltip 
 no (b2) record (five). `smoke:live` (i) holds each relation's drawn target glyph and prints the
 self-converse count: 0 of 242 on the Z440 primary (4.0.9, log 713; † not a function at 1 name),
 9 of 419 on scratch (mtdc-2.1.0, log 1030; 2 labels; † a function everywhere).
+
+## The colour is the relation's (t347, work order PIL-20)
+
+**Why.** Sam's P2 rules the colour the relation's label, one per relation. The legend still
+named and counted it per port end: the switch read "port colour", the group "colour family"
+over "each end of a relation takes its port's colour", the canvas label "relation ends
+coloured by port", and each family row counted port ends — a fault's grey ends included, under
+the families of their ports.
+
+**What changed** (`FrameGraph.tsx`, `port-colour.js` `kappaCensus`, `PostureStrip.tsx`,
+`engine-grammar.js` `grammarGap`). The switch reads `relation colour`, its tooltip "Relation
+colour: each relation carries one colour; its two ends show it"; the group is titled
+`relation colour (family)` with the tooltip "each relation carries one colour; its two ends show
+it" (the Workbench's words); the canvas label says "relations coloured by family". A family row
+counts the one-colour relations of that family — both ends in it — and says so; a fault counts
+only in the fault row. The `exempt` and `no colour` rows stay per port end. An engine without a
+colour table reads "serves no colour families", and the audit drawer's `κ source` tooltip says
+the colours are the relations'. `kappaCensus.families` now counts relations, so `smoke:live`
+prints `κ relations` where it printed `κ ends`; the t342 tables above count ends and are kept as
+measured then. Code identifiers (`colour-by-port`, the `port` palette value) did not change.
+
+**Asserted** (`smoke:lens` H). On the fixture plus two one-colour relations (one on an
+undeclared pair): the family rows (FrameGraph's `kappaLegend`, exported for it) are fam-one 2,
+fam-three 0, fam-two 1, equal to the count read from the fixture's own map, and sum to the 3
+relations DRAWN in a family hue (headless, the real STYLE); removing the 6 faults changes no
+family row; exempt 3 and no colour 5 are counted per end. No rendered string — every shown
+string literal, template part and JSX text under `src/`, and the knowledge vocabulary, collected
+by `renderedStrings` — says "port colour" or "port's colour". Broken copies fail it: the old
+per-end family count (two FAILs: fam-one 9 and fam-two 5, 14 against 3 drawn), the button back
+to "port colour" (one, naming the file and line). `smoke:live` (i), t347: the Z440 primary's
+family rows sum to 233 of 242 relations (the other 9 have no family at either end, 0 faults);
+scratch's to 419 of 419.
 
 ## Finding and inspecting in the knowledge graph (t337)
 

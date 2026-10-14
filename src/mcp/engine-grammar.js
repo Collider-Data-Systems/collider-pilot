@@ -358,7 +358,8 @@ export function grammarGap(grammar) {
       ? "the engine's /operad/* did not answer"
       : "the engine serves no /operad/*";
   }
-  if (!grammar.port_colors) return `the engine serves no port colours`;
+  // t347 PIL-20: in the legend's words — the colour is the relation's; the engine gives each port a family.
+  if (!grammar.port_colors) return `the engine serves no colour families`;
   return null;
 }
 
