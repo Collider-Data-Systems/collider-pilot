@@ -202,6 +202,22 @@ function hueMap(grammar) {
  */
 
 /**
+ * t348 (review of #51, Copilot 4277217231): the source port a relation carries — one reading, for
+ * paintRelation and for the inspector's out-ports (NodeInspector nodeInterface). A relation mapped
+ * from the engine (transform.js mapRelation keeps `src_port` and `tgt_port` in its properties) is
+ * read by its carried `src_port`, and has none when that is absent: its label is then the target
+ * port or the rewrite category, not a source port. Only a relation built without the carried
+ * ports (a legacy one) is read by its label, which is its src_port there.
+ * @param {Pick<HgRelation, "label" | "properties">} relation
+ * @returns {string | null}
+ */
+export function carriedSourcePort(relation) {
+  const props = relation.properties ?? {};
+  const mapped = "src_port" in props || "tgt_port" in props;
+  return typeof props.src_port === "string" ? props.src_port : mapped ? null : relation.label;
+}
+
+/**
  * How one relation is drawn in the port-colour palette — or `{ palette: "kind" }` when the
  * frame carries no engine grammar (the relation-kind palette is then the only one).
  * @param {Pick<HgRelation, "label" | "properties">} relation
@@ -211,10 +227,9 @@ function hueMap(grammar) {
 export function paintRelation(relation, grammar) {
   if (!hasPortColours(grammar)) return { palette: "kind" };
   // The ports as the engine wrote them (transform.js mapRelation keeps both in properties);
-  // a relation built without them is read by its label, which IS its src_port.
+  // a relation built without them is read by its label, which IS its src_port (carriedSourcePort).
   const props = relation.properties ?? {};
-  const mapped = "src_port" in props || "tgt_port" in props;
-  const srcPort = typeof props.src_port === "string" ? props.src_port : mapped ? null : relation.label;
+  const srcPort = carriedSourcePort(relation);
   const tgtPort = typeof props.tgt_port === "string" ? props.tgt_port : null;
   const hues = hueMap(grammar);
   /** @param {string | null} port @param {"source" | "target"} side @returns {KappaEnd} */

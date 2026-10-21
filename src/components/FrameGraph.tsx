@@ -348,9 +348,10 @@ function isFault(
 /**
  * t337: whether a nesting relation is shown by its container and so not drawn as a line (toElements);
  * t344 PIL-13: a fault never is. t348 (review of #50): kappaLegend leaves out of the family rows
- * exactly the relations this test drops.
+ * exactly the relations this test drops. t348 (review of #51): exported, so `smoke:lens` N counts
+ * the drawn lines against the same test.
  */
-function isContainerNesting(
+export function isContainerNesting(
   relation: Pick<HgRelation, "label" | "properties" | "source_urn" | "target_urn">,
   parents: ReadonlyMap<string, string>,
   grammar: EngineGrammar | null | undefined,

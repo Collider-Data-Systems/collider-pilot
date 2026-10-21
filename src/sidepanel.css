@@ -643,18 +643,15 @@ body {
 }
 .insp-rel-label {
   color: var(--text-primary);
-  /* t337: a port name stays whole on one line; the other node's label — now often a
-     claim's text — is what gives way (it already ends in an ellipsis). */
-  flex: none;
-  white-space: nowrap;
-}
-.insp-rel-kind {
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--text-muted);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 0 4px;
+  /* t337: the other node's label — often a claim's text — gives way first (it ends in an
+     ellipsis). t348 (review of #51, Copilot 4277217259): the rows now sit in the interface's
+     half-width sides (t347 PIL-17), so a port name — a long one, or a converse of several
+     names — wraps inside its side instead of running past it (it stayed whole on one line,
+     `flex: none` and `nowrap`, and could squeeze the button to nothing). */
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .insp-rel-target {
   background: transparent;
@@ -677,6 +674,73 @@ body {
   display: inline-block;
   vertical-align: middle;
   margin-right: 5px;
+}
+/* t347 PIL-17: the node as an interface — what it accepts (the relations arriving on its in-ports)
+   on the left, what it offers (the out-ports it holds) on the right, as on the Workbench's type
+   card. The two sides share one frame, split by a rule: an arriving row ends at the rule (its
+   in-port), a held row starts from it (its out-port), so each reads as a chain through the node.
+   Text at least 11 px. */
+.insp-ifc-counts,
+.insp-ifc-held {
+  font-size: 11px;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.insp-ifc {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.insp-ifc-side {
+  min-width: 0;
+  padding: 4px 6px;
+}
+.insp-ifc-side[data-side="directions"] {
+  border-right: 1px solid var(--border);
+  text-align: right;
+}
+.insp-ifc-side[data-side="directions"] .insp-relations li {
+  justify-content: flex-end;
+}
+.insp-ifc-head {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.insp-ifc-port {
+  margin-bottom: 6px;
+}
+.insp-ifc-port-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+.insp-ifc-n {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.insp-ifc-none {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.insp-ifc .insp-relations li {
+  min-width: 0;
+}
+/* t348 (review of #51, Copilot 4277217259): the button to the other node keeps visible room
+   beside a long port name (4em, its name cut with an ellipsis); on the left side its name
+   sits against the arrow. */
+.insp-ifc .insp-rel-target {
+  flex: 0 1 auto;
+  min-width: 4em;
+}
+.insp-ifc-side[data-side="directions"] .insp-rel-target {
+  text-align: right;
 }
 
 /* Scrollbar */
