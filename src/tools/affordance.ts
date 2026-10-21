@@ -241,7 +241,7 @@ const MOCK_CATALOG: ToolSpec[] = [
   // row only — actionable:false, no executable path — the classifier gates it as mutate.
   classifyMcpTool({
     name: "apply_program",
-    description: "Apply an atomic program of rewrites (mutate — gated, not wired here).",
+    description: "Apply an atomic program of rewrites (mutate — gated, not connected here).",
     inputSchema: {
       type: "object",
       properties: { envelopes: { type: "array", description: "rewrite envelopes" } },

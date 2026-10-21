@@ -102,6 +102,12 @@ gate re-fires and passes. This has cost a red check at least once (`#42`).
   about 7 s. A knowledge source is drawn inside the box that cites it: a presentation-only
   parent, node ids stay urns, nothing is written back. `smoke:lens` J holds both on a synthetic
   frame; `bench:frame` holds the pilot's CPU share of the first paint to its budget.
+- **Rendered words follow the vocabulary rule (t347 PIL-24).** `smoke:lens` M scans every
+  shown string — the parsed source under `src/`, the knowledge vocabulary, the manifest, the page
+  titles — with the Workbench's pattern (WB-33) and fails on a banned word. Hits that wait for a
+  ruling ("box", AQ4; the vocabulary's data, AQ5) are pinned there by exact string and file and
+  reported; a new "box" or a stale pin fails too. A string the collector reads as shown but that
+  is code (a Cytoscape selector in a constant) is pinned with its reason, never renamed.
 - **Verify slices through the real shared transform.** `applyViewFilter` lives in
   `src/mcp/transform.js` and the access law in `src/mcp/access.js`; both are imported by the
   smokes so they exercise the shipped law, not a copy. A hand-rolled check against a fixture of
